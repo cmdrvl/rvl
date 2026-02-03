@@ -1469,23 +1469,40 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         RefusalKind::NoKey { key_column } => json!({
             "key_column": encode_identifier_json(key_column),
         }),
-        RefusalKind::KeyEmpty { file, record, key_column } => json!({
+        RefusalKind::KeyEmpty {
+            file,
+            record,
+            key_column,
+        } => json!({
             "file": file.as_str(),
             "record": record,
             "column": encode_identifier_json(key_column),
         }),
-        RefusalKind::KeyDup { file, record, key_value } => json!({
+        RefusalKind::KeyDup {
+            file,
+            record,
+            key_value,
+        } => json!({
             "file": file.as_str(),
             "record": record,
             "key": encode_identifier_json(key_value),
         }),
-        RefusalKind::KeyMismatch { missing_in_new, extra_in_new, missing_samples, extra_samples } => json!({
+        RefusalKind::KeyMismatch {
+            missing_in_new,
+            extra_in_new,
+            missing_samples,
+            extra_samples,
+        } => json!({
             "missing_in_new": missing_in_new,
             "extra_in_new": extra_in_new,
             "missing_samples": missing_samples.iter().map(|k| encode_identifier_json(k)).collect::<Vec<_>>(),
             "extra_samples": extra_samples.iter().map(|k| encode_identifier_json(k)).collect::<Vec<_>>(),
         }),
-        RefusalKind::RowCount { rows_old, rows_new, suggested_keys } => json!({
+        RefusalKind::RowCount {
+            rows_old,
+            rows_new,
+            suggested_keys,
+        } => json!({
             "rows_old": rows_old,
             "rows_new": rows_new,
             "suggested_keys": suggested_keys.iter().map(|k| encode_identifier_json(k)).collect::<Vec<_>>(),
@@ -1493,7 +1510,11 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         RefusalKind::NeedKey { suggested_keys } => json!({
             "suggested_keys": suggested_keys.iter().map(|k| encode_identifier_json(k)).collect::<Vec<_>>(),
         }),
-        RefusalKind::Dialect { file, tied_delimiters, suggestion } => json!({
+        RefusalKind::Dialect {
+            file,
+            tied_delimiters,
+            suggestion,
+        } => json!({
             "file": file.as_str(),
             "tied_delimiters": tied_delimiters.iter().map(|b| byte_to_string(*b)).collect::<Vec<_>>(),
             "suggestion": match suggestion {
@@ -1501,20 +1522,33 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
                 DialectSuggestion::SepDirective(byte) => format!("sep={}", *byte as char),
             },
         }),
-        RefusalKind::MixedTypes { file, record, column, value } => json!({
+        RefusalKind::MixedTypes {
+            file,
+            record,
+            column,
+            value,
+        } => json!({
             "file": file.as_str(),
             "record": record,
             "column": encode_identifier_json(column),
             "value": encode_identifier_json(value),
         }),
         RefusalKind::NoNumeric => json!({}),
-        RefusalKind::Missingness { file, record, column, value } => json!({
+        RefusalKind::Missingness {
+            file,
+            record,
+            column,
+            value,
+        } => json!({
             "file": file.as_str(),
             "record": record,
             "column": encode_identifier_json(column),
             "value": encode_identifier_json(value),
         }),
-        RefusalKind::Diffuse { top_k_coverage, threshold } => json!({
+        RefusalKind::Diffuse {
+            top_k_coverage,
+            threshold,
+        } => json!({
             "top_k_coverage": top_k_coverage,
             "threshold": threshold,
         }),

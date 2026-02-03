@@ -1,4 +1,4 @@
-use rvl::alignment::key_join::{build_key_map, join_key_maps, KeyJoinError};
+use rvl::alignment::key_join::{KeyJoinError, build_key_map, join_key_maps};
 use rvl::alignment::key_parse::parse_key_identifier;
 use rvl::refusal::details::{RefusalDetail, RefusalKind, RerunPaths};
 
@@ -50,10 +50,8 @@ fn key_duplicates_are_detected() {
 
 #[test]
 fn key_set_mismatch_reports_samples() {
-    let old = build_key_map(vec![(1, record(&[b"A"])), (2, record(&[b"B"]))], 0)
-        .expect("old map");
-    let new = build_key_map(vec![(1, record(&[b"A"])), (2, record(&[b"C"]))], 0)
-        .expect("new map");
+    let old = build_key_map(vec![(1, record(&[b"A"])), (2, record(&[b"B"]))], 0).expect("old map");
+    let new = build_key_map(vec![(1, record(&[b"A"])), (2, record(&[b"C"]))], 0).expect("new map");
     let err = join_key_maps(old, new).expect_err("mismatch");
     assert_eq!(
         err,

@@ -1,5 +1,5 @@
-use rvl::numeric::missing::is_missing_token;
 use rvl::numeric::columns::{ColumnTypingError, CommonColumn, Side, detect_numeric_columns};
+use rvl::numeric::missing::is_missing_token;
 use rvl::numeric::no_numeric::{NoNumericError, ensure_numeric_columns};
 
 #[test]
