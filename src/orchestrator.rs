@@ -1287,10 +1287,8 @@ fn render_cell_label(cell_id: &CellId) -> String {
 
 fn count_columns(headers: &[Vec<u8>], key: Option<&[u8]>) -> u64 {
     let mut count = headers.len() as u64;
-    if let Some(key) = key {
-        if headers.iter().any(|name| name.as_slice() == key) {
-            count = count.saturating_sub(1);
-        }
+    if let Some(key) = key && headers.iter().any(|name| name.as_slice() == key) {
+        count = count.saturating_sub(1);
     }
     count
 }

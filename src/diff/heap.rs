@@ -70,8 +70,14 @@ impl<T> DiffAccumulator<T> {
         self.total_change += contribution;
 
         if contribution > 0.0 {
-            self.top
-                .push(Contributor::new(id, old, new, delta, contribution, tie_break));
+            self.top.push(Contributor::new(
+                id,
+                old,
+                new,
+                delta,
+                contribution,
+                tie_break,
+            ));
         }
     }
 }
