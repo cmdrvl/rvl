@@ -1,12 +1,17 @@
 use rvl::format::ident_human::render_identifier_human;
 use rvl::output::human::header::{
-    render_real_no_real_header, render_refusal_header, Alignment, ColumnCounts, DialectReceipt,
-    HumanHeader, RefusalHeader, Settings, CheckedCounts,
+    Alignment, CheckedCounts, ColumnCounts, DialectReceipt, HumanHeader, RefusalHeader, Settings,
+    render_real_no_real_header, render_refusal_header,
 };
-use rvl::output::human::no_real::{render_no_real_body, NoRealBody};
-use rvl::output::human::real_change::{render_real_change_body, RealChangeBody, RealChangeContributor};
-use rvl::output::human::refusal::{render_refusal_body, RefusalBody};
-use rvl::output::json::{Alignment as JsonAlignment, AlignmentMode, Counts, Dialect, DialectSide, Files, JsonContext, JsonOutput, Metrics};
+use rvl::output::human::no_real::{NoRealBody, render_no_real_body};
+use rvl::output::human::real_change::{
+    RealChangeBody, RealChangeContributor, render_real_change_body,
+};
+use rvl::output::human::refusal::{RefusalBody, render_refusal_body};
+use rvl::output::json::{
+    Alignment as JsonAlignment, Counts, Dialect, DialectSide, Files, JsonContext, JsonOutput,
+    Metrics,
+};
 use rvl::refusal::codes::RefusalCode;
 use rvl::refusal::details::{FileSide, RefusalDetail, RefusalKind, RerunPaths};
 use serde_json::json;
@@ -48,7 +53,7 @@ fn golden_real_change_human_output() {
     };
     let body = RealChangeBody {
         contributors: &[RealChangeContributor {
-            label: "A.value",
+            label: "A.value".to_string(),
             old: 1.0,
             new: 6.0,
             delta: 5.0,

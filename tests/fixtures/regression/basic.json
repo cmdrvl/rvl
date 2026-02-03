@@ -1,0 +1,60 @@
+{
+  "version": "rvl.v0",
+  "outcome": "REAL_CHANGE",
+  "files": {
+    "old": "tests/fixtures/regression/basic_old.csv",
+    "new": "tests/fixtures/regression/basic_new.csv"
+  },
+  "alignment": {
+    "mode": "row_order",
+    "key_column": null
+  },
+  "dialect": {
+    "old": {
+      "delimiter": ",",
+      "quote": "\"",
+      "escape": null
+    },
+    "new": {
+      "delimiter": ",",
+      "quote": "\"",
+      "escape": null
+    }
+  },
+  "threshold": 0.95,
+  "tolerance": 1e-9,
+  "counts": {
+    "rows_old": 2,
+    "rows_new": 2,
+    "rows_aligned": 2,
+    "columns_old": 3,
+    "columns_new": 3,
+    "columns_common": 3,
+    "columns_old_only": 0,
+    "columns_new_only": 0,
+    "numeric_columns": 1,
+    "numeric_cells_checked": 2,
+    "numeric_cells_changed": 1
+  },
+  "metrics": {
+    "total_change": 60,
+    "max_abs_delta": 60,
+    "top_k_coverage": 1
+  },
+  "limits": {
+    "max_contributors": 25
+  },
+  "contributors": [
+    {
+      "row_id": "u8:2",
+      "column": "u8:amount",
+      "old": 200,
+      "new": 260,
+      "delta": 60,
+      "contribution": 60,
+      "share": 1,
+      "cumulative_share": 1
+    }
+  ],
+  "refusal": null
+}
