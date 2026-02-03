@@ -631,16 +631,15 @@ fn run_diff(
                 },
                 rerun_paths,
             );
-            Ok(render_refusal_with_context(
-                refusal,
-                args,
-                key_bytes,
+            let context = RefusalContext {
+                key: key_bytes,
                 dialect_old,
                 dialect_new,
-                alignment_mode,
+                alignment: alignment_mode,
                 counts,
                 metrics,
-            ))
+            };
+            Ok(render_refusal_with_context(refusal, args, context))
         }
         CoverageDecision::Explainable { cutoff, coverage } => {
             let details =
