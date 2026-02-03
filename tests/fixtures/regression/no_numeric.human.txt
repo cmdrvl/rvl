@@ -1,6 +1,6 @@
 RVL ERROR (E_NO_NUMERIC)
 
-Compared: tests/fixtures/regression/no_numeric_old.csv -> tests/fixtures/regression/no_numeric_new.csv
+Compared: no_numeric_old.csv -> no_numeric_new.csv
 Alignment: key=id
 Dialect(old): delimiter=, quote=" escape=none
 Dialect(new): delimiter=, quote=" escape=none

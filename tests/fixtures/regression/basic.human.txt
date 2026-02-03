@@ -2,7 +2,7 @@ RVL
 
 REAL CHANGE
 
-Compared: tests/fixtures/regression/basic_old.csv -> tests/fixtures/regression/basic_new.csv
+Compared: basic_old.csv -> basic_new.csv
 Alignment: row-order (no key)
 Columns: common=3 old_only=0 new_only=0
 Checked: 2 rows, 1 numeric columns (2 cells)
