@@ -462,16 +462,15 @@ fn run_diff(
             numeric_cells_checked: Some(0),
             numeric_cells_changed: Some(0),
         };
-        return Ok(render_refusal_with_context(
-            refusal,
-            args,
-            key_bytes,
+        let context = RefusalContext {
+            key: key_bytes,
             dialect_old,
             dialect_new,
-            alignment_mode,
+            alignment: alignment_mode,
             counts,
-            Metrics::default(),
-        ));
+            metrics: Metrics::default(),
+        };
+        return Ok(render_refusal_with_context(refusal, args, context));
     }
 
     let mut accumulator = DiffAccumulator::with_default_max();
@@ -597,16 +596,15 @@ fn run_diff(
             counts.numeric_cells_checked = None;
             counts.numeric_cells_changed = None;
             metrics = Metrics::default();
-            return Ok(render_refusal_with_context(
-                refusal,
-                args,
-                key_bytes,
+            let context = RefusalContext {
+                key: key_bytes,
                 dialect_old,
                 dialect_new,
-                alignment_mode,
+                alignment: alignment_mode,
                 counts,
                 metrics,
-            ));
+            };
+            return Ok(render_refusal_with_context(refusal, args, context));
         }
     }
 
