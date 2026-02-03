@@ -10,7 +10,7 @@ use rvl::output::human::real_change::{
 use rvl::output::human::refusal::{RefusalBody, render_refusal_body};
 use rvl::output::json::{
     Alignment as JsonAlignment, Counts, Dialect, DialectSide, Files, JsonContext, JsonOutput,
-    Metrics,
+    Metrics, Refusal,
 };
 use rvl::refusal::codes::RefusalCode;
 use rvl::refusal::details::{FileSide, RefusalDetail, RefusalKind, RerunPaths};
