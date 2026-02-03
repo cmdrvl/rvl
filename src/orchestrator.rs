@@ -73,6 +73,15 @@ struct RefusalPayload {
     detail: RefusalDetail,
 }
 
+struct RefusalContext<'a> {
+    key: Option<&'a [u8]>,
+    dialect_old: Option<DialectReceipt>,
+    dialect_new: Option<DialectReceipt>,
+    alignment: JsonAlignment,
+    counts: Counts,
+    metrics: Metrics,
+}
+
 #[derive(Clone, Debug)]
 struct RowRef {
     old_record: u64,

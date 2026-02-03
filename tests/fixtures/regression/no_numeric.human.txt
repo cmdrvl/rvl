@@ -1,0 +1,11 @@
+RVL ERROR (E_NO_NUMERIC)
+
+Compared: tests/fixtures/regression/no_numeric_old.csv -> tests/fixtures/regression/no_numeric_new.csv
+Alignment: key=id
+Dialect(old): delimiter=, quote=" escape=none
+Dialect(new): delimiter=, quote=" escape=none
+Settings: threshold=95.0% tolerance=1e-9
+
+Reason (E_NO_NUMERIC): no numeric columns in common.
+Example: no numeric columns in common.
+Next: ensure common numeric columns exist (or adjust inputs) and rerun

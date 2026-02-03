@@ -9,15 +9,19 @@ pub const MAX_CONTRIBUTORS: usize = 25;
 #[derive(Debug, Clone)]
 pub struct Contributor<T> {
     pub id: T,
+    pub old: f64,
+    pub new: f64,
     pub delta: f64,
     pub contribution: f64,
     pub tie_break: u64,
 }
 
 impl<T> Contributor<T> {
-    pub fn new(id: T, delta: f64, contribution: f64, tie_break: u64) -> Self {
+    pub fn new(id: T, old: f64, new: f64, delta: f64, contribution: f64, tie_break: u64) -> Self {
         Self {
             id,
+            old,
+            new,
             delta,
             contribution,
             tie_break,
@@ -45,7 +49,15 @@ impl<T> DiffAccumulator<T> {
         Self::new(MAX_CONTRIBUTORS)
     }
 
-    pub fn observe(&mut self, id: T, delta: f64, contribution: f64, tie_break: u64) {
+    pub fn observe(
+        &mut self,
+        id: T,
+        old: f64,
+        new: f64,
+        delta: f64,
+        contribution: f64,
+        tie_break: u64,
+    ) {
         debug_assert!(delta.is_finite(), "delta must be finite");
         debug_assert!(contribution.is_finite(), "contribution must be finite");
         debug_assert!(contribution >= 0.0, "contribution must be non-negative");
@@ -59,7 +71,7 @@ impl<T> DiffAccumulator<T> {
 
         if contribution > 0.0 {
             self.top
-                .push(Contributor::new(id, delta, contribution, tie_break));
+                .push(Contributor::new(id, old, new, delta, contribution, tie_break));
         }
     }
 }
@@ -154,19 +166,21 @@ mod tests {
 
     fn contributor(
         id: &'static str,
+        old: f64,
+        new: f64,
         delta: f64,
         contribution: f64,
         tie_break: u64,
     ) -> Contributor<&'static str> {
-        Contributor::new(id, delta, contribution, tie_break)
+        Contributor::new(id, old, new, delta, contribution, tie_break)
     }
 
     #[test]
     fn topk_keeps_largest_contributions() {
         let mut top = TopContributors::new(2);
-        top.push(contributor("a", 1.0, 1.0, 1));
-        top.push(contributor("b", 5.0, 5.0, 2));
-        top.push(contributor("c", 3.0, 3.0, 3));
+        top.push(contributor("a", 0.0, 1.0, 1.0, 1.0, 1));
+        top.push(contributor("b", 0.0, 5.0, 5.0, 5.0, 2));
+        top.push(contributor("c", 0.0, 3.0, 3.0, 3.0, 3));
 
         let mut values: Vec<f64> = top.into_vec().into_iter().map(|c| c.contribution).collect();
         values.sort_by(|a, b| a.total_cmp(b));
@@ -176,8 +190,8 @@ mod tests {
     #[test]
     fn topk_tie_break_keeps_earlier_entry() {
         let mut top = TopContributors::new(1);
-        top.push(contributor("first", 2.0, 2.0, 1));
-        top.push(contributor("second", 2.0, 2.0, 2));
+        top.push(contributor("first", 0.0, 2.0, 2.0, 2.0, 1));
+        top.push(contributor("second", 0.0, 2.0, 2.0, 2.0, 2));
 
         let kept = top.into_vec();
         assert_eq!(kept.len(), 1);
@@ -187,9 +201,9 @@ mod tests {
     #[test]
     fn accumulator_tracks_totals_and_max() {
         let mut acc = DiffAccumulator::new(2);
-        acc.observe("a", 1.5, 1.5, 1);
-        acc.observe("b", -3.0, 3.0, 2);
-        acc.observe("c", 0.0, 0.0, 3);
+        acc.observe("a", 0.0, 1.5, 1.5, 1.5, 1);
+        acc.observe("b", 0.0, -3.0, -3.0, 3.0, 2);
+        acc.observe("c", 0.0, 0.0, 0.0, 0.0, 3);
 
         assert_eq!(acc.total_change, 4.5);
         assert_eq!(acc.max_abs_delta, 3.0);
