@@ -80,3 +80,13 @@ fn regression_no_numeric() {
         Some("id"),
     );
 }
+
+#[test]
+fn regression_basic() {
+    assert_case(
+        "basic",
+        "tests/fixtures/regression/basic_old.csv",
+        "tests/fixtures/regression/basic_new.csv",
+        None,
+    );
+}
