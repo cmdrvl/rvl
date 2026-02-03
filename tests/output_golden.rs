@@ -62,11 +62,12 @@ fn golden_real_change_human_output() {
         threshold: 0.95,
     };
 
-    let mut lines = Vec::new();
-    lines.push("RVL".to_string());
-    lines.push(String::new());
-    lines.push("REAL CHANGE".to_string());
-    lines.push(String::new());
+    let mut lines = vec![
+        "RVL".to_string(),
+        String::new(),
+        "REAL CHANGE".to_string(),
+        String::new(),
+    ];
     lines.extend(render_real_no_real_header(&header));
     lines.push(String::new());
     lines.extend(render_real_change_body(&body));
@@ -129,11 +130,12 @@ fn golden_no_real_change_human_output() {
         tolerance: 1e-9,
     };
 
-    let mut lines = Vec::new();
-    lines.push("RVL".to_string());
-    lines.push(String::new());
-    lines.push("NO REAL CHANGE".to_string());
-    lines.push(String::new());
+    let mut lines = vec![
+        "RVL".to_string(),
+        String::new(),
+        "NO REAL CHANGE".to_string(),
+        String::new(),
+    ];
     lines.extend(render_real_no_real_header(&header));
     lines.push(String::new());
     lines.extend(render_no_real_body(&body));

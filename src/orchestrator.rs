@@ -19,8 +19,7 @@ use crate::cli::exit::Outcome;
 use crate::csv::blank::is_blank_record;
 use crate::csv::dialect::{DialectError, auto_detect};
 use crate::csv::input::{
-    EncodingIssue as InputEncodingIssue, UTF16_BE_BOM, UTF16_LE_BOM, UTF32_BE_BOM, UTF32_LE_BOM,
-    guard_input_bytes,
+    EncodingIssue as InputEncodingIssue, UTF32_BE_BOM, UTF32_LE_BOM, guard_input_bytes,
 };
 use crate::csv::parser::{EscapeMode, build_reader, detect_escape_mode};
 use crate::csv::records::normalize_record;
