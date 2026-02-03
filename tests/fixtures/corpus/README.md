@@ -38,10 +38,10 @@ specific dialect/escape, or a refusal code).
 | `extra_trailing_empty_fields.csv` | synthetic | parse_ok | `,` | none | Extra trailing empty fields accepted. |
 | `extra_trailing_nonempty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field (`sep=,`). |
 | `header_only.csv` | synthetic | parse_ok | `,` | none | Header with no data rows. |
-| `header_with_spaces.csv` | synthetic | parse_ok | `,` | none | Header names trimmed. |
+| `header_with_spaces.csv` | synthetic | parse_ok | `,` | none | Header names trimmed (`sep=,`). |
 | `invalid_quote.csv` | synthetic | `E_CSV_PARSE` | n/a | n/a | Invalid quote sequence. |
 | `leading_blank_lines.csv` | synthetic | parse_ok | `,` | none | Leading blank lines before header. |
-| `multiline_quoted.csv` | synthetic | parse_ok | `,` | none | Multiline quoted field. |
+| `multiline_quoted.csv` | synthetic | parse_ok | `,` | none | Multiline quoted field (`sep=,`). |
 | `mixed_line_endings.csv` | synthetic | parse_ok | `,` | none | Mixed LF/CRLF endings. |
 | `nul_in_8k.csv` | synthetic | `E_ENCODING` | n/a | n/a | NUL byte within first 8KB. |
 | `no_trailing_newline.csv` | synthetic | parse_ok | `,` | none | No trailing newline at EOF. |
@@ -49,7 +49,7 @@ specific dialect/escape, or a refusal code).
 | `only_header.csv` | synthetic | parse_ok | `,` | none | Header with no data rows. |
 | `pipe_delimiter.csv` | synthetic | parse_ok | `|` | none | Pipe-delimited. |
 | `pipe_quoted.csv` | synthetic | parse_ok | `|` | none | Pipe-delimited with quoted pipe. |
-| `rfc_quote_escape.csv` | synthetic | parse_ok | `,` | none | RFC4180 doubled-quote escape. |
+| `rfc_quote_escape.csv` | synthetic | parse_ok | `,` | none | RFC4180 doubled-quote escape (`sep=,`). |
 | `rfc4180_quotes.csv` | synthetic | parse_ok | `,` | none | RFC4180 quoted fields. |
 | `semicolon_delimiter.csv` | synthetic | parse_ok | `;` | none | Semicolon-delimited. |
 | `sep_equal.csv` | synthetic | parse_ok | `=` | none | `sep=` directive with `=` delimiter. |
@@ -67,13 +67,13 @@ specific dialect/escape, or a refusal code).
 | `utf8_bom_sep_pipe.csv` | synthetic | parse_ok | `|` | none | UTF-8 BOM + `sep=` directive. |
 | `utf8_bom.csv` | synthetic | parse_ok | `,` | none | UTF-8 BOM stripped. |
 | `wide_row_extra_empty.csv` | synthetic | parse_ok | `,` | none | Extra trailing empty fields accepted. |
-| `wide_row_extra_non_empty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field. |
+| `wide_row_extra_non_empty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field (`sep=,`). |
 | `windows_crlf.csv` | synthetic | parse_ok | `,` | none | Windows CRLF endings. |
 | `blank_records_between.csv` | synthetic | parse_ok | `,` | none | Blank data records between rows (`sep=,`). |
 | `caret_quoted.csv` | synthetic | parse_ok | `^` | none | Quoted carets inside fields. |
 | `currency_values.csv` | synthetic | parse_ok | `,` | none | Currency and accounting parens. |
 | `empty_fields.csv` | synthetic | parse_ok | `,` | none | Empty fields and trailing delimiter. |
-| `leading_tabs_header.csv` | synthetic | parse_ok | `,` | none | Header names with spaces/tabs. |
+| `leading_tabs_header.csv` | synthetic | parse_ok | `,` | none | Header names with spaces/tabs (`sep=,`). |
 | `numeric_thousands.csv` | synthetic | parse_ok | `,` | none | Numeric thousands separators. |
 | `pipe_with_spaces.csv` | synthetic | parse_ok | `|` | none | Spaces around pipe-delimited fields. |
 | `quoted_empty_fields.csv` | synthetic | parse_ok | `,` | none | Empty quoted fields. |
