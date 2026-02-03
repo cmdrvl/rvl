@@ -44,6 +44,14 @@ For each candidate:
    - Rows/sec and MB/sec
    - Peak RSS
 
+Harness:
+- `cargo bench --bench bakeoff`
+- Env:
+  - `RVL_BAKEOFF_INPUTS` (comma-separated file paths)
+  - `RVL_BAKEOFF_ITERS` (default 5)
+  - `RVL_BAKEOFF_WARMUP` (default 1)
+  - `RVL_BAKEOFF_DELIMITER` (optional: `comma|tab|semicolon|pipe|caret|0xNN|<char>`)
+
 Measure throughput with a consistent tool (e.g., `time` or `hyperfine`) and
 repeat runs to smooth variance. Use the same input files and capture command
 lines in the report.
