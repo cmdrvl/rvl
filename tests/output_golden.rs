@@ -252,14 +252,7 @@ fn golden_json_real_change_output() {
         },
     };
     let contributors = vec![rvl::output::json::Contributor::from_bytes(
-        b"A",
-        b"value",
-        1.0,
-        6.0,
-        5.0,
-        5.0,
-        1.0,
-        1.0,
+        b"A", b"value", 1.0, 6.0, 5.0, 5.0, 1.0, 1.0,
     )];
     let output = JsonOutput::real_change(ctx, contributors);
     let value = serde_json::to_value(output).expect("json");
