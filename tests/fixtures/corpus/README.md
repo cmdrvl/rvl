@@ -24,6 +24,7 @@ specific dialect/escape, or a refusal code).
 | `bom_no_trailing_newline.csv` | synthetic | parse_ok | `,` | none | UTF-8 BOM, no trailing newline. |
 | `caret_basic.csv` | synthetic | parse_ok | `^` | none | Caret-delimited (simple). |
 | `caret_delimiter.csv` | synthetic | parse_ok | `^` | none | Caret-delimited. |
+| `control_byte_header.csv` | synthetic | `E_DIALECT` | n/a | n/a | Delimiter is 0x01 (not auto-detected). |
 | `crlf_line_endings.csv` | synthetic | parse_ok | `,` | none | CRLF line endings. |
 | `duplicate_headers.csv` | synthetic | `E_HEADERS` | n/a | n/a | Duplicate header after normalization. |
 | `empty_file.csv` | synthetic | `E_HEADERS` | n/a | n/a | Empty file (no header). |
@@ -39,6 +40,7 @@ specific dialect/escape, or a refusal code).
 | `extra_trailing_nonempty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field (`sep=,`). |
 | `header_only.csv` | synthetic | parse_ok | `,` | none | Header with no data rows. |
 | `header_with_spaces.csv` | synthetic | parse_ok | `,` | none | Header names trimmed (`sep=,`). |
+| `hex_prefix_header.csv` | synthetic | parse_ok | `,` | none | Header starts with `hex:` prefix. |
 | `invalid_quote.csv` | synthetic | `E_CSV_PARSE` | n/a | n/a | Invalid quote sequence. |
 | `leading_blank_lines.csv` | synthetic | parse_ok | `,` | none | Leading blank lines before header. |
 | `multiline_quoted.csv` | synthetic | parse_ok | `,` | none | Multiline quoted field (`sep=,`). |
@@ -62,6 +64,7 @@ specific dialect/escape, or a refusal code).
 | `tab_delimiter.csv` | synthetic | parse_ok | `\t` | none | Tab-delimited. |
 | `trailing_blank_lines.csv` | synthetic | parse_ok | `,` | none | Trailing blank lines ignored. |
 | `unterminated_quote.csv` | synthetic | `E_CSV_PARSE` | n/a | n/a | Unterminated quote. |
+| `u8_prefix_header.csv` | synthetic | parse_ok | `,` | none | Header starts with `u8:` prefix. |
 | `utf16le_bom.csv` | synthetic | `E_ENCODING` | n/a | n/a | UTF-16 LE BOM. |
 | `utf32be_bom.csv` | synthetic | `E_ENCODING` | n/a | n/a | UTF-32 BE BOM. |
 | `utf8_bom_sep_pipe.csv` | synthetic | parse_ok | `|` | none | UTF-8 BOM + `sep=` directive. |

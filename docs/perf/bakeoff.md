@@ -65,11 +65,10 @@ lines in the report.
 | candidate B | TBD | TBD | TBD | TBD |
 
 ## Conclusion
-Baseline throughput measured for Rust `csv`; corpus compatibility currently has
-two mismatches (see table). Candidate parsers still TBD; do not switch unless a
+Baseline throughput measured for Rust `csv`; corpus compatibility currently
+passes with 0 mismatches. Candidate parsers still TBD; do not switch unless a
 candidate is >=25% faster with equal compatibility and acceptable memory.
 
 ## Next Steps
-- Resolve the two corpus mismatches and re-run compatibility.
 - Evaluate at least one alternative parser and record results.
 - If a candidate wins, draft an integration plan and update the spec/roadmap.
