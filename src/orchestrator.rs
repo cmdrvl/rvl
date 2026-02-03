@@ -1560,10 +1560,13 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
             suggestion,
         } => json!({
             "file": file.as_str(),
-            "tied_delimiters": tied_delimiters.iter().map(|b| byte_to_string(*b)).collect::<Vec<_>>(),
+            "tied_delimiters": tied_delimiters
+                .iter()
+                .map(|b| byte_to_string(*b))
+                .collect::<Vec<_>>(),
             "suggestion": match suggestion {
                 DialectSuggestion::ForceDelimiter(hint) => format!("--delimiter {}", render_hint(*hint)),
-                DialectSuggestion::SepDirective(byte) => format!("sep={}", *byte as char),
+                DialectSuggestion::SepDirective(byte) => format!("sep={}", byte_to_string(*byte)),
             },
         }),
         RefusalKind::MixedTypes {
@@ -1613,11 +1616,5 @@ fn render_hint(hint: DelimiterHint) -> String {
 }
 
 fn byte_to_string(byte: u8) -> String {
-    if byte == b'\t' {
-        return "\t".to_string();
-    }
-    if (0x20..=0x7e).contains(&byte) {
-        return (byte as char).to_string();
-    }
-    format!("0x{byte:02X}")
+    (byte as char).to_string()
 }
