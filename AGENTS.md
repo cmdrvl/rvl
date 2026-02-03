@@ -680,6 +680,33 @@ NEVER EVER DO THAT AGAIN. The answer is literally ALWAYS the same: those are cha
 
 ---
 
+## Multi-Agent Coordination Notes
+
+When working alongside other agents:
+
+- **Never stash, revert, or overwrite other agents' work**
+- Treat unexpected changes in the working tree as if you made them
+- If you see changes you didn't make in `git status`, those are from other agents working concurrently—commit them together with your changes
+- This is normal and happens frequently in multi-agent environments
+
+### CRITICAL: Never Ask About Unexpected Changes
+
+**NEVER stop working to ask about unexpected changes in the working tree.** The answer is always the same: those are changes created by other agents working on the project concurrently. This is not a rare occurrence—it happens multiple times per minute in active multi-agent environments.
+
+**The rule is simple:** You NEVER, under ANY circumstance, stash, revert, overwrite, or otherwise disturb the work of other agents. Treat those changes identically to changes you made yourself. Act as if YOU made those changes and simply don't recall doing so.
+
+**Do NOT:**
+- Stop and ask "I see unexpected changes, what should I do?"
+- Offer options like "triage these changes" or "run a full suite"
+- Express concern about uncommitted work you don't recognize
+
+**DO:**
+- Continue working as normal
+- Include those changes when you commit (they belong to the shared effort)
+- Trust that other agents know what they're doing
+
+---
+
 ## Note on Built-in TODO Functionality
 
 Also, if I ask you to explicitly use your built-in TODO functionality, don't complain about this and say you need to use beads. You can use built-in TODOs if I tell you specifically to do so. Always comply with such orders.
