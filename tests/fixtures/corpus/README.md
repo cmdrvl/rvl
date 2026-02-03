@@ -14,7 +14,7 @@ specific dialect/escape, or a refusal code).
 | File | Source | Expected | Delimiter | Escape | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `ambiguous_delimiter.csv` | synthetic | `E_DIALECT` | n/a | n/a | Comma vs semicolon tie with differing samples. |
-| `backslash_escape.csv` | synthetic | parse_ok | `,` | `\\` | Backslash-escaped quote in field. |
+| `backslash_escape.csv` | synthetic | parse_ok | `,` | `\\` | Backslash-escaped quote in field (`sep=,`). |
 | `backslash_in_quoted_rfc.csv` | synthetic | parse_ok | `,` | none | Backslash is literal inside RFC4180 quotes. |
 | `basic_new.csv` | synthetic | parse_ok | `,` | none | Simple header + rows. |
 | `basic_old.csv` | synthetic | parse_ok | `,` | none | Simple header + rows. |
@@ -34,7 +34,7 @@ specific dialect/escape, or a refusal code).
 | `encoding_utf32be.csv` | synthetic | `E_ENCODING` | n/a | n/a | UTF-32 BE BOM. |
 | `excel_quoted_commas.csv` | synthetic | parse_ok | `,` | none | Quoted commas and doubled quotes. |
 | `extra_fields_empty.csv` | synthetic | parse_ok | `,` | none | Extra trailing empty fields accepted. |
-| `extra_fields_non_empty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field. |
+| `extra_fields_non_empty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field (`sep=,` forces delimiter). |
 | `extra_trailing_empty_fields.csv` | synthetic | parse_ok | `,` | none | Extra trailing empty fields accepted. |
 | `extra_trailing_nonempty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field. |
 | `header_only.csv` | synthetic | parse_ok | `,` | none | Header with no data rows. |
