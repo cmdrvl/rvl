@@ -188,6 +188,12 @@ fn corpus_parse_ok_fixtures() {
             forced_delimiter: None,
         },
         ParseOkSpec {
+            name: "corpus/control_byte_header.csv",
+            delimiter: 0x01,
+            escape: EscapeMode::None,
+            forced_delimiter: Some(0x01),
+        },
+        ParseOkSpec {
             name: "corpus/crlf_line_endings.csv",
             delimiter: b',',
             escape: EscapeMode::None,
@@ -243,6 +249,12 @@ fn corpus_parse_ok_fixtures() {
         },
         ParseOkSpec {
             name: "corpus/header_with_spaces.csv",
+            delimiter: b',',
+            escape: EscapeMode::None,
+            forced_delimiter: None,
+        },
+        ParseOkSpec {
+            name: "corpus/hex_prefix_header.csv",
             delimiter: b',',
             escape: EscapeMode::None,
             forced_delimiter: None,
@@ -476,6 +488,12 @@ fn corpus_parse_ok_fixtures() {
             forced_delimiter: None,
         },
         ParseOkSpec {
+            name: "corpus/u8_prefix_header.csv",
+            delimiter: b',',
+            escape: EscapeMode::None,
+            forced_delimiter: None,
+        },
+        ParseOkSpec {
             name: "corpus/utf8_accented.csv",
             delimiter: b',',
             escape: EscapeMode::None,
@@ -522,6 +540,24 @@ fn corpus_parse_ok_fixtures() {
             delimiter: 0x1f,
             escape: EscapeMode::None,
             forced_delimiter: Some(0x1f),
+        },
+        ParseOkSpec {
+            name: "corpus/control_byte_header.csv",
+            delimiter: 0x01,
+            escape: EscapeMode::None,
+            forced_delimiter: Some(0x01),
+        },
+        ParseOkSpec {
+            name: "corpus/hex_prefix_header.csv",
+            delimiter: b',',
+            escape: EscapeMode::None,
+            forced_delimiter: None,
+        },
+        ParseOkSpec {
+            name: "corpus/u8_prefix_header.csv",
+            delimiter: b',',
+            escape: EscapeMode::None,
+            forced_delimiter: None,
         },
     ];
 
