@@ -83,6 +83,10 @@ specific dialect/escape, or a refusal code).
 | `trailing_spaces_fields.csv` | synthetic | parse_ok | `,` | none | Trailing spaces inside quoted fields. |
 | `utf8_accented.csv` | synthetic | parse_ok | `,` | none | UTF-8 accented characters. |
 | `windows_quotes_crlf.csv` | synthetic | parse_ok | `,` | none | CRLF with quoted fields. |
+| `missing_tokens.csv` | synthetic | parse_ok | `,` | none | Missing tokens (NA, NULL, -). |
+| `plus_sign_numbers.csv` | synthetic | parse_ok | `,` | none | Plus-signed numeric values. |
+| `utf8_bom_blank_lines.csv` | synthetic | parse_ok | `,` | none | UTF-8 BOM + leading blank lines. |
+| `non_ascii_header.csv` | synthetic | parse_ok | `,` | none | UTF-8 header names. |
 
 ## Next Additions
 - Excel CSV exports with quoted fields and embedded commas.
