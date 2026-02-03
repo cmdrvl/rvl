@@ -110,6 +110,8 @@ mod tests {
         Contributor::new(
             CellId::new(RowId::row_index(row), column.as_bytes().to_vec()),
             0.0,
+            0.0,
+            0.0,
             contribution,
             0,
         )

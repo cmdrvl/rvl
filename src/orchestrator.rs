@@ -315,16 +315,15 @@ fn run_row_order(
             columns_new_only: Some(intersection.new_only.len() as u64),
             ..Counts::default()
         };
-        return Ok(render_refusal_with_context(
-            refusal,
-            args,
-            None,
+        let context = RefusalContext {
+            key: None,
             dialect_old,
             dialect_new,
-            JsonAlignment::row_order(),
+            alignment: JsonAlignment::row_order(),
             counts,
-            Metrics::default(),
-        ));
+            metrics: Metrics::default(),
+        };
+        return Ok(render_refusal_with_context(refusal, args, context));
     }
 
     run_diff(
@@ -997,33 +996,32 @@ fn render_refusal(
         None => JsonAlignment::row_order(),
     };
 
-    let counts = Counts::default();
-    let metrics = Metrics::default();
-
-    render_refusal_with_context(
-        refusal,
-        args,
+    let context = RefusalContext {
         key,
         dialect_old,
         dialect_new,
-        alignment_mode,
-        counts,
-        metrics,
-    )
+        alignment: alignment_mode,
+        counts: Counts::default(),
+        metrics: Metrics::default(),
+    };
+
+    render_refusal_with_context(refusal, args, context)
 }
 
 fn render_refusal_with_context(
     refusal: RefusalPayload,
     args: &Args,
-    key: Option<&[u8]>,
-    dialect_old: Option<DialectReceipt>,
-    dialect_new: Option<DialectReceipt>,
-    alignment: JsonAlignment,
-    counts: Counts,
-    metrics: Metrics,
+    context: RefusalContext<'_>,
 ) -> PipelineResult {
     if args.json {
-        let ctx = json_context(args, alignment, dialect_old, dialect_new, counts, metrics);
+        let ctx = json_context(
+            args,
+            context.alignment,
+            context.dialect_old,
+            context.dialect_new,
+            context.counts,
+            context.metrics,
+        );
         let detail = refusal_detail_json(&refusal.detail);
         let refusal_json = JsonRefusal::new(refusal.code, refusal.code.reason(), detail);
         let output = JsonOutput::refusal(ctx, refusal_json)
@@ -1037,7 +1035,7 @@ fn render_refusal_with_context(
         let mut lines = Vec::new();
         lines.push(format!("RVL ERROR ({})", refusal.code));
         lines.push(String::new());
-        let alignment_label = key.map(render_identifier_human);
+        let alignment_label = context.key.map(render_identifier_human);
         let header = RefusalHeader {
             old_name: &args.old.to_string_lossy(),
             new_name: &args.new.to_string_lossy(),
@@ -1045,8 +1043,8 @@ fn render_refusal_with_context(
                 Some(label) => HumanAlignment::Key { column: label },
                 None => HumanAlignment::RowOrder,
             },
-            dialect_old,
-            dialect_new,
+            dialect_old: context.dialect_old,
+            dialect_new: context.dialect_new,
             settings: HumanSettings {
                 threshold: args.threshold,
                 tolerance: args.tolerance,
