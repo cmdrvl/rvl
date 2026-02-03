@@ -69,7 +69,7 @@ specific dialect/escape, or a refusal code).
 | `wide_row_extra_empty.csv` | synthetic | parse_ok | `,` | none | Extra trailing empty fields accepted. |
 | `wide_row_extra_non_empty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field. |
 | `windows_crlf.csv` | synthetic | parse_ok | `,` | none | Windows CRLF endings. |
-| `blank_records_between.csv` | synthetic | parse_ok | `,` | none | Blank data records between rows. |
+| `blank_records_between.csv` | synthetic | parse_ok | `,` | none | Blank data records between rows (`sep=,`). |
 | `caret_quoted.csv` | synthetic | parse_ok | `^` | none | Quoted carets inside fields. |
 | `currency_values.csv` | synthetic | parse_ok | `,` | none | Currency and accounting parens. |
 | `empty_fields.csv` | synthetic | parse_ok | `,` | none | Empty fields and trailing delimiter. |
