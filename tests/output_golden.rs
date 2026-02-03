@@ -302,3 +302,145 @@ fn golden_json_real_change_output() {
     assert_eq!(value, expected);
     assert_eq!(render_identifier_human(b"A"), "A");
 }
+
+#[test]
+fn golden_json_no_real_change_output() {
+    let ctx = JsonContext {
+        files: Files {
+            old: "old.csv".to_string(),
+            new: "new.csv".to_string(),
+        },
+        alignment: JsonAlignment::row_order(),
+        dialect: Dialect {
+            old: Some(DialectSide::new(b',', b'"', None)),
+            new: Some(DialectSide::new(b',', b'"', None)),
+        },
+        threshold: 0.95,
+        tolerance: 1e-9,
+        counts: Counts {
+            rows_old: Some(2),
+            rows_new: Some(2),
+            rows_aligned: Some(2),
+            columns_old: Some(2),
+            columns_new: Some(2),
+            columns_common: Some(2),
+            columns_old_only: Some(0),
+            columns_new_only: Some(0),
+            numeric_columns: Some(2),
+            numeric_cells_checked: Some(4),
+            numeric_cells_changed: Some(0),
+        },
+        metrics: Metrics {
+            total_change: Some(0.0),
+            max_abs_delta: Some(7e-10),
+            top_k_coverage: None,
+        },
+    };
+
+    let output = JsonOutput::no_real_change(ctx);
+    let value = serde_json::to_value(output).expect("json");
+
+    let expected = json!({
+        "version": "rvl.v0",
+        "outcome": "NO_REAL_CHANGE",
+        "files": { "old": "old.csv", "new": "new.csv" },
+        "alignment": { "mode": "row_order", "key_column": null },
+        "dialect": {
+            "old": { "delimiter": ",", "quote": "\"", "escape": null },
+            "new": { "delimiter": ",", "quote": "\"", "escape": null }
+        },
+        "threshold": 0.95,
+        "tolerance": 1e-9,
+        "counts": {
+            "rows_old": 2,
+            "rows_new": 2,
+            "rows_aligned": 2,
+            "columns_old": 2,
+            "columns_new": 2,
+            "columns_common": 2,
+            "columns_old_only": 0,
+            "columns_new_only": 0,
+            "numeric_columns": 2,
+            "numeric_cells_checked": 4,
+            "numeric_cells_changed": 0
+        },
+        "metrics": { "total_change": 0.0, "max_abs_delta": 7e-10, "top_k_coverage": null },
+        "limits": { "max_contributors": 25 },
+        "contributors": [],
+        "refusal": null
+    });
+
+    assert_eq!(value, expected);
+}
+
+#[test]
+fn golden_json_refusal_output() {
+    let ctx = JsonContext {
+        files: Files {
+            old: "old.csv".to_string(),
+            new: "new.csv".to_string(),
+        },
+        alignment: JsonAlignment::key("u8:id".to_string()),
+        dialect: Dialect {
+            old: Some(DialectSide::new(b',', b'"', None)),
+            new: Some(DialectSide::new(b',', b'"', None)),
+        },
+        threshold: 0.95,
+        tolerance: 1e-9,
+        counts: Counts::default(),
+        metrics: Metrics::default(),
+    };
+
+    let refusal = Refusal::new(
+        RefusalCode::KeyDup,
+        RefusalCode::KeyDup.reason(),
+        json!({
+            "file": "old",
+            "record": 184,
+            "key": "u8:A123"
+        }),
+    );
+
+    let output = JsonOutput::refusal(ctx, refusal);
+    let value = serde_json::to_value(output).expect("json");
+
+    let expected = json!({
+        "version": "rvl.v0",
+        "outcome": "REFUSAL",
+        "files": { "old": "old.csv", "new": "new.csv" },
+        "alignment": { "mode": "key", "key_column": "u8:id" },
+        "dialect": {
+            "old": { "delimiter": ",", "quote": "\"", "escape": null },
+            "new": { "delimiter": ",", "quote": "\"", "escape": null }
+        },
+        "threshold": 0.95,
+        "tolerance": 1e-9,
+        "counts": {
+            "rows_old": null,
+            "rows_new": null,
+            "rows_aligned": null,
+            "columns_old": null,
+            "columns_new": null,
+            "columns_common": null,
+            "columns_old_only": null,
+            "columns_new_only": null,
+            "numeric_columns": null,
+            "numeric_cells_checked": null,
+            "numeric_cells_changed": null
+        },
+        "metrics": { "total_change": null, "max_abs_delta": null, "top_k_coverage": null },
+        "limits": { "max_contributors": 25 },
+        "contributors": [],
+        "refusal": {
+            "code": "E_KEY_DUP",
+            "message": "duplicate key values",
+            "detail": {
+                "file": "old",
+                "record": 184,
+                "key": "u8:A123"
+            }
+        }
+    });
+
+    assert_eq!(value, expected);
+}
