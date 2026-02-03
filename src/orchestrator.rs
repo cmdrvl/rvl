@@ -1337,12 +1337,23 @@ fn collect_details(
             for row in key_rows.iter() {
                 let row_id = RowId::key(row.key.clone());
                 for column in columns {
-                    let old_raw = row.old.fields.get(column.old_index).map(|v| v.as_slice()).unwrap_or(b"");
-                    let new_raw = row.new.fields.get(column.new_index).map(|v| v.as_slice()).unwrap_or(b"");
+                    let old_raw = row
+                        .old
+                        .fields
+                        .get(column.old_index)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(b"");
+                    let new_raw = row
+                        .new
+                        .fields
+                        .get(column.new_index)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(b"");
                     if is_missing_token(old_raw) && is_missing_token(new_raw) {
                         continue;
                     }
-                    let (old_val, new_val) = match (parse_numeric(old_raw), parse_numeric(new_raw)) {
+                    let (old_val, new_val) = match (parse_numeric(old_raw), parse_numeric(new_raw))
+                    {
                         (Some(old_val), Some(new_val)) => (old_val, new_val),
                         _ => continue,
                     };
@@ -1365,16 +1376,25 @@ fn collect_details(
                 }
             }
         }
-        AlignmentContext::RowOrder { old_rows, new_rows, .. } => {
+        AlignmentContext::RowOrder {
+            old_rows, new_rows, ..
+        } => {
             for (idx, (old_row, new_row)) in old_rows.iter().zip(new_rows.iter()).enumerate() {
                 let row_id = RowId::row_index(idx + 1);
                 for column in columns {
-                    let old_raw = old_row.get(column.old_index).map(|v| v.as_slice()).unwrap_or(b"");
-                    let new_raw = new_row.get(column.new_index).map(|v| v.as_slice()).unwrap_or(b"");
+                    let old_raw = old_row
+                        .get(column.old_index)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(b"");
+                    let new_raw = new_row
+                        .get(column.new_index)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(b"");
                     if is_missing_token(old_raw) && is_missing_token(new_raw) {
                         continue;
                     }
-                    let (old_val, new_val) = match (parse_numeric(old_raw), parse_numeric(new_raw)) {
+                    let (old_val, new_val) = match (parse_numeric(old_raw), parse_numeric(new_raw))
+                    {
                         (Some(old_val), Some(new_val)) => (old_val, new_val),
                         _ => continue,
                     };
