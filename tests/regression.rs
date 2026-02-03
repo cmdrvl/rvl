@@ -37,12 +37,18 @@ fn normalize_human(text: &str) -> String {
 fn assert_case(name: &str, old: &str, new: &str, key: Option<&str>) {
     let human_actual = normalize_human(&run_case(old, new, key, false));
     let human_expected = normalize_human(&load_text(&format!("{REGRESSION_DIR}/{name}.human.txt")));
-    assert_eq!(human_actual, human_expected, "human output mismatch for {name}");
+    assert_eq!(
+        human_actual, human_expected,
+        "human output mismatch for {name}"
+    );
 
-    let json_actual: Value = serde_json::from_str(&run_case(old, new, key, true))
-        .expect("json output should parse");
+    let json_actual: Value =
+        serde_json::from_str(&run_case(old, new, key, true)).expect("json output should parse");
     let json_expected = load_json(&format!("{REGRESSION_DIR}/{name}.json"));
-    assert_eq!(json_actual, json_expected, "json output mismatch for {name}");
+    assert_eq!(
+        json_actual, json_expected,
+        "json output mismatch for {name}"
+    );
 }
 
 #[test]
