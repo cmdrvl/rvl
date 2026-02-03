@@ -659,4 +659,22 @@ Spec deltas (if implemented):
 - New CLI flags: `--time`, `--window`, `--agg`.
 - Output must include bucket counts and the chosen aggregation in both human/JSON headers.
 
+### Decision Notes: 60s Install + Distribution (bd-72f)
+Decision: **Defer implementation**, but capture the release checklist now so v0 can ship quickly once loved.
+
+Rationale:
+- Packaging changes don’t affect core correctness, but they do affect adoption.
+- Best handled once v0 output has stabilized to avoid rework on release artifacts.
+
+Proposed release checklist (when ready):
+- **Artifacts**: macOS universal binary (x86_64 + arm64) built from the same tag.
+- **Versioning**: tag matches `Cargo.toml` version; changelog highlights breaking changes.
+- **Homebrew**: tap formula with SHA256 for each artifact; install in <60s.
+- **Codesign**: sign macOS binaries to reduce Gatekeeper friction (not required for dev builds).
+- **Smoke tests**: run `rvl --help` and a tiny fixture on both architectures.
+
+Spec deltas (if implemented):
+- Add a `docs/release.md` checklist and a `scripts/release.sh` helper (opt‑in).
+- Add CI workflow that builds artifacts and uploads release assets on tag.
+
 Final rule: If you can’t explain the output to a tired ops person in 15 seconds, it doesn’t ship.

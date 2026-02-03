@@ -627,3 +627,23 @@ fn corpus_refusal_fixtures() {
         }
     }
 }
+
+#[test]
+fn corpus_sep_directive_detects() {
+    let fixtures = [
+        "corpus/backslash_escape.csv",
+        "corpus/extra_fields_non_empty.csv",
+        "corpus/sep_pipe.csv",
+        "corpus/sep_tab.csv",
+    ];
+
+    for name in fixtures {
+        let bytes = helpers::read_fixture(name);
+        let guarded = guard_input_bytes(&bytes).expect("fixture should be utf-8 safe");
+        let scan = scan_first_non_blank_line(guarded.split(|byte| *byte == b'\n'));
+        assert!(
+            matches!(scan, SepScan::Directive { .. }),
+            "{name} expected sep directive, got {scan:?}"
+        );
+    }
+}
