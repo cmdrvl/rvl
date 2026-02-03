@@ -508,7 +508,14 @@ fn run_diff(
                         numeric_cells_changed += 1;
                     }
                     let cell_id = CellId::new(row_id.clone(), column.name.clone());
-                    accumulator.observe(cell_id, delta, contribution, tie_breaker.next_value());
+                    accumulator.observe(
+                        cell_id,
+                        old_val,
+                        new_val,
+                        delta,
+                        contribution,
+                        tie_breaker.next_value(),
+                    );
                 }
             }
         }
@@ -537,7 +544,14 @@ fn run_diff(
                         numeric_cells_changed += 1;
                     }
                     let cell_id = CellId::new(row_id.clone(), column.name.clone());
-                    accumulator.observe(cell_id, delta, contribution, tie_breaker.next_value());
+                    accumulator.observe(
+                        cell_id,
+                        old_val,
+                        new_val,
+                        delta,
+                        contribution,
+                        tie_breaker.next_value(),
+                    );
                 }
             }
         }
@@ -1077,11 +1091,12 @@ fn render_no_real_change(
             output,
         }
     } else {
-        let mut lines = Vec::new();
-        lines.push("RVL".to_string());
-        lines.push(String::new());
-        lines.push("NO REAL CHANGE".to_string());
-        lines.push(String::new());
+        let mut lines = vec![
+            "RVL".to_string(),
+            String::new(),
+            "NO REAL CHANGE".to_string(),
+            String::new(),
+        ];
         lines.extend(render_human_header_lines(args, &ctx, alignment_label));
         lines.push(String::new());
         let body = NoRealBody {
@@ -1114,11 +1129,12 @@ fn render_real_change(
             output,
         }
     } else {
-        let mut lines = Vec::new();
-        lines.push("RVL".to_string());
-        lines.push(String::new());
-        lines.push("REAL CHANGE".to_string());
-        lines.push(String::new());
+        let mut lines = vec![
+            "RVL".to_string(),
+            String::new(),
+            "REAL CHANGE".to_string(),
+            String::new(),
+        ];
         lines.extend(render_human_header_lines(args, &ctx, alignment_label));
         lines.push(String::new());
         let contributors = build_human_contributors(details);
@@ -1287,7 +1303,9 @@ fn render_cell_label(cell_id: &CellId) -> String {
 
 fn count_columns(headers: &[Vec<u8>], key: Option<&[u8]>) -> u64 {
     let mut count = headers.len() as u64;
-    if let Some(key) = key && headers.iter().any(|name| name.as_slice() == key) {
+    if let Some(key) = key
+        && headers.iter().any(|name| name.as_slice() == key)
+    {
         count = count.saturating_sub(1);
     }
     count
@@ -1306,8 +1324,6 @@ fn map_encoding_issue(bytes: &[u8], issue: InputEncodingIssue) -> EncodingIssue 
         InputEncodingIssue::Utf16Or32Bom => {
             if bytes.starts_with(&UTF32_BE_BOM) || bytes.starts_with(&UTF32_LE_BOM) {
                 EncodingIssue::Utf32
-            } else if bytes.starts_with(&UTF16_BE_BOM) || bytes.starts_with(&UTF16_LE_BOM) {
-                EncodingIssue::Utf16
             } else {
                 EncodingIssue::Utf16
             }
