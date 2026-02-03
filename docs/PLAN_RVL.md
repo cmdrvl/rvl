@@ -603,4 +603,26 @@ Success metric (v0)
 - directory diffs
 - numeric diff over time windows
 
+### Decision Notes: Parquet/JSON Input (bd-7t9)
+Decision: **Defer**. Only pursue after v0 is loved and CSV remains the clear bottleneck.
+
+Rationale:
+- CSV already covers current workflows; adding new formats risks product clarity and increases maintenance surface.
+- JSON/Parquet bring schema and type semantics that could conflict with v0’s strict, refusal-first rules.
+
+If/when revisited, propose the following constraints:
+- **Explicit opt-in**: do not auto-detect by extension. Add a `--format parquet|json|csv` flag.
+- **Strict typing**: numeric columns must be explicit (Parquet numeric types, JSON numbers only). Mixed types refuse (`E_MIXED_TYPES`).
+- **Missingness**: keep v0 rule (missing vs numeric => `E_MISSINGNESS`), no silent coercions.
+- **Row identity**: key mode required for JSON arrays of objects unless a stable row order is guaranteed by source. Otherwise emit `E_NEED_KEY`.
+- **Schema diffs**: treat column intersection the same as CSV, report old_only/new_only.
+
+Spec deltas (if implemented):
+- New CLI flag: `--format <csv|parquet|json>` with strict validation (exit 2 on invalid).
+- JSON input accepted forms:
+  - array of objects (preferred): keys are columns; values must be numbers or missing tokens.
+  - array of arrays + explicit header row (otherwise refuse).
+- Parquet input: only flat schemas (no nested structs/lists); refuse nested fields with `E_HEADERS`.
+- Update refusal details to include `format` field for E_CSV_PARSE equivalents (new codes not required).
+
 Final rule: If you can’t explain the output to a tired ops person in 15 seconds, it doesn’t ship.

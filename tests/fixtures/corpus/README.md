@@ -15,15 +15,18 @@ specific dialect/escape, or a refusal code).
 | --- | --- | --- | --- | --- | --- |
 | `ambiguous_delimiter.csv` | synthetic | `E_DIALECT` | n/a | n/a | Comma vs semicolon tie with differing samples. |
 | `backslash_escape.csv` | synthetic | parse_ok | `,` | `\\` | Backslash-escaped quote in field. |
+| `backslash_in_quoted_rfc.csv` | synthetic | parse_ok | `,` | none | Backslash is literal inside RFC4180 quotes. |
 | `basic_new.csv` | synthetic | parse_ok | `,` | none | Simple header + rows. |
 | `basic_old.csv` | synthetic | parse_ok | `,` | none | Simple header + rows. |
 | `blank_lines_before_header.csv` | synthetic | parse_ok | `,` | none | Leading blank lines before header. |
 | `blank_only.csv` | synthetic | `E_HEADERS` | n/a | n/a | Blank-only file (no header). |
 | `blank_records.csv` | synthetic | parse_ok | `,` | none | Blank data records ignored. |
+| `bom_no_trailing_newline.csv` | synthetic | parse_ok | `,` | none | UTF-8 BOM, no trailing newline. |
 | `caret_basic.csv` | synthetic | parse_ok | `^` | none | Caret-delimited (simple). |
 | `caret_delimiter.csv` | synthetic | parse_ok | `^` | none | Caret-delimited. |
 | `crlf_line_endings.csv` | synthetic | parse_ok | `,` | none | CRLF line endings. |
 | `duplicate_headers.csv` | synthetic | `E_HEADERS` | n/a | n/a | Duplicate header after normalization. |
+| `empty_file.csv` | synthetic | `E_HEADERS` | n/a | n/a | Empty file (no header). |
 | `empty_header_names.csv` | synthetic | parse_ok | `,` | none | Empty header names normalize to `__rvl_col_*`. |
 | `empty_headers.csv` | synthetic | parse_ok | `,` | none | Mixed empty/non-empty header names. |
 | `encoding_nul_first8k.csv` | synthetic | `E_ENCODING` | n/a | n/a | NUL byte within first 8KB. |
@@ -39,7 +42,9 @@ specific dialect/escape, or a refusal code).
 | `invalid_quote.csv` | synthetic | `E_CSV_PARSE` | n/a | n/a | Invalid quote sequence. |
 | `leading_blank_lines.csv` | synthetic | parse_ok | `,` | none | Leading blank lines before header. |
 | `multiline_quoted.csv` | synthetic | parse_ok | `,` | none | Multiline quoted field. |
+| `mixed_line_endings.csv` | synthetic | parse_ok | `,` | none | Mixed LF/CRLF endings. |
 | `nul_in_8k.csv` | synthetic | `E_ENCODING` | n/a | n/a | NUL byte within first 8KB. |
+| `no_trailing_newline.csv` | synthetic | parse_ok | `,` | none | No trailing newline at EOF. |
 | `only_blank_lines.csv` | synthetic | `E_HEADERS` | n/a | n/a | Only blank lines (no header). |
 | `only_header.csv` | synthetic | parse_ok | `,` | none | Header with no data rows. |
 | `pipe_delimiter.csv` | synthetic | parse_ok | `|` | none | Pipe-delimited. |
@@ -48,6 +53,7 @@ specific dialect/escape, or a refusal code).
 | `rfc4180_quotes.csv` | synthetic | parse_ok | `,` | none | RFC4180 quoted fields. |
 | `semicolon_delimiter.csv` | synthetic | parse_ok | `;` | none | Semicolon-delimited. |
 | `sep_equal.csv` | synthetic | parse_ok | `=` | none | `sep=` directive with `=` delimiter. |
+| `sep_only.csv` | synthetic | `E_HEADERS` | n/a | n/a | `sep=` directive with no header. |
 | `sep_pipe.csv` | synthetic | parse_ok | `|` | none | `sep=` directive. |
 | `sep_semicolon.csv` | synthetic | parse_ok | `;` | none | `sep=` directive. |
 | `sep_tab.csv` | synthetic | parse_ok | `\t` | none | `sep=` directive (tab). |
