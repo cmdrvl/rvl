@@ -1023,6 +1023,9 @@ fn render_refusal_with_context(
     args: &Args,
     context: RefusalContext<'_>,
 ) -> PipelineResult {
+    let old_display = display_name(&args.old);
+    let new_display = display_name(&args.new);
+
     if args.json {
         let ctx = json_context(
             args,
@@ -1047,8 +1050,8 @@ fn render_refusal_with_context(
         lines.push(String::new());
         let alignment_label = context.key.map(render_identifier_human);
         let header = RefusalHeader {
-            old_name: &args.old.to_string_lossy(),
-            new_name: &args.new.to_string_lossy(),
+            old_name: &old_display,
+            new_name: &new_display,
             alignment: match alignment_label.as_deref() {
                 Some(label) => HumanAlignment::Key { column: label },
                 None => HumanAlignment::RowOrder,
@@ -1065,8 +1068,8 @@ fn render_refusal_with_context(
         let body = RefusalBody {
             code: refusal.code,
             detail: &refusal.detail,
-            old_name: &args.old.to_string_lossy(),
-            new_name: &args.new.to_string_lossy(),
+            old_name: &old_display,
+            new_name: &new_display,
         };
         lines.extend(render_refusal_body(&body));
         PipelineResult {
@@ -1090,13 +1093,21 @@ fn render_no_real_change(
             output,
         }
     } else {
+        let old_display = display_name(&args.old);
+        let new_display = display_name(&args.new);
         let mut lines = vec![
             "RVL".to_string(),
             String::new(),
             "NO REAL CHANGE".to_string(),
             String::new(),
         ];
-        lines.extend(render_human_header_lines(args, &ctx, alignment_label));
+        lines.extend(render_human_header_lines(
+            args,
+            &ctx,
+            alignment_label,
+            &old_display,
+            &new_display,
+        ));
         lines.push(String::new());
         let body = NoRealBody {
             max_abs_delta: ctx.metrics.max_abs_delta.unwrap_or(0.0),
@@ -1128,13 +1139,21 @@ fn render_real_change(
             output,
         }
     } else {
+        let old_display = display_name(&args.old);
+        let new_display = display_name(&args.new);
         let mut lines = vec![
             "RVL".to_string(),
             String::new(),
             "REAL CHANGE".to_string(),
             String::new(),
         ];
-        lines.extend(render_human_header_lines(args, &ctx, alignment_label));
+        lines.extend(render_human_header_lines(
+            args,
+            &ctx,
+            alignment_label,
+            &old_display,
+            &new_display,
+        ));
         lines.push(String::new());
         let contributors = build_human_contributors(details);
         let body = RealChangeBody {
@@ -1154,6 +1173,8 @@ fn render_human_header_lines(
     args: &Args,
     ctx: &JsonContext,
     alignment_label: Option<&str>,
+    old_name: &str,
+    new_name: &str,
 ) -> Vec<String> {
     let alignment = match alignment_label {
         Some(label) => HumanAlignment::Key { column: label },
@@ -1202,8 +1223,8 @@ fn render_human_header_lines(
         });
 
     let header = HumanHeader {
-        old_name: &args.old.to_string_lossy(),
-        new_name: &args.new.to_string_lossy(),
+        old_name,
+        new_name,
         alignment,
         columns,
         checked,
@@ -1316,6 +1337,12 @@ fn dialect_receipt(parsed: &ParsedCsv) -> DialectReceipt {
         quote: b'"',
         escape: parsed.escape.escape_byte(),
     }
+}
+
+fn display_name(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
 fn map_encoding_issue(bytes: &[u8], issue: InputEncodingIssue) -> EncodingIssue {
