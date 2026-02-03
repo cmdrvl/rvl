@@ -75,6 +75,29 @@ Capture the following:
 - Max RSS (from `time` output).
 - Throughput (rows/sec = rows / elapsed time).
 
+## Optional runtime harness (opt-in)
+If you generated `/tmp/rvl-perf/old.csv` and `/tmp/rvl-perf/new.csv`, you can
+benchmark via the runtime harness:
+
+```bash
+RVL_RUNTIME_OLD=/tmp/rvl-perf/old.csv \
+RVL_RUNTIME_NEW=/tmp/rvl-perf/new.csv \
+cargo bench --bench runtime
+```
+
+Key-mode variant:
+```bash
+RVL_RUNTIME_OLD=/tmp/rvl-perf/old.csv \
+RVL_RUNTIME_NEW=/tmp/rvl-perf/new.csv \
+RVL_RUNTIME_KEY=id \
+cargo bench --bench runtime
+```
+
+Tuning:
+- `RVL_RUNTIME_ITERS` (default 50)
+- `RVL_RUNTIME_WARMUP` (default 3)
+- `RVL_RUNTIME_BUDGET_MS` (optional; fails if average exceeds budget)
+
 ## Sample results (2026-02-03, macOS)
 - Build: `cargo build --release` (rustup `cargo 1.94.0-nightly`)
 - Rows/cols: 1,000,000 rows, 11 numeric columns (1 change)

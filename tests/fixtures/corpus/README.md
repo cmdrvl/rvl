@@ -87,6 +87,12 @@ specific dialect/escape, or a refusal code).
 | `plus_sign_numbers.csv` | synthetic | parse_ok | `,` | none | Plus-signed numeric values. |
 | `utf8_bom_blank_lines.csv` | synthetic | parse_ok | `,` | none | UTF-8 BOM + leading blank lines. |
 | `non_ascii_header.csv` | synthetic | parse_ok | `,` | none | UTF-8 header names. |
+| `locale_decimal.csv` | synthetic | parse_ok | `,` | none | Locale-style decimals (non-numeric tokens). |
+| `percent_values.csv` | synthetic | parse_ok | `,` | none | Percent suffixed values (non-numeric tokens). |
+| `accounting_parentheses.csv` | synthetic | parse_ok | `,` | none | Accounting-style negatives. |
+| `delim_0x1f.csv` | synthetic | parse_ok | `0x1F` | none | Unit-separator delimiter. |
+| `missingness_numeric_vs_missing.csv` | synthetic | parse_ok | `,` | none | Numeric vs missing tokens. |
+| `mixed_types_numeric_text.csv` | synthetic | parse_ok | `,` | none | Mixed numeric and text tokens. |
 
 ## Next Additions
 - Excel CSV exports with quoted fields and embedded commas.

@@ -20,9 +20,10 @@ Candidates (evaluate if practical):
 - Arrow / Polars CSV readers (if they can be used deterministically)
 
 ## Environment (record actual values)
-- Machine: TBD
-- OS: TBD
-- Rust: TBD
+- Machine: macbookpro.lan (x86_64)
+- OS: macOS 26.2 (Build 25C56)
+- Rust: rustc 1.94.0-nightly (f6a07efc8 2026-01-16)
+- Cargo: cargo 1.94.0-nightly (6d1bd93c4 2026-01-10)
 - Compiler flags: release profile (see Cargo.toml)
 
 ## Datasets
@@ -47,26 +48,28 @@ Measure throughput with a consistent tool (e.g., `time` or `hyperfine`) and
 repeat runs to smooth variance. Use the same input files and capture command
 lines in the report.
 
-## Results (fill in)
+## Results
 
 ### Compatibility
 | Parser | Corpus pass | Mismatches | Notes |
 | --- | --- | --- | --- |
-| csv (baseline) | TBD | TBD | TBD |
+| csv (baseline) | TBD | TBD | Not run yet (use test suite as proxy). |
 | candidate A | TBD | TBD | TBD |
 | candidate B | TBD | TBD | TBD |
 
 ### Throughput / Memory
 | Parser | Rows/sec | MB/sec | Peak RSS | Notes |
 | --- | --- | --- | --- | --- |
-| csv (baseline) | TBD | TBD | TBD | TBD |
+| csv (baseline) | 25.4k | 4.24 | n/a | 1,000,000 rows, 11 cols; /usr/bin/time -l (RSS unavailable: sysctl kern.clockrate permission error); input size 167.27 MB; real 39.43s. |
 | candidate A | TBD | TBD | TBD | TBD |
 | candidate B | TBD | TBD | TBD | TBD |
 
 ## Conclusion
-TBD after measurements. Default position: keep Rust `csv` unless a candidate
-meets the >=25% throughput gain with equal compatibility and acceptable memory.
+Baseline measurement captured for Rust `csv`. Candidate parsers still TBD; do
+not switch unless a candidate is >=25% faster with equal compatibility and
+acceptable memory.
 
 ## Next Steps
-- Run the bakeoff and fill in the results tables.
+- Run corpus compatibility checks and fill in the baseline compatibility row.
+- Evaluate at least one alternative parser and record results.
 - If a candidate wins, draft an integration plan and update the spec/roadmap.

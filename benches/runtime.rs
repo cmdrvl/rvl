@@ -8,9 +8,9 @@ use rvl::orchestrator;
 
 struct Case {
     name: &'static str,
-    old: &'static str,
-    new: &'static str,
-    key: Option<&'static str>,
+    old: PathBuf,
+    new: PathBuf,
+    key: Option<String>,
 }
 
 fn main() {
@@ -24,20 +24,35 @@ fn main() {
         println!("budget_ms={budget}");
     }
 
-    let cases = [
+    let mut cases = vec![
         Case {
             name: "row_order_basic",
-            old: "tests/fixtures/corpus/basic_old.csv",
-            new: "tests/fixtures/corpus/basic_new.csv",
+            old: PathBuf::from("tests/fixtures/corpus/basic_old.csv"),
+            new: PathBuf::from("tests/fixtures/corpus/basic_new.csv"),
             key: None,
         },
         Case {
             name: "key_basic",
-            old: "tests/fixtures/corpus/basic_old.csv",
-            new: "tests/fixtures/corpus/basic_new.csv",
-            key: Some("id"),
+            old: PathBuf::from("tests/fixtures/corpus/basic_old.csv"),
+            new: PathBuf::from("tests/fixtures/corpus/basic_new.csv"),
+            key: Some("id".to_string()),
         },
     ];
+
+    if let (Some(old), Some(new)) = (env_string("RVL_RUNTIME_OLD"), env_string("RVL_RUNTIME_NEW")) {
+        let key = env_string("RVL_RUNTIME_KEY");
+        let name = if key.is_some() {
+            "env_key"
+        } else {
+            "env_row_order"
+        };
+        cases.push(Case {
+            name,
+            old: PathBuf::from(old),
+            new: PathBuf::from(new),
+            key,
+        });
+    }
 
     let mut failed = false;
     for case in &cases {
@@ -60,9 +75,9 @@ fn main() {
 
 fn run_case(case: &Case, iterations: u64, warmup: u64) -> f64 {
     let args = Args {
-        old: PathBuf::from(case.old),
-        new: PathBuf::from(case.new),
-        key: case.key.map(|value| value.to_string()),
+        old: case.old.clone(),
+        new: case.new.clone(),
+        key: case.key.clone(),
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
@@ -109,4 +124,8 @@ fn env_f64(name: &str) -> Option<f64> {
         .ok()
         .and_then(|value| value.parse::<f64>().ok())
         .filter(|value| *value > 0.0)
+}
+
+fn env_string(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|value| !value.is_empty())
 }
