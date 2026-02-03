@@ -198,9 +198,10 @@ fn golden_refusal_human_output() {
         new_name: "new.csv",
     };
 
-    let mut lines = Vec::new();
-    lines.push(format!("RVL ERROR ({})", RefusalCode::KeyDup));
-    lines.push(String::new());
+    let mut lines = vec![
+        format!("RVL ERROR ({})", RefusalCode::KeyDup),
+        String::new(),
+    ];
     lines.extend(render_refusal_header(&header));
     lines.push(String::new());
     lines.extend(render_refusal_body(&body));
