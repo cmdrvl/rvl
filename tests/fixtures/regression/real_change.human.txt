@@ -1,0 +1,18 @@
+RVL
+
+REAL CHANGE
+
+Compared: tests/fixtures/regression/real_change_old.csv -> tests/fixtures/regression/real_change_new.csv
+Alignment: key=id
+Columns: common=2 old_only=0 new_only=0
+Checked: 3 rows, 1 numeric columns (3 cells)
+Dialect(old): delimiter=, quote=" escape=none
+Dialect(new): delimiter=, quote=" escape=none
+Ranking: abs(delta) (unscaled)
+Settings: threshold=95.0% tolerance=1e-9
+
+1 cell explain 100.0% of total numeric change (threshold 95.0%):
+
+1. B.value  +3  (2 -> 5)
+
+Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold).

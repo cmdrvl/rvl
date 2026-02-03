@@ -573,32 +573,32 @@ fn run_diff(
         top_k_coverage,
     };
 
-    if let AlignmentContext::RowOrder { old_rows, new_rows } = &alignment {
-        if accumulator.total_change > 0.0 {
-            let detection = detect_shuffle(&old_headers, &new_headers, old_rows, new_rows);
-            if detection.reordered {
-                let refusal = RefusalPayload::with_default_next(
-                    RefusalCode::NeedKey,
-                    RefusalKind::NeedKey {
-                        suggested_keys: detection.suggested_keys,
-                    },
-                    rerun_paths,
-                );
-                let mut counts = counts.clone();
-                counts.numeric_cells_checked = None;
-                counts.numeric_cells_changed = None;
-                metrics = Metrics::default();
-                return Ok(render_refusal_with_context(
-                    refusal,
-                    args,
-                    key_bytes,
-                    dialect_old,
-                    dialect_new,
-                    alignment_mode,
-                    counts,
-                    metrics,
-                ));
-            }
+    if let AlignmentContext::RowOrder { old_rows, new_rows } = &alignment
+        && accumulator.total_change > 0.0
+    {
+        let detection = detect_shuffle(&old_headers, &new_headers, old_rows, new_rows);
+        if detection.reordered {
+            let refusal = RefusalPayload::with_default_next(
+                RefusalCode::NeedKey,
+                RefusalKind::NeedKey {
+                    suggested_keys: detection.suggested_keys,
+                },
+                rerun_paths,
+            );
+            let mut counts = counts.clone();
+            counts.numeric_cells_checked = None;
+            counts.numeric_cells_changed = None;
+            metrics = Metrics::default();
+            return Ok(render_refusal_with_context(
+                refusal,
+                args,
+                key_bytes,
+                dialect_old,
+                dialect_new,
+                alignment_mode,
+                counts,
+                metrics,
+            ));
         }
     }
 
