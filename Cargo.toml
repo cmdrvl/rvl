@@ -1,0 +1,18 @@
+[package]
+name = "rvl"
+version = "0.1.0"
+edition = "2024"
+description = "Reveal the smallest set of numeric changes that explain what actually changed."
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+csv = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
