@@ -36,7 +36,7 @@ specific dialect/escape, or a refusal code).
 | `extra_fields_empty.csv` | synthetic | parse_ok | `,` | none | Extra trailing empty fields accepted. |
 | `extra_fields_non_empty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field (`sep=,` forces delimiter). |
 | `extra_trailing_empty_fields.csv` | synthetic | parse_ok | `,` | none | Extra trailing empty fields accepted. |
-| `extra_trailing_nonempty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field. |
+| `extra_trailing_nonempty.csv` | synthetic | `E_HEADERS` | n/a | n/a | Extra trailing non-empty field (`sep=,`). |
 | `header_only.csv` | synthetic | parse_ok | `,` | none | Header with no data rows. |
 | `header_with_spaces.csv` | synthetic | parse_ok | `,` | none | Header names trimmed. |
 | `invalid_quote.csv` | synthetic | `E_CSV_PARSE` | n/a | n/a | Invalid quote sequence. |
