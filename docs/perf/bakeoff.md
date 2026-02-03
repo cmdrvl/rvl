@@ -53,7 +53,7 @@ lines in the report.
 ### Compatibility
 | Parser | Corpus pass | Mismatches | Notes |
 | --- | --- | --- | --- |
-| csv (baseline) | 86/88 | 2 | corpus/header_with_spaces.csv expected parse_ok but got E_DIALECT; corpus/wide_row_extra_non_empty.csv expected E_HEADERS but got E_DIALECT. |
+| csv (baseline) | Pass (`cargo test --test corpus_parse`) | 0 | Corpus parse/REFUSAL expectations matched. |
 | candidate A | TBD | TBD | TBD |
 | candidate B | TBD | TBD | TBD |
 
