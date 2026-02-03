@@ -625,4 +625,38 @@ Spec deltas (if implemented):
 - Parquet input: only flat schemas (no nested structs/lists); refuse nested fields with `E_HEADERS`.
 - Update refusal details to include `format` field for E_CSV_PARSE equivalents (new codes not required).
 
+### Decision Notes: Directory Diffs (bd-242)
+Decision: **Defer**. This feature breaks the “single verdict” contract unless we redesign output.
+
+Rationale:
+- Directory diffs imply *many* comparisons, which conflicts with v0’s single, copy‑paste‑able output.
+- Pairing rules (by name? checksum? manifest?) are easy to get wrong and hard to explain succinctly.
+
+If/when revisited, propose the following constraints:
+- **Explicit manifest**: require a manifest file listing `old_path,new_path` pairs; refuse without it.
+- **Deterministic ordering**: sort pairs by manifest order; no implicit filesystem ordering.
+- **Single output**: either aggregate summary only (counts + worst offenders) or emit multiple outputs in a JSON array (breaks v0 contract; would require a new top-level schema version).
+- **Refusals**: missing files map to `E_IO`; pairing mismatches would likely need a new refusal code (e.g., `E_PAIRING`) instead of overloading `E_ROWCOUNT`.
+
+Spec deltas (if implemented):
+- New CLI flag: `--pairs <manifest.csv>` or `--dir` plus `--pairing manifest`.
+- JSON output would need a `results[]` array or version bump (e.g., `rvl.v1`).
+
+### Decision Notes: Time Window Diffs (bd-1kq)
+Decision: **Defer**. Time windows add aggregation semantics that conflict with v0’s minimal‑change ethos.
+
+Rationale:
+- Windowing implies aggregation (sum/avg/last), which changes the meaning of “smallest set of numeric changes.”
+- It invites hidden semantics (time alignment, missing periods) that are better handled upstream.
+
+If/when revisited, propose the following constraints:
+- **Explicit window spec**: require `--window <period>` plus `--agg <sum|avg|last>`; refuse without both.
+- **Explicit time column**: `--time <column>`; no auto-detect.
+- **Deterministic bucketing**: fixed UTC boundaries; no locale or TZ inference.
+- **Missing buckets**: refuse on missing buckets rather than zero-fill (`E_MISSINGNESS` or new code).
+
+Spec deltas (if implemented):
+- New CLI flags: `--time`, `--window`, `--agg`.
+- Output must include bucket counts and the chosen aggregation in both human/JSON headers.
+
 Final rule: If you can’t explain the output to a tired ops person in 15 seconds, it doesn’t ship.
