@@ -593,8 +593,97 @@ Execution (2 weeks)
 - iterate only on: install friction, refusal clarity, output readability
 - ship a release page with 3 examples and a one-line promise (no docs sprawl)
 
+Release page content plan
+- One-line promise: “Paste two CSVs. Get the smallest set of numeric changes that explain what actually changed.”
+- 3 example outputs (copy/paste exact CLI output; keep it screenshot-able):
+- Example 1: `REAL CHANGE` with 3 contributors (include thresholds/tolerance + alignment + dialect header).
+- Example 2: `NO REAL CHANGE` with max abs delta shown.
+- Example 3: `REFUSAL` (use `E_DIALECT` or `E_HEADERS`) showing the concrete next command.
+- Minimal install snippet (Homebrew + curl fallback), plus `rvl --help` and a single 10‑line demo.
+- “How to read this output” micro-legend: counts, thresholds/tolerance, alignment, dialect.
+- CTA: “Paste output in Slack and tag us; we’ll help you interpret/refine.”
+
+Design partner outreach checklist
+- Target roles: finance ops, supply chain, RevOps, data analysts who reconcile CSV exports.
+- Source list: 5 from personal network, 5 from adjacent Slack communities, 5 from cold outreach.
+- Outreach message includes: what rvl does, 60s install, weekly 10‑min feedback, ask for 3 pasteouts/week.
+- Onboarding checklist:
+- Collect two real CSV exports (before/after) and a short description of the reconciliation task.
+- Run rvl together once (screen share) and verify output readability.
+- Capture the first pasted output + 1–2 confusion points.
+- Ongoing loop:
+- Weekly check-in, triage only install/refusal/output readability friction.
+- Track per‑partner pasteouts (target ≥3/week).
+- Success tracking: keep a simple table of partner, role, cadence, pasteouts/week, blockers.
+
 Success metric (v0)
 - 100 people who voluntarily paste `rvl` output into Slack at least once/week
+
+Release page draft (bd-bo0)
+- Hero line: "Stop reconciling. Paste the verdict."
+- Subhead: "rvl compares two CSVs and prints the smallest set of numeric changes that explain what actually changed."
+- CTA: `rvl old.csv new.csv --key id`
+- Example 1: REAL CHANGE (key mode)
+```
+RVL
+
+REAL CHANGE
+
+Compared: old.csv -> new.csv
+Alignment: key=id
+Columns: common=15 old_only=2 new_only=1
+Checked: 4,183 rows, 12 numeric columns (50,196 cells)
+Dialect(old): delimiter=, quote=" escape=none
+Dialect(new): delimiter=, quote=" escape=none
+Ranking: abs(delta) (unscaled)
+Settings: threshold=95.0% tolerance=1e-9
+
+3 cells explain 95.2% of total numeric change (threshold 95.0%):
+
+1. NVDA.market_value  +1842100  (123 -> 1842223)
+2. UST10Y.price       -0.37     (4.21 -> 3.84)
+3. EURUSD.fx_rate     +0.0013   (1.0842 -> 1.0855)
+
+Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold).
+```
+- Example 2: NO REAL CHANGE (row-order)
+```
+RVL
+
+NO REAL CHANGE
+
+Compared: old.csv -> new.csv
+Alignment: row-order (no key)
+Columns: common=15 old_only=2 new_only=1
+Checked: 4,183 rows, 12 numeric columns (50,196 cells)
+Dialect(old): delimiter=, quote=" escape=none
+Dialect(new): delimiter=, quote=" escape=none
+Ranking: abs(delta) (unscaled)
+Settings: threshold=95.0% tolerance=1e-9
+Max abs delta: 7e-10 (<= tolerance 1e-9).
+No numeric deltas above tolerance in common numeric columns.
+```
+- Example 3: REFUSAL (operator handoff)
+```
+RVL ERROR (E_KEY_DUP)
+
+Compared: old.csv -> new.csv
+Alignment: key=id
+Dialect(old): delimiter=, quote=" escape=none
+Dialect(new): delimiter=, quote=" escape=none
+Settings: threshold=95.0% tolerance=1e-9
+
+Reason (E_KEY_DUP): duplicate key values.
+Example: old.csv data record 184 duplicates key "A123".
+Next: choose a unique key column or dedupe the data, then rerun
+```
+
+Design partner loop checklist (bd-bo0)
+- Target users: finance/recon teams with weekly/daily CSV comparisons.
+- Ask: install rvl and paste 3 outputs per week into Slack.
+- Capture: copy-paste outputs + 1-line context for each paste.
+- Iterate weekly on install friction, refusal clarity, output readability.
+- Success signal: 100 voluntary pasteouts/week across partners.
 
 ---
 

@@ -78,30 +78,31 @@ Other knobs:
 | Parser | Corpus pass | Mismatches | Notes |
 | --- | --- | --- | --- |
 | csv (baseline) | Pass (`cargo test --test corpus_parse`) | 0 | Corpus parse/REFUSAL expectations matched. |
-| candidate A | TBD | TBD | TBD |
+| simd-csv (candidate) | TBD | TBD | Compatibility not yet run; backslash-escape unsupported. |
 | candidate B | TBD | TBD | TBD |
 
 ### Throughput / Memory
 | Parser | Rows/sec | MB/sec | Peak RSS | Notes |
 | --- | --- | --- | --- | --- |
-| csv (baseline) | 1.91M | 159.63 | n/a | `RVL_BAKEOFF_INPUTS=/tmp/rvl-perf/old.csv` (1,000,001 rows incl. header); `RVL_BAKEOFF_ITERS=1`; parser-only bench; avg_ms=523.940. |
-| simd-csv (candidate) | 0.76M | 63.44 | n/a | Same inputs; `RVL_BAKEOFF_PARSER=simd_csv`; avg_ms=1318.360. Harness skips backslash-escape files. |
+| csv (baseline) | 1.91M | 159.5 | n/a | /tmp/rvl-perf/{old,new}.csv (1,000,001 rows, 83.63 MB). `RVL_BAKEOFF_PARSER=csv RVL_BAKEOFF_ITERS=5 RVL_BAKEOFF_WARMUP=1 cargo bench --bench bakeoff` (avg_ms ~524.2). |
+| simd-csv (candidate) | 2.31M | 193.3 | n/a | Same inputs; `RVL_BAKEOFF_PARSER=simd_csv RVL_BAKEOFF_ITERS=5 RVL_BAKEOFF_WARMUP=1 cargo bench --bench bakeoff` (avg_ms ~432.7). Harness skips backslash-escape files. |
 | candidate B | TBD | TBD | TBD | TBD |
 
 ### Bakeoff Harness Run (2026-02-04)
-Ran `cargo bench --bench bakeoff` with default inputs:
-- `tests/fixtures/corpus/basic_old.csv`: avg_ms=0.525, rows=3, rows/sec=5711.5, MB/sec=0.03
-- `tests/fixtures/corpus/basic_new.csv`: avg_ms=0.542, rows=3, rows/sec=5532.0, MB/sec=0.03
+Ran `cargo bench --bench bakeoff` with a large input:
+- `RVL_BAKEOFF_INPUTS=/tmp/rvl-perf/old.csv,/tmp/rvl-perf/new.csv` (`RVL_BAKEOFF_ITERS=5`, `RVL_BAKEOFF_WARMUP=1`)
+- `RVL_BAKEOFF_PARSER=csv`: avg_ms ~524.2, rows=1,000,001, rows/sec ~1.91M, MB/sec ~159.5
+- `RVL_BAKEOFF_PARSER=simd_csv`: avg_ms ~432.7, rows=1,000,001, rows/sec ~2.31M, MB/sec ~193.3
 
-Note: these fixtures are tiny and only verify harness wiring. For meaningful
-throughput, supply a large dataset via `RVL_BAKEOFF_INPUTS`.
+Note: the bakeoff harness is in-memory and does not include disk I/O.
 
 ## Conclusion
 Baseline throughput measured for Rust `csv`; corpus compatibility passes with
-0 mismatches. `simd-csv` was slower on the large-file sample, so there is no
-case to switch. Revisit only if another candidate shows a >=25% gain with equal
-compatibility and acceptable memory.
+0 mismatches. `simd-csv` is ~21% faster on the large-file sample but remains
+below the >=25% threshold and compatibility is unverified. Revisit only if a
+candidate shows a >=25% gain with equal compatibility and acceptable memory.
 
 ## Next Steps
+- Run corpus compatibility for simd-csv and record results.
 - If needed, evaluate Arrow/Polars CSV readers and record results.
 - If a candidate wins, draft an integration plan and update the spec/roadmap.

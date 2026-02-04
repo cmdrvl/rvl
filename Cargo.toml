@@ -9,6 +9,10 @@ clap = { version = "4", features = ["derive"] }
 csv = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+simd-csv = { version = "0.10.3", optional = true }
+
+[features]
+simd_csv = ["simd-csv"]
 
 [dev-dependencies]
 simd-csv = "0.10.3"
