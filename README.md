@@ -29,6 +29,51 @@ cargo build --release
 
 ---
 
+## REST API Server
+
+Run rvl as an HTTP service:
+
+```bash
+# Build and run the server
+cargo run --bin rvl-server --features server
+
+# Or build release binary
+cargo build --release --features server
+./target/release/rvl-server
+```
+
+Environment variables:
+- `RVL_PORT` — Port to listen on (default: 8080)
+- `RVL_HOST` — Host to bind to (default: 0.0.0.0)
+
+### Endpoints
+
+**Health check:**
+```bash
+curl http://localhost:8080/health
+```
+
+**Compare two CSVs:**
+```bash
+curl -X POST http://localhost:8080/compare \
+  -F old=@old.csv \
+  -F new=@new.csv \
+  -F key=id \
+  -F threshold=0.95
+```
+
+The `/compare` endpoint accepts multipart form data:
+- `old` (required) — The old CSV file
+- `new` (required) — The new CSV file  
+- `key` (optional) — Column name for row alignment
+- `threshold` (optional) — Coverage threshold, 0-1 (default: 0.95)
+- `tolerance` (optional) — Numeric tolerance (default: 1e-9)
+- `delimiter` (optional) — Force delimiter (comma/tab/semicolon/pipe/caret)
+
+Returns the same JSON structure as `rvl --json`.
+
+---
+
 ## Quickstart
 
 Compare two CSVs by row order:

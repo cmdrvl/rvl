@@ -1,0 +1,271 @@
+//! rvl REST API server.
+//!
+//! Provides HTTP endpoints for CSV comparison via the rvl engine.
+//!
+//! Run with: `cargo run --bin rvl-server --features server`
+
+use std::io::Write;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+
+use axum::{
+    Json, Router,
+    extract::{DefaultBodyLimit, Multipart},
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+};
+use serde::{Deserialize, Serialize};
+use tempfile::NamedTempFile;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+use rvl::cli::args::Args;
+use rvl::cli::exit::Outcome;
+use rvl::orchestrator;
+
+/// Server configuration from environment.
+struct Config {
+    port: u16,
+    host: String,
+}
+
+impl Config {
+    fn from_env() -> Self {
+        Self {
+            port: std::env::var("RVL_PORT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(8080),
+            host: std::env::var("RVL_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    // Initialize tracing
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "rvl_server=info,tower_http=info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let config = Config::from_env();
+    let addr: SocketAddr = format!("{}:{}", config.host, config.port)
+        .parse()
+        .expect("Invalid address");
+
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/compare", post(compare))
+        .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB max
+        .layer(CorsLayer::permissive())
+        .layer(TraceLayer::new_for_http());
+
+    tracing::info!("rvl-server listening on {}", addr);
+
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+
+/// Health check endpoint.
+async fn health() -> impl IntoResponse {
+    Json(HealthResponse {
+        status: "ok",
+        version: env!("CARGO_PKG_VERSION"),
+    })
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    version: &'static str,
+}
+
+/// Compare two CSV files.
+///
+/// Accepts multipart form data with:
+/// - `old`: The old CSV file
+/// - `new`: The new CSV file
+/// - `key`: (optional) Column name for row alignment
+/// - `threshold`: (optional) Coverage threshold (0-1, default 0.95)
+/// - `tolerance`: (optional) Numeric tolerance (default 1e-9)
+/// - `delimiter`: (optional) Force delimiter (comma/tab/semicolon/pipe/caret)
+async fn compare(mut multipart: Multipart) -> impl IntoResponse {
+    let mut old_file: Option<NamedTempFile> = None;
+    let mut new_file: Option<NamedTempFile> = None;
+    let mut key: Option<String> = None;
+    let mut threshold: f64 = 0.95;
+    let mut tolerance: f64 = 1e-9;
+    let mut delimiter: Option<u8> = None;
+
+    // Parse multipart form
+    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+        let name = field.name().unwrap_or("").to_string();
+        
+        match name.as_str() {
+            "old" => {
+                let data = match field.bytes().await {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(ErrorResponse {
+                                error: format!("Failed to read 'old' file: {}", e),
+                            }),
+                        )
+                            .into_response();
+                    }
+                };
+                let mut temp = NamedTempFile::new().unwrap();
+                temp.write_all(&data).unwrap();
+                old_file = Some(temp);
+            }
+            "new" => {
+                let data = match field.bytes().await {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(ErrorResponse {
+                                error: format!("Failed to read 'new' file: {}", e),
+                            }),
+                        )
+                            .into_response();
+                    }
+                };
+                let mut temp = NamedTempFile::new().unwrap();
+                temp.write_all(&data).unwrap();
+                new_file = Some(temp);
+            }
+            "key" => {
+                if let Ok(text) = field.text().await {
+                    if !text.is_empty() {
+                        key = Some(text);
+                    }
+                }
+            }
+            "threshold" => {
+                if let Ok(text) = field.text().await {
+                    if let Ok(val) = text.parse::<f64>() {
+                        if val > 0.0 && val <= 1.0 {
+                            threshold = val;
+                        }
+                    }
+                }
+            }
+            "tolerance" => {
+                if let Ok(text) = field.text().await {
+                    if let Ok(val) = text.parse::<f64>() {
+                        if val >= 0.0 {
+                            tolerance = val;
+                        }
+                    }
+                }
+            }
+            "delimiter" => {
+                if let Ok(text) = field.text().await {
+                    delimiter = parse_delimiter(&text);
+                }
+            }
+            _ => {
+                // Ignore unknown fields
+            }
+        }
+    }
+
+    // Validate required files
+    let old_temp = match old_file {
+        Some(f) => f,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "Missing required field: 'old' (CSV file)".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    let new_temp = match new_file {
+        Some(f) => f,
+        None => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "Missing required field: 'new' (CSV file)".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    // Build args for orchestrator
+    let args = Args::new(
+        PathBuf::from(old_temp.path()),
+        PathBuf::from(new_temp.path()),
+        key,
+        threshold,
+        tolerance,
+        delimiter,
+        true, // Always return JSON from API
+    );
+
+    // Run comparison
+    match orchestrator::run(&args) {
+        Ok(result) => {
+            let status = match result.outcome {
+                Outcome::NoRealChange => StatusCode::OK,
+                Outcome::RealChange => StatusCode::OK,
+                Outcome::Refusal => StatusCode::UNPROCESSABLE_ENTITY,
+            };
+
+            // Parse the JSON output and return it
+            match serde_json::from_str::<serde_json::Value>(&result.output) {
+                Ok(json) => (status, Json(json)).into_response(),
+                Err(_) => {
+                    // Fallback: return raw output wrapped in JSON
+                    (
+                        status,
+                        Json(serde_json::json!({
+                            "raw_output": result.output
+                        })),
+                    )
+                        .into_response()
+                }
+            }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("Comparison failed: {}", e),
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: String,
+}
+
+/// Parse delimiter string to byte.
+fn parse_delimiter(s: &str) -> Option<u8> {
+    match s.to_lowercase().as_str() {
+        "comma" | "," => Some(b','),
+        "tab" | "\t" => Some(b'\t'),
+        "semicolon" | ";" => Some(b';'),
+        "pipe" | "|" => Some(b'|'),
+        "caret" | "^" => Some(b'^'),
+        _ if s.starts_with("0x") || s.starts_with("0X") => {
+            u8::from_str_radix(&s[2..], 16).ok()
+        }
+        _ if s.len() == 1 => s.bytes().next(),
+        _ => None,
+    }
+}
