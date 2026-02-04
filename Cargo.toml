@@ -15,6 +15,9 @@ simd-csv = { version = "0.10.3", optional = true }
 simd_csv = ["simd-csv"]
 
 [dev-dependencies]
+arrow-csv = "57.2.0"
+arrow-schema = "57.2.0"
+polars = { version = "0.52.0", default-features = false, features = ["csv"] }
 simd-csv = "0.10.3"
 
 [[bench]]
