@@ -3,15 +3,21 @@
 //! Provides HTTP endpoints for CSV comparison via the rvl engine.
 //!
 //! Run with: `cargo run --bin rvl-server --features server`
+//!
+//! Environment variables:
+//! - `RVL_PORT` - Port to listen on (default: 8080)
+//! - `RVL_HOST` - Host to bind to (default: 0.0.0.0)
+//! - `RVL_API_TOKEN` - Bearer token for authentication (optional, if set all requests require it)
 
 use std::io::Write;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{DefaultBodyLimit, Multipart},
-    http::StatusCode,
+    extract::{DefaultBodyLimit, Multipart, State},
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -25,9 +31,11 @@ use rvl::cli::exit::Outcome;
 use rvl::orchestrator;
 
 /// Server configuration from environment.
+#[derive(Clone)]
 struct Config {
     port: u16,
     host: String,
+    api_token: Option<String>,
 }
 
 impl Config {
@@ -38,6 +46,7 @@ impl Config {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(8080),
             host: std::env::var("RVL_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
+            api_token: std::env::var("RVL_API_TOKEN").ok().filter(|s| !s.is_empty()),
         }
     }
 }
@@ -58,9 +67,18 @@ async fn main() {
         .parse()
         .expect("Invalid address");
 
+    if config.api_token.is_some() {
+        tracing::info!("API token authentication enabled");
+    } else {
+        tracing::warn!("No RVL_API_TOKEN set - API is unauthenticated");
+    }
+
+    let shared_config = Arc::new(config);
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/compare", post(compare))
+        .with_state(shared_config)
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB max
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http());
@@ -94,7 +112,35 @@ struct HealthResponse {
 /// - `threshold`: (optional) Coverage threshold (0-1, default 0.95)
 /// - `tolerance`: (optional) Numeric tolerance (default 1e-9)
 /// - `delimiter`: (optional) Force delimiter (comma/tab/semicolon/pipe/caret)
-async fn compare(mut multipart: Multipart) -> impl IntoResponse {
+///
+/// Requires `Authorization: Bearer <token>` header if `RVL_API_TOKEN` is set.
+async fn compare(
+    State(config): State<Arc<Config>>,
+    headers: HeaderMap,
+    mut multipart: Multipart,
+) -> impl IntoResponse {
+    // Check bearer token if configured
+    if let Some(expected_token) = &config.api_token {
+        let auth_header = headers
+            .get("authorization")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        
+        let provided_token = auth_header
+            .strip_prefix("Bearer ")
+            .or_else(|| auth_header.strip_prefix("bearer "))
+            .unwrap_or("");
+        
+        if provided_token != expected_token {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(ErrorResponse {
+                    error: "Invalid or missing bearer token".to_string(),
+                }),
+            )
+                .into_response();
+        }
+    }
     let mut old_file: Option<NamedTempFile> = None;
     let mut new_file: Option<NamedTempFile> = None;
     let mut key: Option<String> = None;

@@ -45,6 +45,7 @@ cargo build --release --features server
 Environment variables:
 - `RVL_PORT` — Port to listen on (default: 8080)
 - `RVL_HOST` — Host to bind to (default: 0.0.0.0)
+- `RVL_API_TOKEN` — Bearer token for authentication (if set, all requests require it)
 
 ### Endpoints
 
@@ -56,6 +57,7 @@ curl http://localhost:8080/health
 **Compare two CSVs:**
 ```bash
 curl -X POST http://localhost:8080/compare \
+  -H "Authorization: Bearer $RVL_API_TOKEN" \
   -F old=@old.csv \
   -F new=@new.csv \
   -F key=id \
