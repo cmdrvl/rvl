@@ -21,7 +21,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tempfile::NamedTempFile;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -141,6 +141,7 @@ async fn compare(
                 .into_response();
         }
     }
+
     let mut old_file: Option<NamedTempFile> = None;
     let mut new_file: Option<NamedTempFile> = None;
     let mut key: Option<String> = None;
@@ -149,13 +150,36 @@ async fn compare(
     let mut delimiter: Option<u8> = None;
 
     // Parse multipart form
-    while let Some(field) = multipart.next_field().await.unwrap_or(None) {
+    while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("").to_string();
         
         match name.as_str() {
             "old" => {
-                let data = match field.bytes().await {
-                    Ok(bytes) => bytes,
+                match field.bytes().await {
+                    Ok(data) => {
+                        let mut temp = match NamedTempFile::new() {
+                            Ok(t) => t,
+                            Err(e) => {
+                                return (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Json(ErrorResponse {
+                                        error: format!("Failed to create temp file: {}", e),
+                                    }),
+                                )
+                                    .into_response();
+                            }
+                        };
+                        if let Err(e) = temp.write_all(&data) {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(ErrorResponse {
+                                    error: format!("Failed to write temp file: {}", e),
+                                }),
+                            )
+                                .into_response();
+                        }
+                        old_file = Some(temp);
+                    }
                     Err(e) => {
                         return (
                             StatusCode::BAD_REQUEST,
@@ -165,14 +189,34 @@ async fn compare(
                         )
                             .into_response();
                     }
-                };
-                let mut temp = NamedTempFile::new().unwrap();
-                temp.write_all(&data).unwrap();
-                old_file = Some(temp);
+                }
             }
             "new" => {
-                let data = match field.bytes().await {
-                    Ok(bytes) => bytes,
+                match field.bytes().await {
+                    Ok(data) => {
+                        let mut temp = match NamedTempFile::new() {
+                            Ok(t) => t,
+                            Err(e) => {
+                                return (
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                    Json(ErrorResponse {
+                                        error: format!("Failed to create temp file: {}", e),
+                                    }),
+                                )
+                                    .into_response();
+                            }
+                        };
+                        if let Err(e) = temp.write_all(&data) {
+                            return (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(ErrorResponse {
+                                    error: format!("Failed to write temp file: {}", e),
+                                }),
+                            )
+                                .into_response();
+                        }
+                        new_file = Some(temp);
+                    }
                     Err(e) => {
                         return (
                             StatusCode::BAD_REQUEST,
@@ -182,10 +226,7 @@ async fn compare(
                         )
                             .into_response();
                     }
-                };
-                let mut temp = NamedTempFile::new().unwrap();
-                temp.write_all(&data).unwrap();
-                new_file = Some(temp);
+                }
             }
             "key" => {
                 if let Ok(text) = field.text().await {
