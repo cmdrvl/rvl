@@ -20,12 +20,26 @@ No dashboards. No probabilistic scoring. Just deterministic arithmetic or a refu
 
 ## Install
 
-No release artifacts yet. Build from source:
+**macOS / Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.ps1'))
+```
+
+**From source:**
 
 ```bash
 cargo build --release
 ./target/release/rvl --help
 ```
+
+Binaries are available for x86_64 and ARM64 on Linux, macOS, and Windows (x86_64). Each release includes SHA256 checksums, cosign signatures, and an SBOM.
 
 ---
 

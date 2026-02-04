@@ -2,7 +2,17 @@
 name = "rvl"
 version = "0.1.0"
 edition = "2024"
+authors = ["CMD+RVL <engineering@cmdrvl.com>"]
 description = "Reveal the smallest set of numeric changes that explain what actually changed."
+license = "MIT"
+repository = "https://github.com/cmdrvl/rvl"
+readme = "README.md"
+keywords = ["csv", "diff", "reconciliation", "cli", "numeric"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "rvl"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
