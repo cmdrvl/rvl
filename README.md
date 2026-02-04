@@ -20,7 +20,13 @@ No dashboards. No probabilistic scoring. Just deterministic arithmetic or a refu
 
 ## Install
 
-**macOS / Linux:**
+**Homebrew (macOS / Linux):**
+
+```bash
+brew install cmdrvl/tap/rvl
+```
+
+**Shell script (macOS / Linux):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.sh | bash
@@ -39,7 +45,7 @@ cargo build --release
 ./target/release/rvl --help
 ```
 
-Binaries are available for x86_64 and ARM64 on Linux, macOS, and Windows (x86_64). Each release includes SHA256 checksums, cosign signatures, and an SBOM.
+Prebuilt binaries are available for x86_64 and ARM64 on Linux, macOS, and Windows (x86_64). Each release includes SHA256 checksums, cosign signatures, and an SBOM.
 
 ---
 
