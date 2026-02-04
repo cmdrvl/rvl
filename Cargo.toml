@@ -10,6 +10,9 @@ csv = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+[dev-dependencies]
+simd-csv = "0.10.3"
+
 [[bench]]
 name = "runtime"
 harness = false
