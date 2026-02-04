@@ -106,6 +106,18 @@ Tuning:
 - Max RSS: 2,660,175,872 bytes (~2.48 GiB)
 - Throughput: ~21.3k rows/sec
 
+## Sample results (2026-02-04, macOS)
+- Build: `cargo build --release` (rustup `cargo 1.94.0-nightly`)
+- Rows/cols: 1,000,000 rows, 11 numeric columns (1 change)
+- Row-order command: `/usr/bin/time -l ./target/release/rvl /tmp/rvl-perf/old.csv /tmp/rvl-perf/new.csv`
+- Elapsed time: 38.21s
+- Max RSS: unavailable (`sysctl kern.clockrate` permission error)
+- Throughput: ~26.2k rows/sec
+- Key-mode command: `/usr/bin/time -l ./target/release/rvl /tmp/rvl-perf/old.csv /tmp/rvl-perf/new.csv --key id`
+- Elapsed time: 19.03s
+- Max RSS: unavailable (`sysctl kern.clockrate` permission error)
+- Throughput: ~52.5k rows/sec
+
 ## Interpretation
 - The row-order path should stay I/O bound with a stable wall-clock time.
 - Key-mode uses an in-memory map and will require more RAM (expected).
