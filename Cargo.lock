@@ -175,6 +175,7 @@ dependencies = [
  "csv",
  "serde",
  "serde_json",
+ "simd-csv",
 ]
 
 [[package]]
@@ -224,6 +225,15 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "simd-csv"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb8345c294dd2dd03346b00a38737587a928e361f17356b3858631f19c1c90d7"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]

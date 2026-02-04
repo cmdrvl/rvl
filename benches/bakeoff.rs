@@ -3,7 +3,8 @@ use std::io::Cursor;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use csv::ByteRecord;
+use csv::ByteRecord as CsvByteRecord;
+use simd_csv::{ByteRecord as SimdByteRecord, ReaderBuilder as SimdReaderBuilder};
 
 use rvl::cli::delimiter::parse_delimiter_arg;
 use rvl::csv::dialect::auto_detect;
@@ -16,11 +17,21 @@ struct Case {
     path: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ParserKind {
+    Csv,
+    SimdCsv,
+}
+
 fn main() {
     let iterations = env_u64("RVL_BAKEOFF_ITERS", 5);
     let warmup = env_u64("RVL_BAKEOFF_WARMUP", 1);
     let forced_delimiter =
         env_string("RVL_BAKEOFF_DELIMITER").and_then(|raw| parse_delimiter_arg(&raw).ok());
+    let parser = env_string("RVL_BAKEOFF_PARSER")
+        .as_deref()
+        .and_then(ParserKind::parse)
+        .unwrap_or(ParserKind::Csv);
 
     let inputs = env_string("RVL_BAKEOFF_INPUTS")
         .map(split_inputs)
@@ -28,6 +39,7 @@ fn main() {
 
     println!("rvl bakeoff harness");
     println!("iters={iterations} warmup={warmup}");
+    println!("parser={}", parser.label());
     if let Some(raw) = env_string("RVL_BAKEOFF_DELIMITER") {
         println!("forced_delimiter={raw}");
     }
@@ -42,7 +54,7 @@ fn main() {
     }
 
     for case in &cases {
-        let avg_ms = run_case(case, iterations, warmup, forced_delimiter);
+        let avg_ms = run_case(case, iterations, warmup, forced_delimiter, parser);
         if let Some(avg_ms) = avg_ms {
             println!("case {}: avg_ms={avg_ms:.3}", case.name);
         } else {
@@ -56,20 +68,21 @@ fn run_case(
     iterations: u64,
     warmup: u64,
     forced_delimiter: Option<u8>,
+    parser: ParserKind,
 ) -> Option<f64> {
     let bytes = std::fs::read(&case.path).ok()?;
     let input = guard_input_bytes(&bytes).ok()?;
 
     let mut row_count = None;
     for _ in 0..warmup {
-        row_count = parse_count(input, forced_delimiter);
+        row_count = parse_count(input, forced_delimiter, parser);
         row_count?;
     }
 
     let mut total = Duration::ZERO;
     for _ in 0..iterations {
         let start = Instant::now();
-        row_count = parse_count(input, forced_delimiter);
+        row_count = parse_count(input, forced_delimiter, parser);
         row_count?;
         total += start.elapsed();
     }
@@ -97,11 +110,55 @@ fn run_case(
     Some(avg_ms)
 }
 
-fn parse_count(input: &[u8], forced_delimiter: Option<u8>) -> Option<u64> {
+fn parse_count(input: &[u8], forced_delimiter: Option<u8>, parser: ParserKind) -> Option<u64> {
     let (delimiter, escape, skip_sep) = choose_dialect(input, forced_delimiter)?;
 
+    match parser {
+        ParserKind::Csv => parse_count_csv(input, delimiter, escape, skip_sep),
+        ParserKind::SimdCsv => parse_count_simd(input, delimiter, escape, skip_sep),
+    }
+}
+
+fn parse_count_csv(input: &[u8], delimiter: u8, escape: EscapeMode, skip_sep: bool) -> Option<u64> {
     let mut reader = build_reader(Cursor::new(input), delimiter, escape);
-    let mut record = ByteRecord::new();
+    let mut record = CsvByteRecord::new();
+    let mut count = 0u64;
+    let mut skipped_sep = !skip_sep;
+
+    loop {
+        match reader.read_byte_record(&mut record) {
+            Ok(true) => {
+                if !skipped_sep {
+                    skipped_sep = true;
+                    continue;
+                }
+                count += 1;
+            }
+            Ok(false) => break,
+            Err(_) => return None,
+        }
+    }
+
+    Some(count)
+}
+
+fn parse_count_simd(
+    input: &[u8],
+    delimiter: u8,
+    escape: EscapeMode,
+    skip_sep: bool,
+) -> Option<u64> {
+    if matches!(escape, EscapeMode::Backslash) {
+        return None;
+    }
+
+    let mut reader = SimdReaderBuilder::new()
+        .delimiter(delimiter)
+        .quote(b'"')
+        .flexible(true)
+        .has_headers(false)
+        .from_reader(Cursor::new(input));
+    let mut record = SimdByteRecord::new();
     let mut count = 0u64;
     let mut skipped_sep = !skip_sep;
 
@@ -173,4 +230,21 @@ fn env_u64(name: &str, default: u64) -> u64 {
 
 fn env_string(name: &str) -> Option<String> {
     std::env::var(name).ok().filter(|value| !value.is_empty())
+}
+
+impl ParserKind {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "csv" => Some(Self::Csv),
+            "simd_csv" | "simd-csv" => Some(Self::SimdCsv),
+            _ => None,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Csv => "csv",
+            Self::SimdCsv => "simd_csv",
+        }
+    }
 }

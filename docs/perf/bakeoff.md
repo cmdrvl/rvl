@@ -47,6 +47,7 @@ For each candidate:
 Harness:
 - `cargo bench --bench bakeoff`
 - Env:
+  - `RVL_BAKEOFF_PARSER` (`csv` or `simd_csv`, default `csv`)
   - `RVL_BAKEOFF_INPUTS` (comma-separated file paths)
   - `RVL_BAKEOFF_ITERS` (default 5)
   - `RVL_BAKEOFF_WARMUP` (default 1)
@@ -55,6 +56,21 @@ Harness:
 Measure throughput with a consistent tool (e.g., `time` or `hyperfine`) and
 repeat runs to smooth variance. Use the same input files and capture command
 lines in the report.
+
+Bakeoff harness usage (opt-in):
+```bash
+cargo bench --bench bakeoff
+```
+
+Select parser:
+- `RVL_BAKEOFF_PARSER=csv` (default)
+- `RVL_BAKEOFF_PARSER=simd_csv` (requires `simd-csv`; skips backslash-escape cases)
+
+Other knobs:
+- `RVL_BAKEOFF_ITERS` (default 5)
+- `RVL_BAKEOFF_WARMUP` (default 1)
+- `RVL_BAKEOFF_DELIMITER` (forces delimiter, e.g. `comma`, `tab`, `0x1F`)
+- `RVL_BAKEOFF_INPUTS` (comma-separated list of file paths)
 
 ## Results
 

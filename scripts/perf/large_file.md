@@ -98,6 +98,10 @@ Tuning:
 - `RVL_RUNTIME_WARMUP` (default 3)
 - `RVL_RUNTIME_BUDGET_MS` (optional; fails if average exceeds budget)
 
+Defaults:
+- Without `RVL_RUNTIME_*` paths, the harness runs against `tests/fixtures/corpus/basic_old.csv` and `basic_new.csv`
+  (row-order and key-mode cases).
+
 ## Sample results (2026-02-03, macOS)
 - Build: `cargo build --release` (rustup `cargo 1.94.0-nightly`)
 - Rows/cols: 1,000,000 rows, 11 numeric columns (1 change)
