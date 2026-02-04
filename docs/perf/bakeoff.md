@@ -72,6 +72,14 @@ lines in the report.
 | candidate A | TBD | TBD | TBD | TBD |
 | candidate B | TBD | TBD | TBD | TBD |
 
+### Bakeoff Harness Run (2026-02-04)
+Ran `cargo bench --bench bakeoff` with default inputs:
+- `tests/fixtures/corpus/basic_old.csv`: avg_ms=0.525, rows=3, rows/sec=5711.5, MB/sec=0.03
+- `tests/fixtures/corpus/basic_new.csv`: avg_ms=0.542, rows=3, rows/sec=5532.0, MB/sec=0.03
+
+Note: these fixtures are tiny and only verify harness wiring. For meaningful
+throughput, supply a large dataset via `RVL_BAKEOFF_INPUTS`.
+
 ## Conclusion
 Baseline throughput measured for Rust `csv`; corpus compatibility currently
 passes with 0 mismatches. Candidate parsers still TBD; do not switch unless a
