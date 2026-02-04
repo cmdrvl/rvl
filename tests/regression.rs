@@ -90,3 +90,13 @@ fn regression_basic() {
         None,
     );
 }
+
+#[test]
+fn regression_missingness_key() {
+    assert_case(
+        "missingness_key",
+        "tests/fixtures/regression/missingness_key_old.csv",
+        "tests/fixtures/regression/missingness_key_new.csv",
+        Some("id"),
+    );
+}

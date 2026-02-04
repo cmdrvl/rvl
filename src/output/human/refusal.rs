@@ -14,7 +14,8 @@ pub struct RefusalBody<'a> {
 }
 
 pub fn render_refusal_body(ctx: &RefusalBody<'_>) -> Vec<String> {
-    let mut lines = Vec::with_capacity(3);
+    let mut lines = Vec::with_capacity(4);
+    lines.push("Cannot produce a verdict.".to_string());
     lines.push(format!("Reason ({}): {}.", ctx.code, ctx.code.reason()));
     lines.push(render_example_line(ctx.detail, ctx.old_name, ctx.new_name));
     lines.push(format!("Next: {}", ctx.detail.next));
@@ -148,14 +149,22 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             record,
             column,
             value,
+            key_value,
         } => {
-            let file = file_label(*file, old_name, new_name);
             let column = render_identifier_human(column);
             let value = render_identifier_human(value);
-            format!(
-                "Example: {file} data record {} column \"{column}\" has non-numeric value \"{value}\".",
-                format_count_u64(*record)
-            )
+            if let Some(key) = key_value {
+                let key = render_identifier_human(key);
+                format!(
+                    "Example: key \"{key}\" column \"{column}\" has non-numeric value \"{value}\"."
+                )
+            } else {
+                let file = file_label(*file, old_name, new_name);
+                format!(
+                    "Example: {file} data record {} column \"{column}\" has non-numeric value \"{value}\".",
+                    format_count_u64(*record)
+                )
+            }
         }
         RefusalKind::NoNumeric => "Example: no numeric columns in common.".to_string(),
         RefusalKind::Missingness {
@@ -163,14 +172,22 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             record,
             column,
             value,
+            key_value,
         } => {
-            let file = file_label(*file, old_name, new_name);
             let column = render_identifier_human(column);
             let value = render_identifier_human(value);
-            format!(
-                "Example: {file} data record {} column \"{column}\" has numeric value \"{value}\" while the other side is missing.",
-                format_count_u64(*record)
-            )
+            if let Some(key) = key_value {
+                let key = render_identifier_human(key);
+                format!(
+                    "Example: key \"{key}\" column \"{column}\" has numeric value \"{value}\" while the other side is missing."
+                )
+            } else {
+                let file = file_label(*file, old_name, new_name);
+                format!(
+                    "Example: {file} data record {} column \"{column}\" has numeric value \"{value}\" while the other side is missing.",
+                    format_count_u64(*record)
+                )
+            }
         }
         RefusalKind::Diffuse {
             top_k_coverage,
@@ -253,12 +270,13 @@ mod tests {
             new_name: "new.csv",
         };
         let lines = render_refusal_body(&ctx);
-        assert_eq!(lines[0], "Reason (E_KEY_DUP): duplicate key values.");
+        assert_eq!(lines[0], "Cannot produce a verdict.");
+        assert_eq!(lines[1], "Reason (E_KEY_DUP): duplicate key values.");
         assert_eq!(
-            lines[1],
+            lines[2],
             "Example: old.csv data record 184 duplicates key \"A123\"."
         );
-        assert!(lines[2].starts_with("Next:"));
+        assert!(lines[3].starts_with("Next:"));
     }
 
     #[test]
@@ -277,11 +295,12 @@ mod tests {
             new_name: "new.csv",
         };
         let lines = render_refusal_body(&ctx);
+        assert_eq!(lines[0], "Cannot produce a verdict.");
         assert_eq!(
-            lines[0],
+            lines[1],
             "Reason (E_DIFFUSE): diffuse change below coverage threshold."
         );
-        assert_eq!(lines[1], "Example: top_k_coverage=80.0% threshold=95.0%.");
+        assert_eq!(lines[2], "Example: top_k_coverage=80.0% threshold=95.0%.");
     }
 
     #[test]
@@ -306,7 +325,7 @@ mod tests {
         };
         let lines = render_refusal_body(&ctx);
         assert_eq!(
-            lines[1],
+            lines[2],
             "Example: old.csv delimiter ambiguous among [comma, tab]."
         );
     }

@@ -85,6 +85,7 @@ struct RefusalContext<'a> {
 struct RowRef {
     old_record: u64,
     new_record: u64,
+    key: Option<Vec<u8>>,
 }
 
 impl RowRef {
@@ -389,6 +390,7 @@ fn run_diff(
                     RowRef {
                         old_record: row.old.record_number,
                         new_record: row.new.record_number,
+                        key: Some(row.key.clone()),
                     },
                     row.old.fields.as_slice(),
                     row.new.fields.as_slice(),
@@ -416,6 +418,7 @@ fn run_diff(
                         RowRef {
                             old_record: record,
                             new_record: record,
+                            key: None,
                         },
                         old_row.as_slice(),
                         new_row.as_slice(),
@@ -960,6 +963,7 @@ fn map_column_error(err: ColumnTypingError<RowRef>, paths: RerunPaths<'_>) -> Re
                 ColumnSide::Old => FileSide::Old,
                 ColumnSide::New => FileSide::New,
             };
+            let key_value = detail.row_id.key.clone();
             RefusalPayload::with_default_next(
                 RefusalCode::MixedTypes,
                 RefusalKind::MixedTypes {
@@ -967,6 +971,7 @@ fn map_column_error(err: ColumnTypingError<RowRef>, paths: RerunPaths<'_>) -> Re
                     record: detail.row_id.record_for(detail.side),
                     column: detail.column,
                     value: detail.value,
+                    key_value,
                 },
                 paths,
             )
@@ -980,6 +985,7 @@ fn map_column_error(err: ColumnTypingError<RowRef>, paths: RerunPaths<'_>) -> Re
                 ColumnSide::Old => FileSide::Old,
                 ColumnSide::New => FileSide::New,
             };
+            let key_value = detail.row_id.key.clone();
             RefusalPayload::with_default_next(
                 RefusalCode::Missingness,
                 RefusalKind::Missingness {
@@ -987,6 +993,7 @@ fn map_column_error(err: ColumnTypingError<RowRef>, paths: RerunPaths<'_>) -> Re
                     record: detail.row_id.record_for(present_side),
                     column: detail.column,
                     value: detail.present_value,
+                    key_value,
                 },
                 paths,
             )
@@ -1574,24 +1581,38 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
             record,
             column,
             value,
-        } => json!({
-            "file": file.as_str(),
-            "record": record,
-            "column": encode_identifier_json(column),
-            "value": encode_identifier_json(value),
-        }),
+            key_value,
+        } => {
+            let mut obj = json!({
+                "file": file.as_str(),
+                "record": record,
+                "column": encode_identifier_json(column),
+                "value": encode_identifier_json(value),
+            });
+            if let Some(key) = key_value {
+                obj["key"] = json!(encode_identifier_json(key));
+            }
+            obj
+        }
         RefusalKind::NoNumeric => json!({}),
         RefusalKind::Missingness {
             file,
             record,
             column,
             value,
-        } => json!({
-            "file": file.as_str(),
-            "record": record,
-            "column": encode_identifier_json(column),
-            "value": encode_identifier_json(value),
-        }),
+            key_value,
+        } => {
+            let mut obj = json!({
+                "file": file.as_str(),
+                "record": record,
+                "column": encode_identifier_json(column),
+                "value": encode_identifier_json(value),
+            });
+            if let Some(key) = key_value {
+                obj["key"] = json!(encode_identifier_json(key));
+            }
+            obj
+        }
         RefusalKind::Diffuse {
             top_k_coverage,
             threshold,

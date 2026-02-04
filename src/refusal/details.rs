@@ -102,6 +102,7 @@ pub enum RefusalKind {
         record: u64,
         column: Vec<u8>,
         value: Vec<u8>,
+        key_value: Option<Vec<u8>>,
     },
     NoNumeric,
     Missingness {
@@ -109,6 +110,7 @@ pub enum RefusalKind {
         record: u64,
         column: Vec<u8>,
         value: Vec<u8>,
+        key_value: Option<Vec<u8>>,
     },
     Diffuse {
         top_k_coverage: f64,

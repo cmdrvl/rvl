@@ -1,0 +1,12 @@
+RVL ERROR (E_MISSINGNESS)
+
+Compared: missingness_key_old.csv -> missingness_key_new.csv
+Alignment: key=id
+Dialect(old): delimiter=, quote=" escape=none
+Dialect(new): delimiter=, quote=" escape=none
+Settings: threshold=95.0% tolerance=1e-9
+
+Cannot produce a verdict.
+Reason (E_MISSINGNESS): missing value vs numeric value.
+Example: key "B" column "amount" has numeric value "200.75" while the other side is missing.
+Next: fill missing values or remove the column, then rerun

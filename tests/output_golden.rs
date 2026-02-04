@@ -215,6 +215,7 @@ Dialect(old): delimiter=, quote=" escape=none
 Dialect(new): delimiter=, quote=" escape=none
 Settings: threshold=95.0% tolerance=1e-9
 
+Cannot produce a verdict.
 Reason (E_KEY_DUP): duplicate key values.
 Example: old.csv data record 184 duplicates key "A123".
 Next: choose a unique key column or dedupe the data, then rerun"#;

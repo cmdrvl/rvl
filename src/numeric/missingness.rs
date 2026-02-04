@@ -17,6 +17,7 @@ pub fn build_missingness_refusal(
         record: error.row_id,
         column: error.column,
         value: error.present_value,
+        key_value: None,
     };
     RefusalDetail::with_default_next(kind, paths)
 }
