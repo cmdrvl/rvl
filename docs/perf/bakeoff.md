@@ -84,8 +84,8 @@ Other knobs:
 ### Throughput / Memory
 | Parser | Rows/sec | MB/sec | Peak RSS | Notes |
 | --- | --- | --- | --- | --- |
-| csv (baseline) | 26.2k | 4.38 | n/a | 1,000,000 rows, 11 cols; /usr/bin/time -l (RSS unavailable: sysctl kern.clockrate permission error); input size 167.27 MB; real 38.21s. |
-| candidate A | TBD | TBD | TBD | TBD |
+| csv (baseline) | 1.91M | 159.63 | n/a | `RVL_BAKEOFF_INPUTS=/tmp/rvl-perf/old.csv` (1,000,001 rows incl. header); `RVL_BAKEOFF_ITERS=1`; parser-only bench; avg_ms=523.940. |
+| simd-csv (candidate) | 0.76M | 63.44 | n/a | Same inputs; `RVL_BAKEOFF_PARSER=simd_csv`; avg_ms=1318.360. Harness skips backslash-escape files. |
 | candidate B | TBD | TBD | TBD | TBD |
 
 ### Bakeoff Harness Run (2026-02-04)
@@ -97,10 +97,11 @@ Note: these fixtures are tiny and only verify harness wiring. For meaningful
 throughput, supply a large dataset via `RVL_BAKEOFF_INPUTS`.
 
 ## Conclusion
-Baseline throughput measured for Rust `csv`; corpus compatibility currently
-passes with 0 mismatches. Candidate parsers still TBD; do not switch unless a
-candidate is >=25% faster with equal compatibility and acceptable memory.
+Baseline throughput measured for Rust `csv`; corpus compatibility passes with
+0 mismatches. `simd-csv` was slower on the large-file sample, so there is no
+case to switch. Revisit only if another candidate shows a >=25% gain with equal
+compatibility and acceptable memory.
 
 ## Next Steps
-- Evaluate at least one alternative parser and record results.
+- If needed, evaluate Arrow/Polars CSV readers and record results.
 - If a candidate wins, draft an integration plan and update the spec/roadmap.
