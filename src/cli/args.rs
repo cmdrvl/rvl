@@ -58,6 +58,27 @@ impl Args {
     pub fn parse() -> Result<Self, clap::Error> {
         Self::try_parse()
     }
+
+    /// Create Args directly (for API/library use).
+    pub fn new(
+        old: PathBuf,
+        new: PathBuf,
+        key: Option<String>,
+        threshold: f64,
+        tolerance: f64,
+        delimiter: Option<u8>,
+        json: bool,
+    ) -> Self {
+        Self {
+            old,
+            new,
+            key,
+            threshold,
+            tolerance,
+            delimiter,
+            json,
+        }
+    }
 }
 
 fn parse_threshold(raw: &str) -> Result<f64, String> {
