@@ -104,7 +104,7 @@ Defaults:
 
 ## Sample results (2026-02-03, macOS)
 - Build: `cargo build --release` (rustup `cargo 1.94.0-nightly`)
-- Rows/cols: 1,000,000 rows, 11 numeric columns (1 change)
+- Rows/cols: 1,000,000 rows, 10 numeric columns (1 change)
 - Command: `/usr/bin/time -l ./target/release/rvl /tmp/rvl-perf/old.csv /tmp/rvl-perf/new.csv`
 - Elapsed time: 47.05s
 - Max RSS: 2,660,175,872 bytes (~2.48 GiB)
@@ -112,7 +112,7 @@ Defaults:
 
 ## Sample results (2026-02-04, macOS)
 - Build: `cargo build --release` (rustup `cargo 1.94.0-nightly`)
-- Rows/cols: 1,000,000 rows, 11 numeric columns (1 change)
+- Rows/cols: 1,000,000 rows, 10 numeric columns (1 change)
 - Row-order command: `/usr/bin/time -l ./target/release/rvl /tmp/rvl-perf/old.csv /tmp/rvl-perf/new.csv`
 - Elapsed time: 38.21s
 - Max RSS: unavailable (`sysctl kern.clockrate` permission error)

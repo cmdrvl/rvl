@@ -24,7 +24,7 @@ specific dialect/escape, or a refusal code).
 | `bom_no_trailing_newline.csv` | synthetic | parse_ok | `,` | none | UTF-8 BOM, no trailing newline. |
 | `caret_basic.csv` | synthetic | parse_ok | `^` | none | Caret-delimited (simple). |
 | `caret_delimiter.csv` | synthetic | parse_ok | `^` | none | Caret-delimited. |
-| `control_byte_header.csv` | synthetic | `E_DIALECT` | n/a | n/a | Delimiter is 0x01 (not auto-detected). |
+| `control_byte_header.csv` | synthetic | parse_ok | `0x01` | none | Control-byte delimiter (requires `--delimiter 0x01`; `E_DIALECT` without forced delimiter). |
 | `crlf_line_endings.csv` | synthetic | parse_ok | `,` | none | CRLF line endings. |
 | `duplicate_headers.csv` | synthetic | `E_HEADERS` | n/a | n/a | Duplicate header after normalization. |
 | `empty_file.csv` | synthetic | `E_HEADERS` | n/a | n/a | Empty file (no header). |
@@ -41,7 +41,6 @@ specific dialect/escape, or a refusal code).
 | `header_only.csv` | synthetic | parse_ok | `,` | none | Header with no data rows. |
 | `header_with_spaces.csv` | synthetic | parse_ok | `,` | none | Header names trimmed (`sep=,`). |
 | `hex_prefix_header.csv` | synthetic | parse_ok | `,` | none | Header starts with `hex:` prefix. |
-| `control_byte_header.csv` | synthetic | parse_ok | `0x01` | none | Control-byte delimiter (requires `--delimiter 0x01`). |
 | `invalid_quote.csv` | synthetic | `E_CSV_PARSE` | n/a | n/a | Invalid quote sequence. |
 | `leading_blank_lines.csv` | synthetic | parse_ok | `,` | none | Leading blank lines before header. |
 | `multiline_quoted.csv` | synthetic | parse_ok | `,` | none | Multiline quoted field (`sep=,`). |
@@ -96,13 +95,11 @@ specific dialect/escape, or a refusal code).
 | `missing_tokens.csv` | synthetic | parse_ok | `,` | none | Missing tokens (NA, NULL, -). |
 | `plus_sign_numbers.csv` | synthetic | parse_ok | `,` | none | Plus-signed numeric values. |
 | `utf8_bom_blank_lines.csv` | synthetic | parse_ok | `,` | none | UTF-8 BOM + leading blank lines. |
-| `u8_prefix_header.csv` | synthetic | parse_ok | `,` | none | Header starts with `u8:` prefix. |
 | `non_ascii_header.csv` | synthetic | parse_ok | `,` | none | UTF-8 header names. |
 | `locale_decimal.csv` | synthetic | parse_ok | `,` | none | Locale-style decimals (non-numeric tokens). |
 | `percent_values.csv` | synthetic | parse_ok | `,` | none | Percent suffixed values (non-numeric tokens). |
 | `accounting_parentheses.csv` | synthetic | parse_ok | `,` | none | Accounting-style negatives. |
 | `delim_0x1f.csv` | synthetic | parse_ok | `0x1F` | none | Unit-separator delimiter. |
-| `control_byte_header.csv` | synthetic | parse_ok | `0x01` | none | Control-byte delimiter (requires `--delimiter 0x01`). |
 | `missingness_numeric_vs_missing.csv` | synthetic | parse_ok | `,` | none | Numeric vs missing tokens. |
 | `mixed_types_numeric_text.csv` | synthetic | parse_ok | `,` | none | Mixed numeric and text tokens. |
 
