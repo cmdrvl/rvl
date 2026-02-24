@@ -104,8 +104,8 @@ impl KeyRow for OwnedRecord {
 }
 
 pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
-    let old_path = args.old.to_string_lossy().to_string();
-    let new_path = args.new.to_string_lossy().to_string();
+    let old_path = args.old_path().to_string_lossy().to_string();
+    let new_path = args.new_path().to_string_lossy().to_string();
     let rerun_paths = RerunPaths {
         old: &old_path,
         new: &new_path,
@@ -116,7 +116,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         None => None,
     };
 
-    let old = match parse_csv(&args.old, FileSide::Old, args.delimiter, rerun_paths) {
+    let old = match parse_csv(args.old_path(), FileSide::Old, args.delimiter, rerun_paths) {
         Ok(parsed) => parsed,
         Err(refusal) => {
             return Ok(render_refusal(
@@ -129,7 +129,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         }
     };
 
-    let new = match parse_csv(&args.new, FileSide::New, args.delimiter, rerun_paths) {
+    let new = match parse_csv(args.new_path(), FileSide::New, args.delimiter, rerun_paths) {
         Ok(parsed) => parsed,
         Err(refusal) => {
             return Ok(render_refusal(
@@ -1030,8 +1030,8 @@ fn render_refusal_with_context(
     args: &Args,
     context: RefusalContext<'_>,
 ) -> PipelineResult {
-    let old_display = display_name(&args.old);
-    let new_display = display_name(&args.new);
+    let old_display = display_name(args.old_path());
+    let new_display = display_name(args.new_path());
 
     if args.json {
         let ctx = json_context(
@@ -1100,8 +1100,8 @@ fn render_no_real_change(
             output,
         }
     } else {
-        let old_display = display_name(&args.old);
-        let new_display = display_name(&args.new);
+        let old_display = display_name(args.old_path());
+        let new_display = display_name(args.new_path());
         let mut lines = vec![
             "RVL".to_string(),
             String::new(),
@@ -1146,8 +1146,8 @@ fn render_real_change(
             output,
         }
     } else {
-        let old_display = display_name(&args.old);
-        let new_display = display_name(&args.new);
+        let old_display = display_name(args.old_path());
+        let new_display = display_name(args.new_path());
         let mut lines = vec![
             "RVL".to_string(),
             String::new(),
@@ -1256,8 +1256,8 @@ fn json_context(
 ) -> JsonContext {
     JsonContext {
         files: Files {
-            old: args.old.to_string_lossy().to_string(),
-            new: args.new.to_string_lossy().to_string(),
+            old: args.old_path().to_string_lossy().to_string(),
+            new: args.new_path().to_string_lossy().to_string(),
         },
         alignment,
         dialect: Dialect {

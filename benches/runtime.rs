@@ -75,13 +75,15 @@ fn main() {
 
 fn run_case(case: &Case, iterations: u64, warmup: u64) -> f64 {
     let args = Args {
-        old: case.old.clone(),
-        new: case.new.clone(),
+        old: Some(case.old.clone()),
+        new: Some(case.new.clone()),
         key: case.key.clone(),
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
         json: false,
+        no_witness: true,
+        command: None,
     };
 
     for _ in 0..warmup {

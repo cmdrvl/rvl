@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 
 use super::delimiter::parse_delimiter_arg;
 
@@ -12,16 +12,17 @@ const DEFAULT_TOLERANCE: f64 = 1e-9;
 #[command(
     name = "rvl",
     about = "Reveal the smallest set of numeric changes that explain what actually changed.",
-    override_usage = "rvl <old.csv> <new.csv> [--key <column>] [--threshold <float>] [--tolerance <float>] [--delimiter <delim>] [--json]"
+    override_usage = "rvl <old.csv> <new.csv> [OPTIONS]\n       rvl witness <query|last|count> [OPTIONS]",
+    subcommand_negates_reqs = true
 )]
 pub struct Args {
     /// Old CSV path.
     #[arg(value_name = "OLD_CSV")]
-    pub old: PathBuf,
+    pub old: Option<PathBuf>,
 
     /// New CSV path.
     #[arg(value_name = "NEW_CSV")]
-    pub new: PathBuf,
+    pub new: Option<PathBuf>,
 
     /// Align rows by this key column (otherwise align by row order).
     #[arg(long, value_name = "COLUMN")]
@@ -52,6 +53,70 @@ pub struct Args {
     /// Emit JSON output (single object).
     #[arg(long)]
     pub json: bool,
+
+    /// Suppress witness ledger recording.
+    #[arg(long)]
+    pub no_witness: bool,
+
+    #[command(subcommand)]
+    pub command: Option<RvlCommand>,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum RvlCommand {
+    /// Query the witness ledger.
+    Witness {
+        #[command(subcommand)]
+        action: WitnessAction,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum WitnessAction {
+    /// Search witness records with filters.
+    Query(WitnessQueryArgs),
+    /// Show the most recent witness record.
+    Last(WitnessLastArgs),
+    /// Count matching witness records.
+    Count(WitnessQueryArgs),
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct WitnessQueryArgs {
+    /// Filter by tool name.
+    #[arg(long)]
+    pub tool: Option<String>,
+
+    /// Filter records on or after this ISO 8601 timestamp.
+    #[arg(long)]
+    pub since: Option<String>,
+
+    /// Filter records on or before this ISO 8601 timestamp.
+    #[arg(long)]
+    pub until: Option<String>,
+
+    /// Filter by outcome (REAL_CHANGE, NO_REAL_CHANGE, REFUSAL).
+    #[arg(long)]
+    pub outcome: Option<String>,
+
+    /// Filter by input file hash (substring match).
+    #[arg(long)]
+    pub input_hash: Option<String>,
+
+    /// Maximum number of records to return (default: 20).
+    #[arg(long, default_value_t = 20)]
+    pub limit: usize,
+
+    /// Emit JSON output.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct WitnessLastArgs {
+    /// Emit JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 impl Args {
@@ -70,14 +135,26 @@ impl Args {
         json: bool,
     ) -> Self {
         Self {
-            old,
-            new,
+            old: Some(old),
+            new: Some(new),
             key,
             threshold,
             tolerance,
             delimiter,
             json,
+            no_witness: false,
+            command: None,
         }
+    }
+
+    /// Get the old path, panics if not set (only valid in comparison mode).
+    pub fn old_path(&self) -> &PathBuf {
+        self.old.as_ref().expect("old path required for comparison")
+    }
+
+    /// Get the new path, panics if not set (only valid in comparison mode).
+    pub fn new_path(&self) -> &PathBuf {
+        self.new.as_ref().expect("new path required for comparison")
     }
 }
 

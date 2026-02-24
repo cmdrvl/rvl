@@ -8,13 +8,15 @@ const REGRESSION_DIR: &str = "tests/fixtures/regression";
 
 fn run_case(old: &str, new: &str, key: Option<&str>, json: bool) -> String {
     let args = Args {
-        old: PathBuf::from(old),
-        new: PathBuf::from(new),
+        old: Some(PathBuf::from(old)),
+        new: Some(PathBuf::from(new)),
         key: key.map(|value| value.to_string()),
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
         json,
+        no_witness: true,
+        command: None,
     };
     orchestrator::run(&args)
         .expect("pipeline run should succeed")
