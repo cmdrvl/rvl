@@ -332,6 +332,40 @@ Valid range: ASCII `0x01`–`0x7F`, excluding `"` (`0x22`), `\r` (`0x0D`), `\n` 
 
 ---
 
+## Agent / CI Integration
+
+Both `rvl` and [`shape`](https://github.com/cmdrvl/shape) are designed to be consumed by agents and pipelines, not just humans.
+
+### Agent workflow: shape → rvl
+
+```bash
+# 1. Structural gate (is comparison even valid?)
+shape old.csv new.csv --key id --json > shape.json
+if [ $? -ne 0 ]; then
+  # INCOMPATIBLE or REFUSAL — read .reasons or .refusal for why
+  jq '.reasons // .refusal' shape.json
+  exit 1
+fi
+
+# 2. Numeric explanation (only if structurally compatible)
+rvl old.csv new.csv --key id --json > rvl.json
+
+# 3. Agent extracts the verdict
+outcome=$(jq -r '.outcome' rvl.json)
+if [ "$outcome" = "REAL_CHANGE" ]; then
+  jq '.contributors[] | "\(.row_id).\(.column): \(.delta)"' rvl.json
+fi
+```
+
+### What makes this agent-friendly
+
+- **Exit codes** — `0`/`1`/`2` map directly to pass/fail/error branching
+- **`--json`** — structured output an agent can parse without regex
+- **Refusals have next steps** — an agent can read `.refusal.code` and decide whether to retry with different flags or escalate
+- **`shape --describe`** — prints the tool's `operator.json` contract so an agent can discover invocation, flags, and exit codes without reading docs
+
+---
+
 ## Scripting Examples
 
 Check if files changed (exit code only):
