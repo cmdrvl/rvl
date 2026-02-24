@@ -1,110 +1,83 @@
 # rvl
 
+<div align="center">
+
+[![CI](https://github.com/cmdrvl/rvl/actions/workflows/ci.yml/badge.svg)](https://github.com/cmdrvl/rvl/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub release](https://img.shields.io/github/v/release/cmdrvl/rvl)](https://github.com/cmdrvl/rvl/releases)
+
 **Reveal the smallest set of numeric changes that explain what actually changed.**
-
-*Built for teams who reconcile CSV exports and need a deterministic verdict fast.*
-
----
-
-## Why This Exists
-
-Comparing CSV exports by hand is slow and noisy — Excel hell, brittle scripts, eyeballing numbers. `rvl` replaces all of that with one trusted command that gives a single, copy-paste-able verdict:
-
-- **REAL CHANGE** — the smallest ranked set of numeric deltas that explain the change.
-- **NO REAL CHANGE** — confirmed within tolerance, with proof.
-- **REFUSAL** — when alignment or parsing is ambiguous, with a concrete next step (never a dead end).
-
-No dashboards. No probabilistic scoring. Just deterministic arithmetic or a refusal.
-
----
-
-## Install
-
-**Homebrew (macOS / Linux):**
-
-```bash
-brew install cmdrvl/tap/rvl
-```
-
-**Shell script (macOS / Linux):**
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.sh | bash
 ```
 
-**Windows (PowerShell):**
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.ps1'))
-```
-
-**From source:**
-
-```bash
-cargo build --release
-./target/release/rvl --help
-```
-
-Prebuilt binaries are available for x86_64 and ARM64 on Linux, macOS, and Windows (x86_64). Each release includes SHA256 checksums, cosign signatures, and an SBOM.
+</div>
 
 ---
 
-## Quickstart
+## TL;DR
 
-Compare two CSVs by row order:
+**The Problem**: Comparing CSV exports by hand is slow and noisy — Excel hell, brittle scripts, eyeballing numbers. When two files differ, you need to know *what actually changed* and whether it matters.
 
-```bash
-rvl old.csv new.csv
-```
+**The Solution**: One command, one verdict. `rvl` finds the smallest ranked set of numeric deltas that explain the change — or proves nothing changed — using deterministic arithmetic. Never probabilistic. Never ambiguous.
 
-Align rows by a key column:
+### Why Use rvl?
 
-```bash
-rvl old.csv new.csv --key id
-```
-
-Machine-readable JSON:
-
-```bash
-rvl old.csv new.csv --json
-```
+| Feature | What It Does |
+|---------|--------------|
+| **Ranked explanations** | Finds the fewest cells that account for ≥95% of total numeric change |
+| **Three clear outcomes** | REAL CHANGE, NO REAL CHANGE, or REFUSAL — never a partial answer |
+| **Tolerance-aware** | Ignores floating-point noise below your threshold — no false positives |
+| **Machine-readable** | `--json` output for pipelines, CI gates, and automation |
+| **Zero config** | Auto-detects delimiters, numeric formats, currency symbols, accounting parens |
+| **Deterministic** | Same inputs always produce the same output — no sampling, no heuristics |
 
 ---
 
-## CLI Reference
+## Quick Example
+
+```bash
+$ rvl old.csv new.csv --key id
+```
 
 ```
-rvl <old.csv> <new.csv> [OPTIONS]
+RVL
+
+REAL CHANGE
+
+Compared: old.csv -> new.csv
+Alignment: key=id
+Columns: common=15 old_only=2 new_only=1
+Checked: 4,183 rows, 12 numeric columns (50,196 cells)
+Dialect(old): delimiter=, quote=" escape=none
+Dialect(new): delimiter=, quote=" escape=none
+Ranking: abs(delta) (unscaled)
+Settings: threshold=95.0% tolerance=1e-9
+
+3 cells explain 95.2% of total numeric change (threshold 95.0%):
+
+1. NVDA.market_value  +1842100  (123 -> 1842223)
+2. UST10Y.price       -0.37     (4.21 -> 3.84)
+3. EURUSD.fx_rate     +0.0013   (1.0842 -> 1.0855)
+
+Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold).
 ```
 
-### Flags
+Out of 50,196 cells, **3 cells** explain 95.2% of all numeric change. That's the whole answer.
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--key <column>` | string | *(none)* | Align rows by key column value. Without this, rows align by position (1st↔1st, 2nd↔2nd, etc.). |
-| `--threshold <float>` | float | `0.95` | Coverage target (0 < x ≤ 1.0). The minimum fraction of total numeric change that the top contributors must explain. |
-| `--tolerance <float>` | float | `1e-9` | Per-cell noise floor (x ≥ 0). Absolute deltas ≤ this value are treated as zero. |
-| `--delimiter <delim>` | string | *(auto-detect)* | Force CSV delimiter for both files. See [Delimiter](#delimiter) below. |
-| `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
+```bash
+# No change? Proof:
+$ rvl old.csv old_copy.csv
+# → NO REAL CHANGE (exit 0), max delta 7e-10
 
-Invalid `--threshold` or `--tolerance` values are CLI argument errors (exit 2).
+# Machine-readable:
+$ rvl old.csv new.csv --json | jq '.contributors[0]'
 
-### Exit Codes
-
-| Code | Meaning |
-|------|---------|
-| `0` | NO REAL CHANGE |
-| `1` | REAL CHANGE |
-| `2` | REFUSAL or CLI error |
-
-### Output Routing
-
-| Mode | REAL CHANGE | NO REAL CHANGE | REFUSAL |
-|------|-------------|----------------|---------|
-| Human (default) | stdout | stdout | stderr |
-| `--json` | stdout | stdout | stdout |
-
-In `--json` mode, stderr is reserved for process-level failures only (CLI parse errors, panics).
+# Exit code only (for scripts):
+$ rvl old.csv new.csv > /dev/null 2>&1
+$ echo $?  # 0 = no change, 1 = changed, 2 = refused
+```
 
 ---
 
@@ -194,7 +167,7 @@ Next: choose a unique key column or dedupe the data, then rerun.
 
 ---
 
-## Key Concepts
+## How It Works
 
 ### Alignment
 
@@ -215,11 +188,6 @@ Only columns present in **both** files are compared. Only numeric columns are di
 
 **Missing tokens** (case-insensitive): empty string, `-`, `NA`, `N/A`, `NULL`, `NAN`, `NONE`.
 
-**Refusal triggers:**
-- Mixed numeric and non-numeric values in the same column → `E_MIXED_TYPES`
-- Numeric on one side, missing on the other → `E_MISSINGNESS`
-- No numeric columns in common after filtering → `E_NO_NUMERIC`
-
 ### Tolerance
 
 Absolute noise floor applied per-cell. If `abs(new - old) <= tolerance`, the delta is treated as zero (no contribution). Default: `1e-9`. There is no relative/percentage tolerance in v0.
@@ -239,6 +207,98 @@ If the top 25 contributors can't reach the threshold, rvl refuses with `E_DIFFUS
 ### Contributor Ranking
 
 Contributors are ranked by `abs(delta)` descending (unscaled — large-magnitude columns dominate by design). Ties are broken by row ID ascending, then column name ascending (byte order). rvl prints only the smallest prefix of contributors whose cumulative coverage reaches the threshold.
+
+---
+
+## How rvl Compares
+
+| Capability | rvl | Excel / Sheets | `diff` / `csvdiff` | Custom pandas script |
+|------------|-----|----------------|---------------------|----------------------|
+| Ranked numeric explanation | ✅ Top-K with coverage proof | ❌ Manual | ❌ Row-level only | ⚠️ You write it |
+| Deterministic verdict | ✅ Always | ❌ Human judgment | ⚠️ Text diff only | ⚠️ You write it |
+| Tolerance handling | ✅ Built-in | ❌ Manual rounding | ❌ None | ⚠️ You write it |
+| Refusal on ambiguity | ✅ Never wrong, refuses instead | ❌ Silent errors | ❌ Garbage in/out | ❌ Crashes |
+| Auto-detects delimiters | ✅ | N/A | ❌ | ❌ |
+| Setup time | ✅ One curl command | N/A | ⚠️ Minutes | ❌ Hours |
+| Machine-readable output | ✅ `--json` | ❌ | ⚠️ Text only | ✅ |
+
+**When to use rvl:**
+- Monthly/quarterly reconciliation of CSV exports (holdings, positions, balances)
+- CI gate: did the pipeline output actually change?
+- Audit trail: prove what changed and by how much
+
+**When rvl might not be ideal:**
+- Non-numeric diffs (text columns, schema changes) — use [`shape`](https://github.com/cmdrvl/shape) for structural checks first
+- Files that don't fit in memory
+- Diffs where you need relative (percentage) tolerance — not yet supported in v0
+
+---
+
+## Installation
+
+### Quick Install (Recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.sh | bash
+```
+
+### Package Managers
+
+```bash
+# macOS / Linux (Homebrew)
+brew install cmdrvl/tap/rvl
+```
+
+```powershell
+# Windows (PowerShell)
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.ps1'))
+```
+
+### From Source
+
+```bash
+cargo build --release
+./target/release/rvl --help
+```
+
+Prebuilt binaries are available for x86_64 and ARM64 on Linux, macOS, and Windows (x86_64). Each release includes SHA256 checksums, cosign signatures, and an SBOM.
+
+---
+
+## CLI Reference
+
+```
+rvl <old.csv> <new.csv> [OPTIONS]
+```
+
+### Flags
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--key <column>` | string | *(none)* | Align rows by key column value. Without this, rows align by position (1st↔1st, 2nd↔2nd, etc.). |
+| `--threshold <float>` | float | `0.95` | Coverage target (0 < x ≤ 1.0). The minimum fraction of total numeric change that the top contributors must explain. |
+| `--tolerance <float>` | float | `1e-9` | Per-cell noise floor (x ≥ 0). Absolute deltas ≤ this value are treated as zero. |
+| `--delimiter <delim>` | string | *(auto-detect)* | Force CSV delimiter for both files. See [Delimiter](#delimiter). |
+| `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
+
+Invalid `--threshold` or `--tolerance` values are CLI argument errors (exit 2).
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | NO REAL CHANGE |
+| `1` | REAL CHANGE |
+| `2` | REFUSAL or CLI error |
+
+### Output Routing
+
+| Mode | REAL CHANGE | NO REAL CHANGE | REFUSAL |
+|------|-------------|----------------|---------|
+| Human (default) | stdout | stdout | stderr |
+| `--json` | stdout | stdout | stdout |
+
+In `--json` mode, stderr is reserved for process-level failures only (CLI parse errors, panics).
 
 ---
 
@@ -270,6 +330,48 @@ Valid range: ASCII `0x01`–`0x7F`, excluding `"` (`0x22`), `\r` (`0x0D`), `\n` 
 
 ---
 
+## Scripting Examples
+
+Check if files changed (exit code only):
+
+```bash
+rvl old.csv new.csv > /dev/null 2>&1
+echo $?  # 0 = no change, 1 = changed, 2 = refused
+```
+
+Extract top contributor from JSON:
+
+```bash
+rvl old.csv new.csv --json | jq '.contributors[0]'
+```
+
+Get total change magnitude:
+
+```bash
+rvl old.csv new.csv --json | jq '.metrics.total_change'
+```
+
+Handle refusals programmatically:
+
+```bash
+rvl old.csv new.csv --json | jq 'select(.outcome == "REFUSAL") | .refusal'
+```
+
+Force a tab-delimited comparison with relaxed threshold:
+
+```bash
+rvl old.tsv new.tsv --delimiter tab --key account_id --threshold 0.80
+```
+
+Gate a pipeline (shape before rvl):
+
+```bash
+shape old.csv new.csv --key loan_id --json > shape.json \
+  && rvl old.csv new.csv --key loan_id --json > rvl.json
+```
+
+---
+
 ## Refusal Codes
 
 Every refusal includes the error code, first concrete example, and a `Next:` remediation step.
@@ -294,7 +396,87 @@ Every refusal includes the error code, first concrete example, and a `Next:` rem
 
 ---
 
-## JSON Output (`--json`)
+## Troubleshooting
+
+### "E_NEED_KEY" even though rows look the same
+
+Your rows are in a different order between files. rvl detected this and refuses rather than silently comparing wrong row pairs. Use the `--key` it suggests:
+
+```bash
+rvl old.csv new.csv --key loan_id
+```
+
+### "E_DIFFUSE" — can't reach threshold
+
+Changes are spread across too many cells for the top 25 to explain 95%. This usually means a broad recalculation (e.g., FX revaluation). Lower the threshold:
+
+```bash
+rvl old.csv new.csv --threshold 0.80
+```
+
+### "E_MIXED_TYPES" on a column that looks numeric
+
+A cell in that column has a value rvl can't parse as a number (check for stray text, #N/A variants not in the missing list, or locale-specific formatting). The error message shows the first offending cell.
+
+### "E_DIALECT" — delimiter detection failed
+
+Your file uses an uncommon delimiter or has inconsistent field counts. Force the delimiter:
+
+```bash
+rvl old.csv new.csv --delimiter pipe      # for |
+rvl old.csv new.csv --delimiter 0x09      # for tab
+rvl old.csv new.csv --delimiter semicolon # for ;
+```
+
+### Large files are slow
+
+rvl loads both files into memory. For very large files (millions of rows), ensure sufficient RAM. There is no streaming mode in v0.
+
+---
+
+## Limitations
+
+| Limitation | Detail |
+|------------|--------|
+| **Numeric columns only** | rvl compares numbers. Text column changes are ignored — use `diff` or `shape` for structural checks. |
+| **Absolute tolerance only** | No relative/percentage tolerance in v0. A $0.01 delta on a $1M balance and a $0.01 balance are treated identically. |
+| **MAX_CONTRIBUTORS = 25** | Hard cap, not configurable in v0. If change is spread across >25 cells, rvl refuses (`E_DIFFUSE`). |
+| **In-memory** | Both files are loaded fully into memory. No streaming mode yet. |
+| **Two files only** | No multi-file or directory comparison. |
+| **No column filtering** | All common numeric columns are compared. You can't exclude specific columns in v0. |
+
+---
+
+## FAQ
+
+### Why "rvl"?
+
+Short for *reveal*. The tool reveals what actually changed, cutting through the noise.
+
+### Is this just `diff` for CSVs?
+
+No. `diff` shows you every line that's different. `rvl` tells you *which numeric changes matter* — the smallest set that explains the change. It's an explanation, not a diff.
+
+### What if my files have different columns?
+
+rvl compares only columns present in both files. Extra columns on either side are reported in the header but don't affect the verdict.
+
+### Can I use this in CI/CD?
+
+Yes. Exit codes (0/1/2) and `--json` output are designed for automation. Gate on exit code, or parse the JSON for richer assertions.
+
+### What about non-US number formats (e.g., `1.234,56`)?
+
+Not supported in v0. rvl assumes US-style formatting (comma as thousands separator, period as decimal).
+
+### How does rvl relate to shape?
+
+[`shape`](https://github.com/cmdrvl/shape) checks structural compatibility (do columns match? is the key valid?). `rvl` checks numeric content (what changed and by how much?). Run `shape` first to validate structure, then `rvl` to explain changes.
+
+---
+
+<details>
+<summary><strong>JSON Output Reference</strong></summary>
 
 A single JSON object on stdout. If the process fails before domain evaluation (e.g., invalid CLI args), JSON may not be emitted.
 
@@ -372,40 +554,7 @@ Copy the encoded identifier directly into `--key` to avoid ambiguity.
 
 On REFUSAL, `counts` and `metrics` fields may be `null` if they couldn't be computed (e.g., `rows_aligned` is `null` for `E_ROWCOUNT`; all `metrics` are `null` for `E_NEED_KEY`).
 
----
-
-## Scripting Examples
-
-Check if files changed (exit code only):
-
-```bash
-rvl old.csv new.csv > /dev/null 2>&1
-echo $?  # 0 = no change, 1 = changed, 2 = refused
-```
-
-Extract top contributor from JSON:
-
-```bash
-rvl old.csv new.csv --json | jq '.contributors[0]'
-```
-
-Get total change magnitude:
-
-```bash
-rvl old.csv new.csv --json | jq '.metrics.total_change'
-```
-
-Handle refusals programmatically:
-
-```bash
-rvl old.csv new.csv --json | jq 'select(.outcome == "REFUSAL") | .refusal'
-```
-
-Force a tab-delimited comparison with relaxed threshold:
-
-```bash
-rvl old.tsv new.tsv --delimiter tab --key account_id --threshold 0.80
-```
+</details>
 
 ---
 
