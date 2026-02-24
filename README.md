@@ -11,7 +11,7 @@
 No AI. No inference. Pure deterministic arithmetic.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.sh | bash
+brew install cmdrvl/tap/rvl
 ```
 
 </div>
@@ -238,21 +238,21 @@ Contributors are ranked by `abs(delta)` descending (unscaled — large-magnitude
 
 ## Installation
 
-### Quick Install (Recommended)
+### Homebrew (Recommended)
+
+```bash
+brew install cmdrvl/tap/rvl
+```
+
+### Shell Script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.sh | bash
 ```
 
-### Package Managers
-
-```bash
-# macOS / Linux (Homebrew)
-brew install cmdrvl/tap/rvl
-```
+### Windows (PowerShell)
 
 ```powershell
-# Windows (PowerShell)
 Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.ps1'))
 ```
 
