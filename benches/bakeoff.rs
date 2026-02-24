@@ -24,6 +24,13 @@ struct Case {
 }
 
 #[derive(Debug, Clone, Copy)]
+struct CaseDialect {
+    delimiter: u8,
+    escape: EscapeMode,
+    skip_sep: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
 enum ParserKind {
     Csv,
     SimdCsv,
@@ -80,17 +87,18 @@ fn run_case(
 ) -> Option<f64> {
     let bytes = std::fs::read(&case.path).ok()?;
     let input = guard_input_bytes(&bytes).ok()?;
+    let dialect = choose_dialect(input, forced_delimiter)?;
 
     let mut row_count = None;
     for _ in 0..warmup {
-        row_count = parse_count(input, &case.path, forced_delimiter, parser);
+        row_count = parse_count(input, &case.path, dialect, parser);
         row_count?;
     }
 
     let mut total = Duration::ZERO;
     for _ in 0..iterations {
         let start = Instant::now();
-        row_count = parse_count(input, &case.path, forced_delimiter, parser);
+        row_count = parse_count(input, &case.path, dialect, parser);
         row_count?;
         total += start.elapsed();
     }
@@ -118,26 +126,75 @@ fn run_case(
     Some(avg_ms)
 }
 
-fn parse_count(
-    input: &[u8],
-    path: &Path,
-    forced_delimiter: Option<u8>,
-    parser: ParserKind,
-) -> Option<u64> {
-    let (delimiter, escape, skip_sep) = choose_dialect(input, forced_delimiter)?;
+fn parse_count(input: &[u8], path: &Path, dialect: CaseDialect, parser: ParserKind) -> Option<u64> {
+    let rows = pipeline_data_row_count(input, dialect.delimiter, dialect.escape, dialect.skip_sep)?;
 
     match parser {
-        ParserKind::Csv => parse_count_csv(input, delimiter, escape, skip_sep),
-        ParserKind::SimdCsv => parse_count_simd(input, delimiter, escape, skip_sep),
-        ParserKind::Arrow => parse_count_arrow(input, delimiter, escape, skip_sep),
-        ParserKind::Polars => parse_count_polars(input, path, delimiter, escape, skip_sep),
-    }
+        ParserKind::Csv => {
+            parse_only_csv(input, dialect.delimiter, dialect.escape, dialect.skip_sep)
+        }
+        ParserKind::SimdCsv => {
+            parse_only_simd(input, dialect.delimiter, dialect.escape, dialect.skip_sep)
+        }
+        ParserKind::Arrow => {
+            parse_only_arrow(input, dialect.delimiter, dialect.escape, dialect.skip_sep)
+        }
+        ParserKind::Polars => parse_only_polars(
+            input,
+            path,
+            dialect.delimiter,
+            dialect.escape,
+            dialect.skip_sep,
+        ),
+    }?;
+
+    Some(rows)
 }
 
-fn parse_count_csv(input: &[u8], delimiter: u8, escape: EscapeMode, skip_sep: bool) -> Option<u64> {
+fn pipeline_data_row_count(
+    input: &[u8],
+    delimiter: u8,
+    escape: EscapeMode,
+    skip_sep: bool,
+) -> Option<u64> {
     let mut reader = build_reader(Cursor::new(input), delimiter, escape);
     let mut record = CsvByteRecord::new();
-    let mut count = 0u64;
+    let mut rows = 0u64;
+    let mut skipped_sep = !skip_sep;
+    let mut header_seen = false;
+
+    loop {
+        match reader.read_byte_record(&mut record) {
+            Ok(true) => {
+                if !header_seen {
+                    if record.len() == 1 && is_blank_record(&record) {
+                        continue;
+                    }
+                    if !skipped_sep {
+                        skipped_sep = true;
+                        continue;
+                    }
+                    header_seen = true;
+                    continue;
+                } else if is_blank_record(&record) {
+                    continue;
+                }
+                rows += 1;
+            }
+            Ok(false) => break,
+            Err(_) => return None,
+        }
+    }
+
+    if !header_seen {
+        return None;
+    }
+    Some(rows)
+}
+
+fn parse_only_csv(input: &[u8], delimiter: u8, escape: EscapeMode, skip_sep: bool) -> Option<()> {
+    let mut reader = build_reader(Cursor::new(input), delimiter, escape);
+    let mut record = CsvByteRecord::new();
     let mut skipped_sep = !skip_sep;
     let mut pre_header = true;
 
@@ -153,25 +210,17 @@ fn parse_count_csv(input: &[u8], delimiter: u8, escape: EscapeMode, skip_sep: bo
                         continue;
                     }
                     pre_header = false;
-                } else if is_blank_record(&record) {
-                    continue;
                 }
-                count += 1;
             }
             Ok(false) => break,
             Err(_) => return None,
         }
     }
 
-    Some(count)
+    Some(())
 }
 
-fn parse_count_simd(
-    input: &[u8],
-    delimiter: u8,
-    escape: EscapeMode,
-    skip_sep: bool,
-) -> Option<u64> {
+fn parse_only_simd(input: &[u8], delimiter: u8, escape: EscapeMode, skip_sep: bool) -> Option<()> {
     if matches!(escape, EscapeMode::Backslash) {
         return None;
     }
@@ -183,7 +232,6 @@ fn parse_count_simd(
         .has_headers(false)
         .from_reader(Cursor::new(input));
     let mut record = SimdByteRecord::new();
-    let mut count = 0u64;
     let mut skipped_sep = !skip_sep;
     let mut pre_header = true;
 
@@ -199,25 +247,17 @@ fn parse_count_simd(
                         continue;
                     }
                     pre_header = false;
-                } else if is_blank_record_simd(&record) {
-                    continue;
                 }
-                count += 1;
             }
             Ok(false) => break,
             Err(_) => return None,
         }
     }
 
-    Some(count)
+    Some(())
 }
 
-fn parse_count_arrow(
-    input: &[u8],
-    delimiter: u8,
-    escape: EscapeMode,
-    skip_sep: bool,
-) -> Option<u64> {
+fn parse_only_arrow(input: &[u8], delimiter: u8, escape: EscapeMode, skip_sep: bool) -> Option<()> {
     let input = slice_after_preface(input, skip_sep);
     let header = read_header_record(input, delimiter, escape)?;
     let schema = schema_from_header(&header);
@@ -231,26 +271,24 @@ fn parse_count_arrow(
         builder = builder.with_escape(escape_byte);
     }
     let reader = builder.build(Cursor::new(input)).ok()?;
-    let mut count = 0u64;
     for batch in reader {
-        let batch = batch.ok()?;
-        count += batch.num_rows() as u64;
+        batch.ok()?;
     }
-    Some(count + 1)
+    Some(())
 }
 
-fn parse_count_polars(
+fn parse_only_polars(
     input: &[u8],
     path: &Path,
     delimiter: u8,
     escape: EscapeMode,
     skip_sep: bool,
-) -> Option<u64> {
+) -> Option<()> {
     if matches!(escape, EscapeMode::Backslash) {
         return None;
     }
 
-    let header = read_header_record(slice_after_preface(input, skip_sep), delimiter, escape)?;
+    read_header_record(slice_after_preface(input, skip_sep), delimiter, escape)?;
     let skip_lines = count_skip_lines(input, skip_sep);
     let parse_options = CsvParseOptions::default()
         .with_separator(delimiter)
@@ -262,11 +300,11 @@ fn parse_count_polars(
         .with_parse_options(parse_options)
         .try_into_reader_with_file_path(Some(path.to_path_buf()))
         .ok()?;
-    let df = reader.finish().ok()?;
-    Some(df.height() as u64 + header_count(&header))
+    reader.finish().ok()?;
+    Some(())
 }
 
-fn choose_dialect(input: &[u8], forced_delimiter: Option<u8>) -> Option<(u8, EscapeMode, bool)> {
+fn choose_dialect(input: &[u8], forced_delimiter: Option<u8>) -> Option<CaseDialect> {
     let mut skip_sep = false;
     let mut sep_delimiter = None;
     match scan_first_non_blank_line(input.split(|byte| *byte == b'\n')) {
@@ -280,17 +318,29 @@ fn choose_dialect(input: &[u8], forced_delimiter: Option<u8>) -> Option<(u8, Esc
     if let Some(forced) = forced_delimiter {
         let mut cursor = Cursor::new(input);
         let escape = detect_escape_mode(&mut cursor, forced).ok()?;
-        return Some((forced, escape, skip_sep));
+        return Some(CaseDialect {
+            delimiter: forced,
+            escape,
+            skip_sep,
+        });
     }
 
     if let Some(delimiter) = sep_delimiter {
         let mut cursor = Cursor::new(input);
         let escape = detect_escape_mode(&mut cursor, delimiter).ok()?;
-        return Some((delimiter, escape, skip_sep));
+        return Some(CaseDialect {
+            delimiter,
+            escape,
+            skip_sep,
+        });
     }
 
     let dialect = auto_detect(input).ok()?;
-    Some((dialect.delimiter, dialect.escape, false))
+    Some(CaseDialect {
+        delimiter: dialect.delimiter,
+        escape: dialect.escape,
+        skip_sep: false,
+    })
 }
 
 fn is_blank_record_simd(record: &SimdByteRecord) -> bool {
@@ -380,10 +430,6 @@ fn schema_from_header(header: &[Vec<u8>]) -> SchemaRef {
         fields.push(Field::new(field_name, DataType::Utf8, true));
     }
     Arc::new(Schema::new(fields))
-}
-
-fn header_count(header: &[Vec<u8>]) -> u64 {
-    if header.is_empty() { 0 } else { 1 }
 }
 
 fn default_inputs() -> Vec<PathBuf> {

@@ -10,6 +10,7 @@ pub mod numeric;
 pub mod orchestrator;
 pub mod output;
 pub mod refusal;
+pub mod repro;
 pub mod witness;
 
 /// Run the rvl pipeline. Returns exit code (0, 1, or 2).
@@ -69,7 +70,7 @@ fn run_comparison(args: cli::args::Args) -> Result<u8, Box<dyn std::error::Error
 }
 
 /// Run witness subcommand (query/last/count).
-/// Exit codes: 0 = success with results, 1 = no results/empty, 2 = error.
+/// Exit codes: 0 = success, 1 = no record for `last`, 2 = error.
 fn run_witness(cmd: &cli::args::RvlCommand) -> Result<u8, Box<dyn std::error::Error>> {
     use std::io::{self, Write};
 
@@ -107,11 +108,6 @@ fn run_witness(cmd: &cli::args::RvlCommand) -> Result<u8, Box<dyn std::error::Er
                 .filter(|r| filter.matches(r))
                 .take(filter.limit)
                 .collect();
-
-            if matched.is_empty() {
-                eprintln!("rvl: no matching witness records");
-                return Ok(1);
-            }
 
             let output = if query_args.json {
                 witness::query::format_records_json(&matched)

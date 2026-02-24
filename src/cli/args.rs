@@ -50,6 +50,10 @@ pub struct Args {
     #[arg(long, value_name = "DELIM", value_parser = parse_delimiter)]
     pub delimiter: Option<u8>,
 
+    /// Write deterministic repro capsule artifacts to this directory (default: disabled).
+    #[arg(long, value_name = "DIR")]
+    pub capsule_out: Option<PathBuf>,
+
     /// Emit JSON output (single object).
     #[arg(long)]
     pub json: bool,
@@ -141,6 +145,7 @@ impl Args {
             threshold,
             tolerance,
             delimiter,
+            capsule_out: None,
             json,
             no_witness: false,
             command: None,

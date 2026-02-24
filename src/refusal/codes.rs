@@ -81,7 +81,7 @@ impl RefusalCode {
             RefusalCode::Dialect => "delimiter ambiguous or undetectable",
             RefusalCode::MixedTypes => "mixed numeric and non-numeric values",
             RefusalCode::NoNumeric => "no numeric columns in common",
-            RefusalCode::Missingness => "missing value vs numeric value",
+            RefusalCode::Missingness => "numeric-vs-missing mismatch (refusal)",
             RefusalCode::Diffuse => "diffuse change below coverage threshold",
         }
     }

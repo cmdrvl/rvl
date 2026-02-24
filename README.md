@@ -281,6 +281,7 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--threshold <float>` | float | `0.95` | Coverage target (0 < x ≤ 1.0). The minimum fraction of total numeric change that the top contributors must explain. |
 | `--tolerance <float>` | float | `1e-9` | Per-cell noise floor (x ≥ 0). Absolute deltas ≤ this value are treated as zero. |
 | `--delimiter <delim>` | string | *(auto-detect)* | Force CSV delimiter for both files. See [Delimiter](#delimiter). |
+| `--capsule-out <dir>` | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`) to `<dir>/capsule-<id>/`. |
 | `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
 
 Invalid `--threshold` or `--tolerance` values are CLI argument errors (exit 2).
@@ -363,6 +364,31 @@ fi
 - **`--json`** — structured output an agent can parse without regex
 - **Refusals have next steps** — an agent can read `.refusal.code` and decide whether to retry with different flags or escalate
 - **`shape --describe`** — prints the tool's `operator.json` contract so an agent can discover invocation, flags, and exit codes without reading docs
+
+### Capsule replay workflow (agent swarms)
+
+Use capsules when you need a deterministic handoff between agents, CI jobs, or debugging sessions:
+
+```bash
+# 1. Produce the normal verdict and write a replay capsule sidecar
+rvl old.csv new.csv --key id --json --capsule-out ./capsules > run.json
+
+# 2. Inspect generated capsule
+ls ./capsules/capsule-*/
+# manifest.json old.csv new.csv output.txt replay.sh
+
+# 3. Re-run exactly from the capsule payload
+cd ./capsules/capsule-<id>
+./replay.sh > replay.json
+```
+
+`manifest.json` includes:
+- original invocation args (`key`, `threshold`, `tolerance`, `delimiter`, `json`)
+- outcome and refusal code (if any)
+- contributor summary for REAL_CHANGE
+- replay command plus artifact hashes for integrity checks
+
+For troubleshooting, compare `run.json` vs `replay.json` outcome/refusal code first; if they differ, the environment or binary changed.
 
 ---
 

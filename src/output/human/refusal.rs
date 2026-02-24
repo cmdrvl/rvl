@@ -160,10 +160,16 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
                 )
             } else {
                 let file = file_label(*file, old_name, new_name);
-                format!(
-                    "Example: {file} data record {} column \"{column}\" has non-numeric value \"{value}\".",
-                    format_count_u64(*record)
-                )
+                if let Some(record) = record {
+                    format!(
+                        "Example: {file} data record {} column \"{column}\" has non-numeric value \"{value}\".",
+                        format_count_u64(*record)
+                    )
+                } else {
+                    format!(
+                        "Example: {file} column \"{column}\" has non-numeric value \"{value}\"."
+                    )
+                }
             }
         }
         RefusalKind::NoNumeric => "Example: no numeric columns in common.".to_string(),
@@ -183,10 +189,16 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
                 )
             } else {
                 let file = file_label(*file, old_name, new_name);
-                format!(
-                    "Example: {file} data record {} column \"{column}\" has numeric value \"{value}\" while the other side is missing.",
-                    format_count_u64(*record)
-                )
+                if let Some(record) = record {
+                    format!(
+                        "Example: {file} data record {} column \"{column}\" has numeric value \"{value}\" while the other side is missing.",
+                        format_count_u64(*record)
+                    )
+                } else {
+                    format!(
+                        "Example: {file} column \"{column}\" has numeric value \"{value}\" while the other side is missing."
+                    )
+                }
             }
         }
         RefusalKind::Diffuse {

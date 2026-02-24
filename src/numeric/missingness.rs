@@ -14,7 +14,7 @@ pub fn build_missingness_refusal(
     };
     let kind = RefusalKind::Missingness {
         file,
-        record: error.row_id,
+        record: Some(error.row_id),
         column: error.column,
         value: error.present_value,
         key_value: None,
@@ -43,7 +43,7 @@ mod tests {
         );
         if let RefusalKind::Missingness { file, record, .. } = detail.kind {
             assert_eq!(file, FileSide::New);
-            assert_eq!(record, 7);
+            assert_eq!(record, Some(7));
         } else {
             panic!("expected missingness kind");
         }

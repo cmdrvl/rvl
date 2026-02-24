@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rvl::cli::args::Args;
 use rvl::orchestrator;
@@ -14,6 +16,7 @@ fn run_case(old: &str, new: &str, key: Option<&str>, json: bool) -> String {
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
+        capsule_out: None,
         json,
         no_witness: true,
         command: None,
@@ -34,6 +37,19 @@ fn load_json(path: &str) -> Value {
 
 fn normalize_human(text: &str) -> String {
     text.trim_end_matches('\n').to_string()
+}
+
+fn unique_temp_csv(label: &str) -> PathBuf {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock before unix epoch")
+        .as_nanos();
+    std::env::temp_dir().join(format!(
+        "rvl-regression-{label}-{}-{seq}-{nanos}.csv",
+        std::process::id(),
+    ))
 }
 
 fn assert_case(name: &str, old: &str, new: &str, key: Option<&str>) {
@@ -100,5 +116,53 @@ fn regression_missingness_key() {
         "tests/fixtures/regression/missingness_key_old.csv",
         "tests/fixtures/regression/missingness_key_new.csv",
         Some("id"),
+    );
+}
+
+#[test]
+fn key_mode_row_ref_refusals_prefer_key_over_record() {
+    let missing_old_path = unique_temp_csv("missing-old");
+    let missing_new_path = unique_temp_csv("missing-new");
+    std::fs::write(&missing_old_path, "id,amount\nA,100\nB,200.75\n")
+        .expect("write missingness old fixture");
+    std::fs::write(&missing_new_path, "id,amount\nA,100\nB,\n")
+        .expect("write missingness new fixture");
+
+    let missing_json = run_case(
+        missing_old_path.to_string_lossy().as_ref(),
+        missing_new_path.to_string_lossy().as_ref(),
+        Some("id"),
+        true,
+    );
+    let missing_value: Value =
+        serde_json::from_str(&missing_json).expect("missingness run should emit JSON");
+    assert_eq!(missing_value["outcome"], "REFUSAL");
+    assert_eq!(missing_value["refusal"]["code"], "E_MISSINGNESS");
+    assert_eq!(missing_value["refusal"]["detail"]["key"], "u8:B");
+    assert!(
+        missing_value["refusal"]["detail"].get("record").is_none(),
+        "key mode missingness detail should not include record"
+    );
+
+    let mixed_old_path = unique_temp_csv("mixed-old");
+    let mixed_new_path = unique_temp_csv("mixed-new");
+    std::fs::write(&mixed_old_path, "id,amount\nA,100\nB,200\n")
+        .expect("write mixed-types old fixture");
+    std::fs::write(&mixed_new_path, "id,amount\nA,abc\nB,210\n")
+        .expect("write mixed-types new fixture");
+
+    let mixed_json = run_case(
+        mixed_old_path.to_string_lossy().as_ref(),
+        mixed_new_path.to_string_lossy().as_ref(),
+        Some("id"),
+        true,
+    );
+    let mixed_value: Value = serde_json::from_str(&mixed_json).expect("mixed-types run JSON");
+    assert_eq!(mixed_value["outcome"], "REFUSAL");
+    assert_eq!(mixed_value["refusal"]["code"], "E_MIXED_TYPES");
+    assert_eq!(mixed_value["refusal"]["detail"]["key"], "u8:A");
+    assert!(
+        mixed_value["refusal"]["detail"].get("record").is_none(),
+        "key mode mixed-types detail should not include record"
     );
 }

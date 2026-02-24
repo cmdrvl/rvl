@@ -1,4 +1,5 @@
 use crate::witness::record::{WitnessRecord, canonical_json};
+use std::path::Path;
 
 /// Filters for querying witness records.
 #[derive(Debug, Default)]
@@ -82,11 +83,27 @@ pub fn format_record_json(record: &WitnessRecord) -> String {
 
 /// Format multiple records in human-readable form with separators.
 pub fn format_records_human(records: &[WitnessRecord]) -> String {
-    records
-        .iter()
-        .map(format_record_human)
-        .collect::<Vec<_>>()
-        .join("\n---\n")
+    const ID_WIDTH: usize = 14;
+    const TS_WIDTH: usize = 20;
+    const OUTCOME_WIDTH: usize = 15;
+
+    let mut lines = Vec::with_capacity(records.len() + 1);
+    lines.push(format!(
+        "{:<ID_WIDTH$} {:<TS_WIDTH$} {:<OUTCOME_WIDTH$} {}",
+        "ID (short)", "Timestamp", "Outcome", "Inputs"
+    ));
+
+    for record in records {
+        lines.push(format!(
+            "{:<ID_WIDTH$} {:<TS_WIDTH$} {:<OUTCOME_WIDTH$} {}",
+            short_id(&record.id),
+            record.ts,
+            record.outcome,
+            summarize_inputs(record),
+        ));
+    }
+
+    lines.join("\n")
 }
 
 /// Format multiple records as a JSON array.
@@ -106,6 +123,30 @@ pub fn format_count_human(count: usize) -> String {
 /// Format a count as JSON.
 pub fn format_count_json(count: usize) -> String {
     format!("{{\"count\":{count}}}")
+}
+
+fn short_id(full_id: &str) -> String {
+    if let Some(hash) = full_id.strip_prefix("blake3:") {
+        let short = &hash[..hash.len().min(4)];
+        return format!("blake3:{short}");
+    }
+
+    full_id.chars().take(12).collect()
+}
+
+fn summarize_inputs(record: &WitnessRecord) -> String {
+    match record.inputs.as_slice() {
+        [] => "-".to_string(),
+        [single] => basename(&single.path),
+        [first, second, ..] => format!("{} -> {}", basename(&first.path), basename(&second.path)),
+    }
+}
+
+fn basename(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string())
 }
 
 #[cfg(test)]
@@ -249,11 +290,24 @@ mod tests {
     }
 
     #[test]
-    fn format_records_human_uses_separator() {
+    fn format_records_human_outputs_compact_table() {
         let rec1 = make_record("REAL_CHANGE", "2026-01-01T00:00:00Z", "rvl");
         let rec2 = make_record("NO_REAL_CHANGE", "2026-01-02T00:00:00Z", "rvl");
         let output = format_records_human(&[rec1, rec2]);
-        assert!(output.contains("---"));
+        assert!(output.contains("ID (short)"));
+        assert!(output.contains("Timestamp"));
+        assert!(output.contains("Outcome"));
+        assert!(output.contains("Inputs"));
+        assert!(output.contains("old.csv -> new.csv"));
+    }
+
+    #[test]
+    fn format_records_human_empty_still_has_header() {
+        let output = format_records_human(&[]);
+        assert_eq!(
+            output,
+            "ID (short)     Timestamp            Outcome         Inputs"
+        );
     }
 
     #[test]

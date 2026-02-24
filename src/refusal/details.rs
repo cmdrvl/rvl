@@ -99,7 +99,7 @@ pub enum RefusalKind {
     },
     MixedTypes {
         file: FileSide,
-        record: u64,
+        record: Option<u64>,
         column: Vec<u8>,
         value: Vec<u8>,
         key_value: Option<Vec<u8>>,
@@ -107,7 +107,7 @@ pub enum RefusalKind {
     NoNumeric,
     Missingness {
         file: FileSide,
-        record: u64,
+        record: Option<u64>,
         column: Vec<u8>,
         value: Vec<u8>,
         key_value: Option<Vec<u8>>,

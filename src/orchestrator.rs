@@ -1,5 +1,7 @@
 //! Pipeline orchestration: parse → align → diff → output (bd-22s)
 
+mod capsule;
+
 use std::error::Error;
 use std::fs;
 use std::io::Cursor;
@@ -54,6 +56,7 @@ use crate::refusal::details::{
     DelimiterHint, DialectSuggestion, EncodingIssue, FileSide, HeadersIssue, NamedDelimiter,
     RefusalDetail, RefusalKind, RerunPaths,
 };
+use capsule::{CapsuleContributor, CapsuleContributorSummary, CapsuleRunSummary};
 
 pub struct PipelineResult {
     pub outcome: Outcome,
@@ -120,7 +123,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         Ok(parsed) => parsed,
         Err(refusal) => {
             return Ok(render_refusal(
-                refusal,
+                *refusal,
                 args,
                 key_bytes.as_deref(),
                 None,
@@ -133,7 +136,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         Ok(parsed) => parsed,
         Err(refusal) => {
             return Ok(render_refusal(
-                refusal,
+                *refusal,
                 args,
                 key_bytes.as_deref(),
                 Some(dialect_receipt(&old)),
@@ -684,27 +687,27 @@ fn parse_csv(
     file_side: FileSide,
     forced_delimiter: Option<u8>,
     rerun_paths: RerunPaths<'_>,
-) -> Result<ParsedCsv, RefusalPayload> {
+) -> Result<ParsedCsv, Box<RefusalPayload>> {
     let bytes = fs::read(path).map_err(|err| {
-        RefusalPayload::with_default_next(
+        Box::new(RefusalPayload::with_default_next(
             RefusalCode::Io,
             RefusalKind::Io {
                 file: file_side,
                 error: err.to_string(),
             },
             rerun_paths,
-        )
+        ))
     })?;
 
     let guarded = guard_input_bytes(&bytes).map_err(|issue| {
-        RefusalPayload::with_default_next(
+        Box::new(RefusalPayload::with_default_next(
             RefusalCode::Encoding,
             RefusalKind::Encoding {
                 file: file_side,
                 issue: map_encoding_issue(&bytes, issue),
             },
             rerun_paths,
-        )
+        ))
     })?;
 
     let mut skip_sep = false;
@@ -720,7 +723,7 @@ fn parse_csv(
     let (delimiter, escape) = if let Some(forced) = forced_delimiter {
         let mut cursor = Cursor::new(guarded);
         let escape = detect_escape_mode(&mut cursor, forced).map_err(|err| {
-            RefusalPayload::with_default_next(
+            Box::new(RefusalPayload::with_default_next(
                 RefusalCode::CsvParse,
                 RefusalKind::CsvParse {
                     file: file_side,
@@ -728,13 +731,13 @@ fn parse_csv(
                     column: None,
                 },
                 rerun_paths,
-            )
+            ))
         })?;
         (forced, escape)
     } else if let Some(sep) = sep_delimiter {
         let mut cursor = Cursor::new(guarded);
         let escape = detect_escape_mode(&mut cursor, sep).map_err(|err| {
-            RefusalPayload::with_default_next(
+            Box::new(RefusalPayload::with_default_next(
                 RefusalCode::CsvParse,
                 RefusalKind::CsvParse {
                     file: file_side,
@@ -742,13 +745,13 @@ fn parse_csv(
                     column: None,
                 },
                 rerun_paths,
-            )
+            ))
         })?;
         (sep, escape)
     } else {
         match auto_detect(guarded) {
             Ok(dialect) => (dialect.delimiter, dialect.escape),
-            Err(err) => return Err(map_dialect_error(err, file_side, rerun_paths)),
+            Err(err) => return Err(Box::new(map_dialect_error(err, file_side, rerun_paths))),
         }
     };
 
@@ -771,14 +774,14 @@ fn parse_csv(
                         continue;
                     }
                     let normalized = normalize_headers(record.iter()).map_err(|err| {
-                        RefusalPayload::with_default_next(
+                        Box::new(RefusalPayload::with_default_next(
                             RefusalCode::Headers,
                             RefusalKind::Headers {
                                 file: file_side,
                                 issue: HeadersIssue::Duplicate { name: err.name },
                             },
                             rerun_paths,
-                        )
+                        ))
                     })?;
                     header = Some(normalized);
                     continue;
@@ -792,7 +795,7 @@ fn parse_csv(
                 let header_len = header.as_ref().map(|h| h.len()).unwrap_or(0);
                 let normalized =
                     normalize_record(&record, header_len, data_index).map_err(|err| {
-                        RefusalPayload::with_default_next(
+                        Box::new(RefusalPayload::with_default_next(
                             RefusalCode::Headers,
                             RefusalKind::Headers {
                                 file: file_side,
@@ -801,13 +804,13 @@ fn parse_csv(
                                 },
                             },
                             rerun_paths,
-                        )
+                        ))
                     })?;
                 records.push(owned_record(normalized));
             }
             Ok(false) => break,
             Err(err) => {
-                return Err(RefusalPayload::with_default_next(
+                return Err(Box::new(RefusalPayload::with_default_next(
                     RefusalCode::CsvParse,
                     RefusalKind::CsvParse {
                         file: file_side,
@@ -815,7 +818,7 @@ fn parse_csv(
                         column: None,
                     },
                     rerun_paths,
-                ));
+                )));
             }
         }
     }
@@ -823,14 +826,14 @@ fn parse_csv(
     let headers = match header {
         Some(headers) => headers,
         None => {
-            return Err(RefusalPayload::with_default_next(
+            return Err(Box::new(RefusalPayload::with_default_next(
                 RefusalCode::Headers,
                 RefusalKind::Headers {
                     file: file_side,
                     issue: HeadersIssue::MissingHeader,
                 },
                 rerun_paths,
-            ));
+            )));
         }
     };
 
@@ -968,7 +971,11 @@ fn map_column_error(err: ColumnTypingError<RowRef>, paths: RerunPaths<'_>) -> Re
                 RefusalCode::MixedTypes,
                 RefusalKind::MixedTypes {
                     file,
-                    record: detail.row_id.record_for(detail.side),
+                    record: if key_value.is_some() {
+                        None
+                    } else {
+                        Some(detail.row_id.record_for(detail.side))
+                    },
                     column: detail.column,
                     value: detail.value,
                     key_value,
@@ -990,7 +997,11 @@ fn map_column_error(err: ColumnTypingError<RowRef>, paths: RerunPaths<'_>) -> Re
                 RefusalCode::Missingness,
                 RefusalKind::Missingness {
                     file,
-                    record: detail.row_id.record_for(present_side),
+                    record: if key_value.is_some() {
+                        None
+                    } else {
+                        Some(detail.row_id.record_for(present_side))
+                    },
                     column: detail.column,
                     value: detail.present_value,
                     key_value,
@@ -1033,7 +1044,7 @@ fn render_refusal_with_context(
     let old_display = display_name(args.old_path());
     let new_display = display_name(args.new_path());
 
-    if args.json {
+    let result = if args.json {
         let ctx = json_context(
             args,
             context.alignment,
@@ -1083,7 +1094,14 @@ fn render_refusal_with_context(
             outcome: Outcome::Refusal,
             output: lines.join("\n"),
         }
-    }
+    };
+
+    capsule::write_capsule(
+        args,
+        &result,
+        &CapsuleRunSummary::refusal(refusal.code.to_string()),
+    );
+    result
 }
 
 fn render_no_real_change(
@@ -1091,7 +1109,7 @@ fn render_no_real_change(
     ctx: JsonContext,
     alignment_label: Option<&str>,
 ) -> PipelineResult {
-    if args.json {
+    let result = if args.json {
         let output = JsonOutput::no_real_change(ctx)
             .to_string()
             .unwrap_or_else(|_| "{}".to_string());
@@ -1125,7 +1143,10 @@ fn render_no_real_change(
             outcome: Outcome::NoRealChange,
             output: lines.join("\n"),
         }
-    }
+    };
+
+    capsule::write_capsule(args, &result, &CapsuleRunSummary::no_real_change());
+    result
 }
 
 fn render_real_change(
@@ -1135,9 +1156,11 @@ fn render_real_change(
     coverage: f64,
     alignment_label: Option<&str>,
 ) -> PipelineResult {
-    if args.json {
-        let contributors =
-            build_json_contributors(details, ctx.metrics.total_change.unwrap_or(0.0));
+    let total_change = ctx.metrics.total_change.unwrap_or(0.0);
+    let contributor_summary = build_capsule_contributor_summary(details, total_change, coverage);
+
+    let result = if args.json {
+        let contributors = build_json_contributors(details, total_change);
         let output = JsonOutput::real_change(ctx, contributors)
             .to_string()
             .unwrap_or_else(|_| "{}".to_string());
@@ -1173,7 +1196,14 @@ fn render_real_change(
             outcome: Outcome::RealChange,
             output: lines.join("\n"),
         }
-    }
+    };
+
+    capsule::write_capsule(
+        args,
+        &result,
+        &CapsuleRunSummary::real_change(contributor_summary),
+    );
+    result
 }
 
 fn render_human_header_lines(
@@ -1310,6 +1340,36 @@ fn build_json_contributors(
         ));
     }
     contributors
+}
+
+fn build_capsule_contributor_summary(
+    details: &[ContributionDetail],
+    total_change: f64,
+    coverage: f64,
+) -> CapsuleContributorSummary {
+    let top = details
+        .iter()
+        .map(|detail| {
+            let share = if total_change > 0.0 {
+                detail.contribution / total_change
+            } else {
+                0.0
+            };
+            CapsuleContributor {
+                row_id: encode_identifier_json(&row_id_bytes(&detail.id.row_id)),
+                column: encode_identifier_json(&detail.id.column),
+                delta: detail.delta,
+                contribution: detail.contribution,
+                share,
+            }
+        })
+        .collect();
+
+    CapsuleContributorSummary {
+        count: details.len(),
+        coverage,
+        top,
+    }
 }
 
 fn row_id_bytes(row_id: &RowId) -> Vec<u8> {
@@ -1585,10 +1645,12 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         } => {
             let mut obj = json!({
                 "file": file.as_str(),
-                "record": record,
                 "column": encode_identifier_json(column),
                 "value": encode_identifier_json(value),
             });
+            if let Some(record) = record {
+                obj["record"] = json!(record);
+            }
             if let Some(key) = key_value {
                 obj["key"] = json!(encode_identifier_json(key));
             }
@@ -1604,10 +1666,12 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         } => {
             let mut obj = json!({
                 "file": file.as_str(),
-                "record": record,
                 "column": encode_identifier_json(column),
                 "value": encode_identifier_json(value),
             });
+            if let Some(record) = record {
+                obj["record"] = json!(record);
+            }
             if let Some(key) = key_value {
                 obj["key"] = json!(encode_identifier_json(key));
             }

@@ -158,9 +158,11 @@ fn witness_query_returns_records() {
     assert_eq!(output.status.code(), Some(0));
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("---"),
-        "multiple records should be separated"
+        stdout.contains("ID (short)"),
+        "query output should include compact table header"
     );
+    assert!(stdout.contains("old.csv -> new.csv"));
+    assert!(stdout.contains("REAL_CHANGE"));
 
     cleanup(&dir);
 }
@@ -212,6 +214,37 @@ fn witness_query_outcome_filter() {
     assert_eq!(arr.len(), 2);
     for rec in arr {
         assert_eq!(rec["outcome"], "REAL_CHANGE");
+    }
+
+    cleanup(&dir);
+}
+
+#[test]
+fn witness_query_input_hash_filter() {
+    let dir = temp_dir();
+    let ledger = dir.join("witness.jsonl");
+    write_raw_ledger(
+        &ledger,
+        &[
+            &make_raw_record("REAL_CHANGE", "2026-01-01T00:00:00Z"),
+            &make_raw_record("NO_REAL_CHANGE", "2026-01-02T00:00:00Z"),
+        ],
+    );
+
+    let output = Command::new(rvl_binary())
+        .args(["witness", "query", "--input-hash", "aaa", "--json"])
+        .env("EPISTEMIC_WITNESS", ledger.to_str().unwrap())
+        .output()
+        .expect("failed to run rvl witness query --input-hash");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    let arr = parsed.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    for rec in arr {
+        let inputs = rec["inputs"].as_array().unwrap();
+        assert!(inputs.iter().any(|input| input["hash"] == "blake3:aaa"));
     }
 
     cleanup(&dir);
@@ -289,7 +322,11 @@ fn witness_query_empty_ledger_exits_1() {
         .output()
         .expect("failed to run rvl witness query");
 
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("ID (short)"));
+    assert_eq!(stdout.lines().count(), 1);
+    assert!(output.stderr.is_empty());
 
     cleanup(&dir);
 }

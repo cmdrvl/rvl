@@ -81,9 +81,30 @@ Other knobs:
 | --- | --- | --- | --- |
 | csv (baseline) | Pass (`cargo test --test corpus_parse`) | 0 | Corpus parse/REFUSAL expectations matched. |
 | simd-csv 0.10.3 | Partial | 1 | Fails `backslash_escape.csv` (no backslash-escape support). |
-| arrow-csv 57.2.0 | TBD | TBD | TBD |
-| polars 0.52.0 | TBD | TBD | TBD |
+| arrow-csv 57.2.0 | Fail | 5 | Parse-ok regressions: `extra_fields_empty.csv`, `extra_trailing_empty_fields.csv`, `ragged_rows_long_empty.csv`, `wide_row_extra_empty.csv`; refusal mismatch: `duplicate_headers.csv` parsed successfully. |
+| polars 0.52.0 | Fail | 6 | Same 5 Arrow mismatches plus `backslash_escape.csv` parse failure (no backslash-escape support in harness path). |
 | candidate B | TBD | TBD | TBD |
+
+### Compatibility Sweep (2026-02-24)
+Corpus run command (single-iteration compatibility sweep):
+
+```bash
+inputs=$(printf "%s," tests/fixtures/corpus/*.csv | sed 's/,$//')
+RVL_BAKEOFF_PARSER=arrow  RVL_BAKEOFF_INPUTS="$inputs" RVL_BAKEOFF_ITERS=1 RVL_BAKEOFF_WARMUP=0 cargo bench --bench bakeoff > /tmp/rvl_bakeoff_arrow_corpus.txt
+RVL_BAKEOFF_PARSER=polars RVL_BAKEOFF_INPUTS="$inputs" RVL_BAKEOFF_ITERS=1 RVL_BAKEOFF_WARMUP=0 cargo bench --bench bakeoff > /tmp/rvl_bakeoff_polars_corpus.txt
+```
+
+Compared against expected parse/refusal sets in `tests/corpus_parse.rs`:
+- **Arrow mismatches (5):**
+  - Expected parse-ok but skipped: `extra_fields_empty.csv`, `extra_trailing_empty_fields.csv`, `ragged_rows_long_empty.csv`, `wide_row_extra_empty.csv`
+  - Expected refusal but parsed: `duplicate_headers.csv`
+- **Polars mismatches (6):**
+  - Expected parse-ok but skipped: `backslash_escape.csv`, `extra_fields_empty.csv`, `extra_trailing_empty_fields.csv`, `ragged_rows_long_empty.csv`, `wide_row_extra_empty.csv`
+  - Expected refusal but parsed: `duplicate_headers.csv`
+
+Note on forced-delimiter fixtures:
+- `control_byte_header.csv` and `delim_0x1f.csv` are parse-ok fixtures that require forced delimiter in the corpus spec.
+- Targeted runs with `RVL_BAKEOFF_DELIMITER=0x01` and `RVL_BAKEOFF_DELIMITER=0x1f` succeed for both Arrow and Polars, so these were excluded from mismatch counts.
 
 ### Throughput / Memory
 | Parser | Rows/sec | MB/sec | Peak RSS | Notes |
@@ -108,7 +129,8 @@ Note: the bakeoff harness is in-memory and does not include disk I/O.
 Baseline Rust `csv` passes the corpus (0 mismatches). simd-csv is ~18.9% faster
 in the parser-only bakeoff but skips backslash-escape cases in the harness and
 does not meet the >=25% throughput gate. Arrow and Polars are both slower than
-the baseline on the same large inputs. Keep Rust `csv` for v0.
+the baseline on the same large inputs and fail corpus compatibility checks.
+Keep Rust `csv` for v0.
 
 ## Next Steps
 - If needed, evaluate Arrow/Polars CSV readers and record results.
