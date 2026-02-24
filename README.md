@@ -8,6 +8,8 @@
 
 **Reveal the smallest set of numeric changes that explain what actually changed.**
 
+No AI. No inference. Pure deterministic arithmetic.
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cmdrvl/rvl/main/scripts/install.sh | bash
 ```
