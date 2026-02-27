@@ -687,6 +687,174 @@ Design partner loop checklist (bd-bo0)
 
 ---
 
+## Epistemic Spine Extensions (Deferred — Profile Integration)
+
+These flags and behaviors are deferred until the `profile` tool exists and is stable, but the design is defined now for schema stability. The implementation must match the shape tool's profile integration pattern.
+
+### Flags (epistemic spine extensions)
+
+- `--profile <path>`: scope numeric column selection to this profile's `include_columns` and derive key from the profile's `key` field. Accepts a direct file path to a draft or frozen profile YAML.
+- `--profile-id <id>`: profile ID (resolved from `~/.epistemic/profiles/` search path). Mutually exclusive with `--profile`.
+
+Both flags are optional. When neither is provided, behavior is identical to v0 (full numeric intersection, `--key` required for key mode).
+
+### Precedence: `--key` vs profile key
+
+- If `--profile` provides a non-empty `key` and `--key` is also given: **REFUSAL** (`E_KEY_CONFLICT`) — refuse rather than silently pick one.
+- If `--profile` provides a non-empty `key` and `--key` is not given: use the profile's key. v0.1 supports only single-element `key: [col]`; multi-element keys (composite) are deferred.
+- If `--profile` has an empty `key: []` and `--key` is given: use `--key`.
+- If `--profile` has an empty `key: []` and `--key` is not given: row-order mode (same as v0 without `--key`).
+
+### Column scoping with profile
+
+When a profile is provided:
+
+- **Eligible columns** are the intersection of: (a) columns present in **both** files, (b) the profile's `include_columns`, minus the key column.
+- Columns in `include_columns` that don't exist in either file are **not** a refusal — they are silently ignored (the profile may be broader than any single dataset).
+- Columns present in both files but **not** in `include_columns` are excluded from numeric analysis.
+- `counts.columns_old` / `columns_new` / `columns_common` / `columns_old_only` / `columns_new_only` reflect the profile-scoped view (only counting columns in `include_columns`).
+- `counts.numeric_columns` counts profile-scoped numeric columns only.
+- All existing column classification rules (numeric detection, `E_MIXED_TYPES`, `E_MISSINGNESS`, `E_NO_NUMERIC`) apply to the profile-scoped column set.
+
+Without a profile, behavior is identical to v0 (full numeric intersection).
+
+### Equivalence settings
+
+rvl does **not** consume `equivalence.float_decimals`, `equivalence.trim_strings`, or `equivalence.order` from the profile. rvl has its own `--threshold` and `--tolerance` flags which are more precise controls for numeric comparison. The profile's equivalence settings are for simpler tools that lack their own precision controls.
+
+### Profile resolution
+
+Resolution follows the same protocol as the `profile` tool's resolver:
+
+1. If the argument is a file path that exists on disk — read it directly.
+2. Otherwise — scan `~/.epistemic/profiles/*.yaml` for a frozen profile whose `profile_id` field equals the argument.
+
+Resolution failures are `E_PROFILE_NOT_FOUND` (see Refusal Codes below).
+
+### JSON output changes
+
+Two new top-level fields, inserted after `outcome`:
+
+```json
+{
+  "version": "rvl.v0",
+  "outcome": "REAL_CHANGE",
+  "profile_id": "csv.loan_tape.core.v0",
+  "profile_sha256": "sha256:c9d594a1...",
+  ...
+}
+```
+
+### Nullable field rules (profile additions)
+
+- `profile_id`: null unless `--profile` / `--profile-id` used. When used, contains the resolved `profile_id` from the YAML (not the raw CLI string). For draft profiles (no `profile_id` field), null.
+- `profile_sha256`: null unless a frozen profile is resolved. Contains the `profile_sha256` from the frozen YAML. Draft profiles have no hash; field is null.
+
+### Human output changes
+
+When a profile is active, add a `Profile:` line to the header block (after `Alignment:`, before `Columns:`):
+
+```
+Compared: jan.csv -> feb.csv
+Alignment: key=loan_id
+Profile: csv.loan_tape.core.v0 (sha256:c9d594a1...)
+Columns: common=4 old_only=0 new_only=0
+```
+
+For draft profiles: `Profile: (draft, no ID)`.
+
+### Witness params changes
+
+When a profile is used, add to the `params` object:
+
+```json
+{
+  "delimiter": null,
+  "json": false,
+  "key": null,
+  "profile_id": "csv.loan_tape.core.v0",
+  "profile_sha256": "sha256:c9d594a1...",
+  "threshold": 0.95,
+  "tolerance": 1e-9
+}
+```
+
+### Refusal codes (profile additions)
+
+| Code | Trigger | Next step |
+|------|---------|-----------|
+| `E_AMBIGUOUS_PROFILE` | Both `--profile` and `--profile-id` were provided | Provide exactly one profile selector |
+| `E_PROFILE_NOT_FOUND` | `--profile-id` could not be resolved from search path | Check `~/.epistemic/profiles/` or use `--profile <path>` |
+| `E_KEY_CONFLICT` | Both `--key` and a profile with a non-empty `key` were provided | Remove `--key` (profile provides the key) or use a profile without a key |
+
+> **Note:** `E_AMBIGUOUS_PROFILE` should be a domain refusal (JSON envelope with detail), not a clap parse error, so that `--json` mode always returns structured output. This corrects the pattern used in shape's v0 implementation (where clap's `conflicts_with` catches it at the argument level).
+
+Refusal detail payloads:
+
+```
+E_AMBIGUOUS_PROFILE:
+  { "profile_path": "...", "profile_id": "..." }
+
+E_PROFILE_NOT_FOUND:
+  { "profile_id": "..." }
+
+E_KEY_CONFLICT:
+  { "key_flag": "loan_id", "profile_key": ["loan_id"] }
+```
+
+### JSON example (REAL CHANGE with profile)
+
+```json
+{
+  "version": "rvl.v0",
+  "outcome": "REAL_CHANGE",
+  "profile_id": "csv.loan_tape.core.v0",
+  "profile_sha256": "sha256:c9d594a1e96641f10b730f30a0efe754d0dd17e00f47572e363e4b1c3877cecd",
+  "files": { "old": "jan.csv", "new": "feb.csv" },
+  "alignment": { "mode": "key", "key_column": "u8:loan_id" },
+  "dialect": {
+    "old": { "delimiter": ",", "quote": "\"", "escape": null },
+    "new": { "delimiter": ",", "quote": "\"", "escape": null }
+  },
+  "threshold": 0.95,
+  "tolerance": 1e-9,
+  "counts": {
+    "rows_old": 10, "rows_new": 10, "rows_aligned": 10,
+    "columns_old": 4, "columns_new": 4, "columns_common": 4,
+    "columns_old_only": 0, "columns_new_only": 0,
+    "numeric_columns": 4, "numeric_cells_checked": 40, "numeric_cells_changed": 30
+  },
+  "metrics": { "total_change": 750000.23, "max_abs_delta": 200000.0, "top_k_coverage": 0.9999 },
+  "limits": { "max_contributors": 25 },
+  "contributors": [
+    { "row_id": "u8:L004", "column": "u8:balance", "old": 21000000.0, "new": 20800000.0,
+      "delta": -200000.0, "contribution": 200000.0, "share": 0.2667, "cumulative_share": 0.2667 }
+  ],
+  "refusal": null
+}
+```
+
+Note: `columns_common: 4` reflects profile scoping — the original 8-column CSV is scoped to the 4 numeric columns in `include_columns` (balance, rate, ltv, dscr) after excluding the key column (loan_id) and non-numeric columns (borrower, state, maturity).
+
+### Test categories (profile additions)
+
+- **Profile column scoping:** profile with 4 of 8 columns → only those 4 are analyzed; counts reflect scoped view
+- **Profile key derivation:** profile with `key: [loan_id]` and no `--key` flag → key mode activated from profile
+- **Key conflict:** `--key col` plus profile with `key: [col]` → `E_KEY_CONFLICT`
+- **Profile selector conflict:** `--profile path --profile-id id` → `E_AMBIGUOUS_PROFILE` as JSON refusal
+- **Profile not found:** `--profile-id nonexistent.v0` → `E_PROFILE_NOT_FOUND`
+- **Draft profile:** `--profile draft.yaml` → works, `profile_id` and `profile_sha256` are null in output
+- **Frozen profile:** `--profile frozen.yaml` → `profile_id` and `profile_sha256` populated
+- **Profile with empty key + --key:** `--key col` with `key: []` profile → works (--key takes effect)
+- **Profile with columns not in dataset:** extra columns in `include_columns` → silently ignored, no refusal
+
+### Can defer
+
+- Composite keys from profile (`key: [col_a, col_b]`) — requires composite-key scan in orchestrator
+- `--lock` input verification (needs lock tool integration)
+
+---
+
 ## v1 Ideas (Only If v0 Is Loved)
 - parquet/JSON input (not for v0)
 - directory diffs
