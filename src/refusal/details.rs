@@ -97,6 +97,17 @@ pub enum RefusalKind {
         tied_delimiters: Vec<u8>,
         suggestion: DialectSuggestion,
     },
+    AmbiguousProfile {
+        profile_path: String,
+        profile_id: String,
+    },
+    ProfileNotFound {
+        profile_id: String,
+    },
+    KeyConflict {
+        key_flag: String,
+        profile_key: Vec<String>,
+    },
     MixedTypes {
         file: FileSide,
         record: Option<u64>,
@@ -232,6 +243,19 @@ impl RefusalKind {
                     }
                 }
             },
+            RefusalKind::AmbiguousProfile { .. } => {
+                "provide exactly one profile selector (--profile OR --profile-id) and rerun"
+                    .to_string()
+            }
+            RefusalKind::ProfileNotFound { profile_id } => {
+                format!(
+                    "check ~/.epistemic/profiles/ for profile_id=\"{profile_id}\" or rerun with --profile <path>"
+                )
+            }
+            RefusalKind::KeyConflict { .. } => {
+                "remove --key (profile already defines key) or use a profile without a key"
+                    .to_string()
+            }
             RefusalKind::MixedTypes { .. } => {
                 "normalize column values to numeric (or exclude the column) and rerun".to_string()
             }

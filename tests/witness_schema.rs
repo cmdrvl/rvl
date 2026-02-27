@@ -39,6 +39,7 @@ fn make_record(outcome: Outcome, prev: Option<String>) -> WitnessRecord {
     let result = PipelineResult {
         outcome,
         output: "test output".to_string(),
+        profile: rvl::orchestrator::ProfileRunInfo::default(),
     };
     let mut rec = WitnessRecord::from_run(
         &args,
@@ -103,6 +104,7 @@ fn schema_validates_record_with_all_params() {
     let result = PipelineResult {
         outcome: Outcome::RealChange,
         output: "json output".to_string(),
+        profile: rvl::orchestrator::ProfileRunInfo::default(),
     };
     let mut rec =
         WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv", None);

@@ -26,6 +26,7 @@ fn golden_real_change_human_output() {
         old_name: "old.csv",
         new_name: "new.csv",
         alignment: Alignment::Key { column: "id" },
+        profile: None,
         columns: ColumnCounts {
             common: 3,
             old_only: 1,
@@ -100,6 +101,7 @@ fn golden_no_real_change_human_output() {
         old_name: "old.csv",
         new_name: "new.csv",
         alignment: Alignment::RowOrder,
+        profile: None,
         columns: ColumnCounts {
             common: 2,
             old_only: 0,
@@ -165,6 +167,7 @@ fn golden_refusal_human_output() {
         old_name: "old.csv",
         new_name: "new.csv",
         alignment: Alignment::Key { column: "id" },
+        profile: None,
         dialect_old: Some(DialectReceipt {
             delimiter: b',',
             quote: b'"',
@@ -234,6 +237,9 @@ fn golden_json_real_change_output() {
             old: Some(DialectSide::new(b',', b'"', None)),
             new: Some(DialectSide::new(b',', b'"', None)),
         },
+        profile_used: false,
+        profile_id: None,
+        profile_sha256: None,
         threshold: 0.95,
         tolerance: 1e-9,
         counts: Counts {
@@ -264,6 +270,8 @@ fn golden_json_real_change_output() {
     let expected = json!({
         "version": "rvl.v0",
         "outcome": "REAL_CHANGE",
+        "profile_id": null,
+        "profile_sha256": null,
         "files": { "old": "old.csv", "new": "new.csv" },
         "alignment": { "mode": "key", "key_column": "u8:id" },
         "dialect": {
@@ -316,6 +324,9 @@ fn golden_json_no_real_change_output() {
             old: Some(DialectSide::new(b',', b'"', None)),
             new: Some(DialectSide::new(b',', b'"', None)),
         },
+        profile_used: false,
+        profile_id: None,
+        profile_sha256: None,
         threshold: 0.95,
         tolerance: 1e-9,
         counts: Counts {
@@ -344,6 +355,8 @@ fn golden_json_no_real_change_output() {
     let expected = json!({
         "version": "rvl.v0",
         "outcome": "NO_REAL_CHANGE",
+        "profile_id": null,
+        "profile_sha256": null,
         "files": { "old": "old.csv", "new": "new.csv" },
         "alignment": { "mode": "row_order", "key_column": null },
         "dialect": {
@@ -386,6 +399,9 @@ fn golden_json_refusal_output() {
             old: Some(DialectSide::new(b',', b'"', None)),
             new: Some(DialectSide::new(b',', b'"', None)),
         },
+        profile_used: false,
+        profile_id: None,
+        profile_sha256: None,
         threshold: 0.95,
         tolerance: 1e-9,
         counts: Counts::default(),
@@ -408,6 +424,8 @@ fn golden_json_refusal_output() {
     let expected = json!({
         "version": "rvl.v0",
         "outcome": "REFUSAL",
+        "profile_id": null,
+        "profile_sha256": null,
         "files": { "old": "old.csv", "new": "new.csv" },
         "alignment": { "mode": "key", "key_column": "u8:id" },
         "dialect": {

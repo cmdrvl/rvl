@@ -42,6 +42,8 @@ fn run_with_capsule(
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
+        profile: None,
+        profile_id: None,
         capsule_out: Some(capsule_root.to_path_buf()),
         json: true,
         no_witness: true,
@@ -99,6 +101,14 @@ fn replay_from_manifest(manifest: &Value, capsule_dir: &Path) -> Value {
             .and_then(Value::as_f64)
             .expect("manifest.args.tolerance"),
         delimiter,
+        profile: args_block
+            .get("profile")
+            .and_then(Value::as_str)
+            .map(PathBuf::from),
+        profile_id: args_block
+            .get("profile_id")
+            .and_then(Value::as_str)
+            .map(str::to_string),
         capsule_out: None,
         json: args_block
             .get("json")

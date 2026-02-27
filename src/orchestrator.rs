@@ -2,6 +2,7 @@
 
 mod capsule;
 
+use std::collections::HashSet;
 use std::error::Error;
 use std::fs;
 use std::io::Cursor;
@@ -34,13 +35,15 @@ use crate::format::ident_human::render_identifier_human;
 use crate::format::ident_json::encode_identifier_json;
 use crate::normalize::headers::normalize_headers;
 use crate::numeric::columns::{
-    ColumnTypingError, Side as ColumnSide, detect_numeric_columns, intersect_headers,
+    ColumnIntersection, ColumnTypingError, Side as ColumnSide, detect_numeric_columns,
+    intersect_headers,
 };
 use crate::numeric::missing::is_missing_token;
 use crate::numeric::parse::parse_numeric;
 use crate::output::human::header::{
     Alignment as HumanAlignment, CheckedCounts, ColumnCounts, DialectReceipt, HumanHeader,
-    RefusalHeader, Settings as HumanSettings, render_real_no_real_header, render_refusal_header,
+    Profile as HumanProfile, RefusalHeader, Settings as HumanSettings, render_real_no_real_header,
+    render_refusal_header,
 };
 use crate::output::human::no_real::{NoRealBody, render_no_real_body};
 use crate::output::human::real_change::{
@@ -51,6 +54,7 @@ use crate::output::json::{
     Alignment as JsonAlignment, Counts, Dialect, DialectSide, Files, JsonContext, JsonOutput,
     Metrics, Refusal as JsonRefusal,
 };
+use crate::profile::{ResolvedProfile, load_profile_from_path, resolve_profile_id};
 use crate::refusal::codes::RefusalCode;
 use crate::refusal::details::{
     DelimiterHint, DialectSuggestion, EncodingIssue, FileSide, HeadersIssue, NamedDelimiter,
@@ -61,6 +65,22 @@ use capsule::{CapsuleContributor, CapsuleContributorSummary, CapsuleRunSummary};
 pub struct PipelineResult {
     pub outcome: Outcome,
     pub output: String,
+    pub profile: ProfileRunInfo,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ProfileRunInfo {
+    pub used: bool,
+    pub profile_id: Option<String>,
+    pub profile_sha256: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct ActiveProfile {
+    include_scope: Option<HashSet<Vec<u8>>>,
+    key: Option<Vec<u8>>,
+    key_labels: Vec<String>,
+    info: ProfileRunInfo,
 }
 
 struct ParsedCsv {
@@ -80,6 +100,7 @@ struct RefusalContext<'a> {
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
     alignment: JsonAlignment,
+    profile: ProfileRunInfo,
     counts: Counts,
     metrics: Metrics,
 }
@@ -114,10 +135,43 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         new: &new_path,
     };
 
-    let key_bytes = match args.key.as_deref() {
+    let active_profile = match resolve_active_profile(args, rerun_paths) {
+        Ok(profile) => profile,
+        Err(refusal) => {
+            return Ok(render_refusal(
+                refusal,
+                args,
+                None,
+                None,
+                None,
+                &ProfileRunInfo::default(),
+            ));
+        }
+    };
+
+    let cli_key = match args.key.as_deref() {
         Some(key) => Some(parse_key_identifier(key)?),
         None => None,
     };
+    if cli_key.is_some() && active_profile.key.is_some() {
+        let refusal = RefusalPayload::with_default_next(
+            RefusalCode::KeyConflict,
+            RefusalKind::KeyConflict {
+                key_flag: args.key.clone().unwrap_or_default(),
+                profile_key: active_profile.key_labels.clone(),
+            },
+            rerun_paths,
+        );
+        return Ok(render_refusal(
+            refusal,
+            args,
+            None,
+            None,
+            None,
+            &active_profile.info,
+        ));
+    }
+    let key_bytes = cli_key.or_else(|| active_profile.key.clone());
 
     let old = match parse_csv(args.old_path(), FileSide::Old, args.delimiter, rerun_paths) {
         Ok(parsed) => parsed,
@@ -128,6 +182,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
                 key_bytes.as_deref(),
                 None,
                 None,
+                &active_profile.info,
             ));
         }
     };
@@ -141,6 +196,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
                 key_bytes.as_deref(),
                 Some(dialect_receipt(&old)),
                 None,
+                &active_profile.info,
             ));
         }
     };
@@ -149,9 +205,86 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     let dialect_new = Some(dialect_receipt(&new));
 
     if let Some(key) = key_bytes.as_deref() {
-        run_key_mode(args, key, old, new, dialect_old, dialect_new, rerun_paths)
+        run_key_mode(
+            args,
+            key,
+            old,
+            new,
+            dialect_old,
+            dialect_new,
+            rerun_paths,
+            &active_profile,
+        )
     } else {
-        run_row_order(args, old, new, dialect_old, dialect_new, rerun_paths)
+        run_row_order(
+            args,
+            old,
+            new,
+            dialect_old,
+            dialect_new,
+            rerun_paths,
+            &active_profile,
+        )
+    }
+}
+
+fn resolve_active_profile(
+    args: &Args,
+    rerun_paths: RerunPaths<'_>,
+) -> Result<ActiveProfile, RefusalPayload> {
+    if let (Some(profile_path), Some(profile_id)) =
+        (args.profile.as_ref(), args.profile_id.as_ref())
+    {
+        return Err(RefusalPayload::with_default_next(
+            RefusalCode::AmbiguousProfile,
+            RefusalKind::AmbiguousProfile {
+                profile_path: profile_path.to_string_lossy().to_string(),
+                profile_id: profile_id.clone(),
+            },
+            rerun_paths,
+        ));
+    }
+
+    if let Some(profile_path) = args.profile.as_ref() {
+        let selector = profile_path.to_string_lossy().to_string();
+        let resolved = load_profile_from_path(profile_path).map_err(|_| {
+            RefusalPayload::with_default_next(
+                RefusalCode::ProfileNotFound,
+                RefusalKind::ProfileNotFound {
+                    profile_id: selector.clone(),
+                },
+                rerun_paths,
+            )
+        })?;
+        return Ok(active_profile_from_resolved(resolved));
+    }
+
+    if let Some(profile_id) = args.profile_id.as_ref() {
+        let resolved = resolve_profile_id(profile_id).map_err(|_| {
+            RefusalPayload::with_default_next(
+                RefusalCode::ProfileNotFound,
+                RefusalKind::ProfileNotFound {
+                    profile_id: profile_id.clone(),
+                },
+                rerun_paths,
+            )
+        })?;
+        return Ok(active_profile_from_resolved(resolved));
+    }
+
+    Ok(ActiveProfile::default())
+}
+
+fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
+    ActiveProfile {
+        include_scope: Some(profile.include_set()),
+        key: profile.primary_key().map(|key| key.to_vec()),
+        key_labels: profile.key_labels,
+        info: ProfileRunInfo {
+            used: true,
+            profile_id: profile.profile_id,
+            profile_sha256: profile.profile_sha256,
+        },
     }
 }
 
@@ -163,6 +296,7 @@ fn run_key_mode(
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
     rerun_paths: RerunPaths<'_>,
+    active_profile: &ActiveProfile,
 ) -> Result<PipelineResult, Box<dyn Error>> {
     let old_key_index = match find_key_index(&old.headers, key) {
         Some(index) => index,
@@ -180,6 +314,7 @@ fn run_key_mode(
                 Some(key),
                 dialect_old,
                 dialect_new,
+                &active_profile.info,
             ));
         }
     };
@@ -200,6 +335,7 @@ fn run_key_mode(
                 Some(key),
                 dialect_old,
                 dialect_new,
+                &active_profile.info,
             ));
         }
     };
@@ -223,6 +359,7 @@ fn run_key_mode(
                 Some(key),
                 dialect_old,
                 dialect_new,
+                &active_profile.info,
             ));
         }
     };
@@ -243,6 +380,7 @@ fn run_key_mode(
                 Some(key),
                 dialect_old,
                 dialect_new,
+                &active_profile.info,
             ));
         }
     };
@@ -257,6 +395,7 @@ fn run_key_mode(
                 Some(key),
                 dialect_old,
                 dialect_new,
+                &active_profile.info,
             ));
         }
     };
@@ -274,6 +413,7 @@ fn run_key_mode(
         dialect_old,
         dialect_new,
         rerun_paths,
+        active_profile,
     )
 }
 
@@ -284,6 +424,7 @@ fn run_row_order(
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
     rerun_paths: RerunPaths<'_>,
+    active_profile: &ActiveProfile,
 ) -> Result<PipelineResult, Box<dyn Error>> {
     if old.records.len() != new.records.len() {
         let suggested_keys = discover_key_candidates(
@@ -306,13 +447,24 @@ fn run_row_order(
             },
             rerun_paths,
         );
-        let intersection = intersect_headers(&old.headers, &new.headers, None);
+        let intersection = scope_intersection(
+            intersect_headers(&old.headers, &new.headers, None),
+            active_profile.include_scope.as_ref(),
+        );
         let counts = Counts {
             rows_old: Some(old.records.len() as u64),
             rows_new: Some(new.records.len() as u64),
             rows_aligned: None,
-            columns_old: Some(count_columns(&old.headers, None)),
-            columns_new: Some(count_columns(&new.headers, None)),
+            columns_old: Some(count_columns(
+                &old.headers,
+                None,
+                active_profile.include_scope.as_ref(),
+            )),
+            columns_new: Some(count_columns(
+                &new.headers,
+                None,
+                active_profile.include_scope.as_ref(),
+            )),
             columns_common: Some(intersection.common.len() as u64),
             columns_old_only: Some(intersection.old_only.len() as u64),
             columns_new_only: Some(intersection.new_only.len() as u64),
@@ -323,6 +475,7 @@ fn run_row_order(
             dialect_old,
             dialect_new,
             alignment: JsonAlignment::row_order(),
+            profile: active_profile.info.clone(),
             counts,
             metrics: Metrics::default(),
         };
@@ -340,6 +493,7 @@ fn run_row_order(
         dialect_old,
         dialect_new,
         rerun_paths,
+        active_profile,
     )
 }
 
@@ -364,13 +518,17 @@ fn run_diff(
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
     rerun_paths: RerunPaths<'_>,
+    active_profile: &ActiveProfile,
 ) -> Result<PipelineResult, Box<dyn Error>> {
     let key_bytes = match &alignment {
         AlignmentContext::Key { key, .. } => Some(key.as_slice()),
         AlignmentContext::RowOrder { .. } => None,
     };
 
-    let intersection = intersect_headers(&old_headers, &new_headers, key_bytes);
+    let intersection = scope_intersection(
+        intersect_headers(&old_headers, &new_headers, key_bytes),
+        active_profile.include_scope.as_ref(),
+    );
 
     let (rows_old, rows_new, rows_aligned) = match &alignment {
         AlignmentContext::Key {
@@ -409,6 +567,7 @@ fn run_diff(
                         key_bytes,
                         dialect_old,
                         dialect_new,
+                        &active_profile.info,
                     ));
                 }
             }
@@ -438,6 +597,7 @@ fn run_diff(
                         key_bytes,
                         dialect_old,
                         dialect_new,
+                        &active_profile.info,
                     ));
                 }
             }
@@ -458,8 +618,16 @@ fn run_diff(
             rows_old: Some(rows_old),
             rows_new: Some(rows_new),
             rows_aligned: Some(rows_aligned),
-            columns_old: Some(count_columns(&old_headers, key_bytes)),
-            columns_new: Some(count_columns(&new_headers, key_bytes)),
+            columns_old: Some(count_columns(
+                &old_headers,
+                key_bytes,
+                active_profile.include_scope.as_ref(),
+            )),
+            columns_new: Some(count_columns(
+                &new_headers,
+                key_bytes,
+                active_profile.include_scope.as_ref(),
+            )),
             columns_common: Some(intersection.common.len() as u64),
             columns_old_only: Some(intersection.old_only.len() as u64),
             columns_new_only: Some(intersection.new_only.len() as u64),
@@ -472,6 +640,7 @@ fn run_diff(
             dialect_old,
             dialect_new,
             alignment: alignment_mode,
+            profile: active_profile.info.clone(),
             counts,
             metrics: Metrics::default(),
         };
@@ -583,8 +752,16 @@ fn run_diff(
         rows_old: Some(rows_old),
         rows_new: Some(rows_new),
         rows_aligned: Some(rows_aligned),
-        columns_old: Some(count_columns(&old_headers, key_bytes)),
-        columns_new: Some(count_columns(&new_headers, key_bytes)),
+        columns_old: Some(count_columns(
+            &old_headers,
+            key_bytes,
+            active_profile.include_scope.as_ref(),
+        )),
+        columns_new: Some(count_columns(
+            &new_headers,
+            key_bytes,
+            active_profile.include_scope.as_ref(),
+        )),
         columns_common: Some(intersection.common.len() as u64),
         columns_old_only: Some(intersection.old_only.len() as u64),
         columns_new_only: Some(intersection.new_only.len() as u64),
@@ -620,6 +797,7 @@ fn run_diff(
                 dialect_old,
                 dialect_new,
                 alignment: alignment_mode,
+                profile: active_profile.info.clone(),
                 counts,
                 metrics,
             };
@@ -636,6 +814,7 @@ fn run_diff(
                 alignment_mode,
                 dialect_old,
                 dialect_new,
+                &active_profile.info,
                 counts,
                 metrics,
             );
@@ -655,6 +834,7 @@ fn run_diff(
                 dialect_old,
                 dialect_new,
                 alignment: alignment_mode,
+                profile: active_profile.info.clone(),
                 counts,
                 metrics,
             };
@@ -668,6 +848,7 @@ fn run_diff(
                 alignment_mode,
                 dialect_old,
                 dialect_new,
+                &active_profile.info,
                 counts,
                 metrics,
             );
@@ -1018,6 +1199,7 @@ fn render_refusal(
     key: Option<&[u8]>,
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
+    profile: &ProfileRunInfo,
 ) -> PipelineResult {
     let alignment_mode = match key {
         Some(key) => JsonAlignment::key(encode_identifier_json(key)),
@@ -1029,6 +1211,7 @@ fn render_refusal(
         dialect_old,
         dialect_new,
         alignment: alignment_mode,
+        profile: profile.clone(),
         counts: Counts::default(),
         metrics: Metrics::default(),
     };
@@ -1050,6 +1233,7 @@ fn render_refusal_with_context(
             context.alignment,
             context.dialect_old,
             context.dialect_new,
+            &context.profile,
             context.counts,
             context.metrics,
         );
@@ -1061,6 +1245,7 @@ fn render_refusal_with_context(
         PipelineResult {
             outcome: Outcome::Refusal,
             output,
+            profile: context.profile.clone(),
         }
     } else {
         let mut lines = Vec::new();
@@ -1074,6 +1259,7 @@ fn render_refusal_with_context(
                 Some(label) => HumanAlignment::Key { column: label },
                 None => HumanAlignment::RowOrder,
             },
+            profile: to_human_profile(&context.profile),
             dialect_old: context.dialect_old,
             dialect_new: context.dialect_new,
             settings: HumanSettings {
@@ -1093,6 +1279,7 @@ fn render_refusal_with_context(
         PipelineResult {
             outcome: Outcome::Refusal,
             output: lines.join("\n"),
+            profile: context.profile.clone(),
         }
     };
 
@@ -1109,6 +1296,7 @@ fn render_no_real_change(
     ctx: JsonContext,
     alignment_label: Option<&str>,
 ) -> PipelineResult {
+    let run_profile = profile_from_json_context(&ctx);
     let result = if args.json {
         let output = JsonOutput::no_real_change(ctx)
             .to_string()
@@ -1116,6 +1304,7 @@ fn render_no_real_change(
         PipelineResult {
             outcome: Outcome::NoRealChange,
             output,
+            profile: run_profile.clone(),
         }
     } else {
         let old_display = display_name(args.old_path());
@@ -1142,6 +1331,7 @@ fn render_no_real_change(
         PipelineResult {
             outcome: Outcome::NoRealChange,
             output: lines.join("\n"),
+            profile: run_profile.clone(),
         }
     };
 
@@ -1156,6 +1346,7 @@ fn render_real_change(
     coverage: f64,
     alignment_label: Option<&str>,
 ) -> PipelineResult {
+    let run_profile = profile_from_json_context(&ctx);
     let total_change = ctx.metrics.total_change.unwrap_or(0.0);
     let contributor_summary = build_capsule_contributor_summary(details, total_change, coverage);
 
@@ -1167,6 +1358,7 @@ fn render_real_change(
         PipelineResult {
             outcome: Outcome::RealChange,
             output,
+            profile: run_profile.clone(),
         }
     } else {
         let old_display = display_name(args.old_path());
@@ -1195,6 +1387,7 @@ fn render_real_change(
         PipelineResult {
             outcome: Outcome::RealChange,
             output: lines.join("\n"),
+            profile: run_profile.clone(),
         }
     };
 
@@ -1258,11 +1451,13 @@ fn render_human_header_lines(
             quote: b'"',
             escape: None,
         });
+    let profile = profile_from_json_context(ctx);
 
     let header = HumanHeader {
         old_name,
         new_name,
         alignment,
+        profile: to_human_profile(&profile),
         columns,
         checked,
         dialect_old,
@@ -1281,6 +1476,7 @@ fn json_context(
     alignment: JsonAlignment,
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
+    profile: &ProfileRunInfo,
     counts: Counts,
     metrics: Metrics,
 ) -> JsonContext {
@@ -1296,10 +1492,34 @@ fn json_context(
             new: dialect_new
                 .map(|dialect| DialectSide::new(dialect.delimiter, dialect.quote, dialect.escape)),
         },
+        profile_used: profile.used,
+        profile_id: profile.profile_id.clone(),
+        profile_sha256: profile.profile_sha256.clone(),
         threshold: args.threshold,
         tolerance: args.tolerance,
         counts,
         metrics,
+    }
+}
+
+fn profile_from_json_context(ctx: &JsonContext) -> ProfileRunInfo {
+    ProfileRunInfo {
+        used: ctx.profile_used,
+        profile_id: ctx.profile_id.clone(),
+        profile_sha256: ctx.profile_sha256.clone(),
+    }
+}
+
+fn to_human_profile<'a>(profile: &'a ProfileRunInfo) -> Option<HumanProfile<'a>> {
+    if !profile.used {
+        return None;
+    }
+    match profile.profile_id.as_deref() {
+        Some(profile_id) => Some(HumanProfile::Id {
+            profile_id,
+            profile_sha256: profile.profile_sha256.as_deref(),
+        }),
+        None => Some(HumanProfile::Draft),
     }
 }
 
@@ -1388,14 +1608,56 @@ fn render_cell_label(cell_id: &CellId) -> String {
     format!("{row_label}.{column}")
 }
 
-fn count_columns(headers: &[Vec<u8>], key: Option<&[u8]>) -> u64 {
-    let mut count = headers.len() as u64;
-    if let Some(key) = key
-        && headers.iter().any(|name| name.as_slice() == key)
-    {
-        count = count.saturating_sub(1);
+fn scope_intersection(
+    intersection: ColumnIntersection,
+    include_scope: Option<&HashSet<Vec<u8>>>,
+) -> ColumnIntersection {
+    let Some(scope) = include_scope else {
+        return intersection;
+    };
+
+    let common = intersection
+        .common
+        .into_iter()
+        .filter(|column| scope.contains(&column.name))
+        .collect();
+    let old_only = intersection
+        .old_only
+        .into_iter()
+        .filter(|column| scope.contains(column))
+        .collect();
+    let new_only = intersection
+        .new_only
+        .into_iter()
+        .filter(|column| scope.contains(column))
+        .collect();
+
+    ColumnIntersection {
+        common,
+        old_only,
+        new_only,
     }
-    count
+}
+
+fn count_columns(
+    headers: &[Vec<u8>],
+    key: Option<&[u8]>,
+    include_scope: Option<&HashSet<Vec<u8>>>,
+) -> u64 {
+    headers
+        .iter()
+        .filter(|name| {
+            if let Some(scope) = include_scope
+                && !scope.contains(name.as_slice())
+            {
+                return false;
+            }
+            if let Some(key) = key {
+                return name.as_slice() != key;
+            }
+            true
+        })
+        .count() as u64
 }
 
 fn dialect_receipt(parsed: &ParsedCsv) -> DialectReceipt {
@@ -1635,6 +1897,23 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
                 DialectSuggestion::ForceDelimiter(hint) => format!("--delimiter {}", render_hint(*hint)),
                 DialectSuggestion::SepDirective(byte) => format!("sep={}", byte_to_string(*byte)),
             },
+        }),
+        RefusalKind::AmbiguousProfile {
+            profile_path,
+            profile_id,
+        } => json!({
+            "profile_path": profile_path,
+            "profile_id": profile_id,
+        }),
+        RefusalKind::ProfileNotFound { profile_id } => json!({
+            "profile_id": profile_id,
+        }),
+        RefusalKind::KeyConflict {
+            key_flag,
+            profile_key,
+        } => json!({
+            "key_flag": key_flag,
+            "profile_key": profile_key,
         }),
         RefusalKind::MixedTypes {
             file,

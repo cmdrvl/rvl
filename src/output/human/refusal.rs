@@ -144,6 +144,26 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             let list = render_delimiters(tied_delimiters);
             format!("Example: {file} delimiter ambiguous among [{list}].")
         }
+        RefusalKind::AmbiguousProfile {
+            profile_path,
+            profile_id,
+        } => format!(
+            "Example: both --profile \"{profile_path}\" and --profile-id \"{profile_id}\" were provided."
+        ),
+        RefusalKind::ProfileNotFound { profile_id } => {
+            format!("Example: profile \"{profile_id}\" was not found.")
+        }
+        RefusalKind::KeyConflict {
+            key_flag,
+            profile_key,
+        } => {
+            let keys = if profile_key.is_empty() {
+                "[]".to_string()
+            } else {
+                format!("[{}]", profile_key.join(", "))
+            };
+            format!("Example: --key \"{key_flag}\" conflicts with profile key {keys}.")
+        }
         RefusalKind::MixedTypes {
             file,
             record,

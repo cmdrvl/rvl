@@ -15,6 +15,9 @@ pub enum RefusalCode {
     RowCount,
     NeedKey,
     Dialect,
+    AmbiguousProfile,
+    ProfileNotFound,
+    KeyConflict,
     MixedTypes,
     NoNumeric,
     Missingness,
@@ -25,7 +28,7 @@ pub enum RefusalCode {
 pub struct UnknownRefusalCode;
 
 impl RefusalCode {
-    pub const ALL: [RefusalCode; 15] = [
+    pub const ALL: [RefusalCode; 18] = [
         RefusalCode::Io,
         RefusalCode::Encoding,
         RefusalCode::CsvParse,
@@ -37,6 +40,9 @@ impl RefusalCode {
         RefusalCode::RowCount,
         RefusalCode::NeedKey,
         RefusalCode::Dialect,
+        RefusalCode::AmbiguousProfile,
+        RefusalCode::ProfileNotFound,
+        RefusalCode::KeyConflict,
         RefusalCode::MixedTypes,
         RefusalCode::NoNumeric,
         RefusalCode::Missingness,
@@ -57,6 +63,9 @@ impl RefusalCode {
             RefusalCode::RowCount => "E_ROWCOUNT",
             RefusalCode::NeedKey => "E_NEED_KEY",
             RefusalCode::Dialect => "E_DIALECT",
+            RefusalCode::AmbiguousProfile => "E_AMBIGUOUS_PROFILE",
+            RefusalCode::ProfileNotFound => "E_PROFILE_NOT_FOUND",
+            RefusalCode::KeyConflict => "E_KEY_CONFLICT",
             RefusalCode::MixedTypes => "E_MIXED_TYPES",
             RefusalCode::NoNumeric => "E_NO_NUMERIC",
             RefusalCode::Missingness => "E_MISSINGNESS",
@@ -79,6 +88,9 @@ impl RefusalCode {
             RefusalCode::RowCount => "row count mismatch",
             RefusalCode::NeedKey => "cannot deterministically align without a key",
             RefusalCode::Dialect => "delimiter ambiguous or undetectable",
+            RefusalCode::AmbiguousProfile => "ambiguous profile selectors",
+            RefusalCode::ProfileNotFound => "profile could not be resolved",
+            RefusalCode::KeyConflict => "key flag conflicts with profile key",
             RefusalCode::MixedTypes => "mixed numeric and non-numeric values",
             RefusalCode::NoNumeric => "no numeric columns in common",
             RefusalCode::Missingness => "numeric-vs-missing mismatch (refusal)",
@@ -117,6 +129,9 @@ impl FromStr for RefusalCode {
             "E_ROWCOUNT" => Ok(RefusalCode::RowCount),
             "E_NEED_KEY" => Ok(RefusalCode::NeedKey),
             "E_DIALECT" => Ok(RefusalCode::Dialect),
+            "E_AMBIGUOUS_PROFILE" => Ok(RefusalCode::AmbiguousProfile),
+            "E_PROFILE_NOT_FOUND" => Ok(RefusalCode::ProfileNotFound),
+            "E_KEY_CONFLICT" => Ok(RefusalCode::KeyConflict),
             "E_MIXED_TYPES" => Ok(RefusalCode::MixedTypes),
             "E_NO_NUMERIC" => Ok(RefusalCode::NoNumeric),
             "E_MISSINGNESS" => Ok(RefusalCode::Missingness),

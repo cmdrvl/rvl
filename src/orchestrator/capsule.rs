@@ -84,6 +84,8 @@ struct CapsuleArgs {
     old: String,
     new: String,
     key: Option<String>,
+    profile: Option<String>,
+    profile_id: Option<String>,
     threshold: f64,
     tolerance: f64,
     delimiter: Option<String>,
@@ -137,6 +139,11 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
         old: old_path,
         new: new_path,
         key: args.key.clone(),
+        profile: args
+            .profile
+            .as_ref()
+            .map(|path| path.to_string_lossy().to_string()),
+        profile_id: args.profile_id.clone(),
         threshold: args.threshold,
         tolerance: args.tolerance,
         delimiter: args.delimiter.map(|d| format!("0x{d:02x}")),
@@ -255,6 +262,14 @@ fn build_replay_command(args: &Args) -> String {
     if let Some(key) = args.key.as_deref() {
         parts.push("--key".to_string());
         parts.push(shell_escape(key));
+    }
+    if let Some(profile) = args.profile.as_ref() {
+        parts.push("--profile".to_string());
+        parts.push(shell_escape(&profile.to_string_lossy()));
+    }
+    if let Some(profile_id) = args.profile_id.as_deref() {
+        parts.push("--profile-id".to_string());
+        parts.push(shell_escape(profile_id));
     }
     parts.push("--threshold".to_string());
     parts.push(args.threshold.to_string());

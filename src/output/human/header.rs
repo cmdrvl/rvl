@@ -46,10 +46,35 @@ pub struct Settings {
     pub tolerance: f64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Profile<'a> {
+    Id {
+        profile_id: &'a str,
+        profile_sha256: Option<&'a str>,
+    },
+    Draft,
+}
+
+impl<'a> Profile<'a> {
+    fn render(self) -> String {
+        match self {
+            Profile::Id {
+                profile_id,
+                profile_sha256,
+            } => match profile_sha256 {
+                Some(sha) => format!("{profile_id} ({sha})"),
+                None => profile_id.to_string(),
+            },
+            Profile::Draft => "(draft, no ID)".to_string(),
+        }
+    }
+}
+
 pub struct HumanHeader<'a> {
     pub old_name: &'a str,
     pub new_name: &'a str,
     pub alignment: Alignment<'a>,
+    pub profile: Option<Profile<'a>>,
     pub columns: ColumnCounts,
     pub checked: CheckedCounts,
     pub dialect_old: DialectReceipt,
@@ -61,15 +86,21 @@ pub struct RefusalHeader<'a> {
     pub old_name: &'a str,
     pub new_name: &'a str,
     pub alignment: Alignment<'a>,
+    pub profile: Option<Profile<'a>>,
     pub dialect_old: Option<DialectReceipt>,
     pub dialect_new: Option<DialectReceipt>,
     pub settings: Settings,
 }
 
 pub fn render_real_no_real_header(ctx: &HumanHeader<'_>) -> Vec<String> {
-    vec![
+    let mut lines = vec![
         format!("Compared: {} -> {}", ctx.old_name, ctx.new_name),
         format!("Alignment: {}", ctx.alignment.render()),
+    ];
+    if let Some(profile) = ctx.profile {
+        lines.push(format!("Profile: {}", profile.render()));
+    }
+    lines.extend([
         format!(
             "Columns: common={} old_only={} new_only={}",
             format_count(ctx.columns.common),
@@ -90,13 +121,17 @@ pub fn render_real_no_real_header(ctx: &HumanHeader<'_>) -> Vec<String> {
             format_percent_one_decimal(ctx.settings.threshold),
             format_float_shortest(ctx.settings.tolerance)
         ),
-    ]
+    ]);
+    lines
 }
 
 pub fn render_refusal_header(ctx: &RefusalHeader<'_>) -> Vec<String> {
     let mut lines = Vec::with_capacity(5);
     lines.push(format!("Compared: {} -> {}", ctx.old_name, ctx.new_name));
     lines.push(format!("Alignment: {}", ctx.alignment.render()));
+    if let Some(profile) = ctx.profile {
+        lines.push(format!("Profile: {}", profile.render()));
+    }
     if let (Some(old), Some(new)) = (ctx.dialect_old, ctx.dialect_new) {
         lines.push(format!("Dialect(old): {}", render_dialect(old)));
         lines.push(format!("Dialect(new): {}", render_dialect(new)));
@@ -172,6 +207,7 @@ mod tests {
             old_name: "old.csv",
             new_name: "new.csv",
             alignment: Alignment::Key { column: "id" },
+            profile: None,
             columns: ColumnCounts {
                 common: 15,
                 old_only: 2,
@@ -218,6 +254,7 @@ mod tests {
             old_name: "old.csv",
             new_name: "new.csv",
             alignment: Alignment::RowOrder,
+            profile: None,
             dialect_old: None,
             dialect_new: None,
             settings: Settings {
@@ -231,5 +268,42 @@ mod tests {
         assert_eq!(lines[0], "Compared: old.csv -> new.csv");
         assert_eq!(lines[1], "Alignment: row-order (no key)");
         assert_eq!(lines[2], "Settings: threshold=95.0% tolerance=1e-9");
+    }
+
+    #[test]
+    fn renders_profile_line_for_draft() {
+        let ctx = HumanHeader {
+            old_name: "old.csv",
+            new_name: "new.csv",
+            alignment: Alignment::RowOrder,
+            profile: Some(Profile::Draft),
+            columns: ColumnCounts {
+                common: 1,
+                old_only: 0,
+                new_only: 0,
+            },
+            checked: CheckedCounts {
+                rows: 1,
+                numeric_columns: 1,
+                cells: 1,
+            },
+            dialect_old: DialectReceipt {
+                delimiter: b',',
+                quote: b'"',
+                escape: None,
+            },
+            dialect_new: DialectReceipt {
+                delimiter: b',',
+                quote: b'"',
+                escape: None,
+            },
+            settings: Settings {
+                threshold: 0.95,
+                tolerance: 1e-9,
+            },
+        };
+
+        let lines = render_real_no_real_header(&ctx);
+        assert_eq!(lines[2], "Profile: (draft, no ID)");
     }
 }

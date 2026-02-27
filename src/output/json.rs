@@ -166,6 +166,9 @@ pub struct JsonContext {
     pub files: Files,
     pub alignment: Alignment,
     pub dialect: Dialect,
+    pub profile_used: bool,
+    pub profile_id: Option<String>,
+    pub profile_sha256: Option<String>,
     pub threshold: f64,
     pub tolerance: f64,
     pub counts: Counts,
@@ -176,6 +179,8 @@ pub struct JsonContext {
 pub struct JsonOutput {
     pub version: &'static str,
     pub outcome: Outcome,
+    pub profile_id: Option<String>,
+    pub profile_sha256: Option<String>,
     pub files: Files,
     pub alignment: Alignment,
     pub dialect: Dialect,
@@ -193,6 +198,16 @@ impl JsonOutput {
         Self {
             version: "rvl.v0",
             outcome: Outcome::RealChange,
+            profile_id: if ctx.profile_used {
+                ctx.profile_id.clone()
+            } else {
+                None
+            },
+            profile_sha256: if ctx.profile_used {
+                ctx.profile_sha256.clone()
+            } else {
+                None
+            },
             files: ctx.files,
             alignment: ctx.alignment,
             dialect: ctx.dialect,
@@ -210,6 +225,16 @@ impl JsonOutput {
         Self {
             version: "rvl.v0",
             outcome: Outcome::NoRealChange,
+            profile_id: if ctx.profile_used {
+                ctx.profile_id.clone()
+            } else {
+                None
+            },
+            profile_sha256: if ctx.profile_used {
+                ctx.profile_sha256.clone()
+            } else {
+                None
+            },
             files: ctx.files,
             alignment: ctx.alignment,
             dialect: ctx.dialect,
@@ -227,6 +252,16 @@ impl JsonOutput {
         Self {
             version: "rvl.v0",
             outcome: Outcome::Refusal,
+            profile_id: if ctx.profile_used {
+                ctx.profile_id.clone()
+            } else {
+                None
+            },
+            profile_sha256: if ctx.profile_used {
+                ctx.profile_sha256.clone()
+            } else {
+                None
+            },
             files: ctx.files,
             alignment: ctx.alignment,
             dialect: ctx.dialect,
@@ -276,6 +311,9 @@ mod tests {
                 old: Some(DialectSide::new(b',', b'"', None)),
                 new: Some(DialectSide::new(b',', b'"', None)),
             },
+            profile_used: false,
+            profile_id: None,
+            profile_sha256: None,
             threshold: 0.95,
             tolerance: 1e-9,
             counts: Counts {
@@ -307,6 +345,8 @@ mod tests {
         let value = serde_json::to_value(output).expect("json");
         assert_eq!(value["version"], "rvl.v0");
         assert_eq!(value["outcome"], "REAL_CHANGE");
+        assert!(value["profile_id"].is_null());
+        assert!(value["profile_sha256"].is_null());
         assert_eq!(value["files"]["old"], "old.csv");
         assert_eq!(value["alignment"]["mode"], "key");
         assert_eq!(value["dialect"]["old"]["delimiter"], ",");
@@ -327,6 +367,8 @@ mod tests {
         let output = JsonOutput::refusal(ctx, refusal);
         let value = serde_json::to_value(output).expect("json");
         assert_eq!(value["outcome"], "REFUSAL");
+        assert!(value["profile_id"].is_null());
+        assert!(value["profile_sha256"].is_null());
         assert_eq!(value["refusal"]["code"], "E_ROWCOUNT");
         assert_eq!(value["refusal"]["detail"]["file"], "old");
     }

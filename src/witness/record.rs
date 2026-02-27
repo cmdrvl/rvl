@@ -84,13 +84,39 @@ impl WitnessRecord {
             None => serde_json::Value::Null,
         };
 
-        let params = serde_json::json!({
-            "delimiter": delimiter_val,
-            "json": args.json,
-            "key": args.key,
-            "threshold": args.threshold,
-            "tolerance": args.tolerance,
-        });
+        let mut params = serde_json::Map::new();
+        params.insert("delimiter".to_string(), delimiter_val);
+        params.insert("json".to_string(), serde_json::Value::Bool(args.json));
+        params.insert(
+            "key".to_string(),
+            args.key
+                .as_ref()
+                .map(|value| serde_json::Value::String(value.clone()))
+                .unwrap_or(serde_json::Value::Null),
+        );
+        if result.profile.used {
+            params.insert(
+                "profile_id".to_string(),
+                result
+                    .profile
+                    .profile_id
+                    .as_ref()
+                    .map(|value| serde_json::Value::String(value.clone()))
+                    .unwrap_or(serde_json::Value::Null),
+            );
+            params.insert(
+                "profile_sha256".to_string(),
+                result
+                    .profile
+                    .profile_sha256
+                    .as_ref()
+                    .map(|value| serde_json::Value::String(value.clone()))
+                    .unwrap_or(serde_json::Value::Null),
+            );
+        }
+        params.insert("threshold".to_string(), serde_json::json!(args.threshold));
+        params.insert("tolerance".to_string(), serde_json::json!(args.tolerance));
+        let params = serde_json::Value::Object(params);
 
         let ts = {
             use std::time::SystemTime;
@@ -172,6 +198,7 @@ mod tests {
         PipelineResult {
             outcome,
             output: "test output".to_string(),
+            profile: crate::orchestrator::ProfileRunInfo::default(),
         }
     }
 
@@ -397,6 +424,21 @@ mod tests {
         assert!(rec.params["key"].is_null());
         assert!(rec.params["delimiter"].is_null());
         assert_eq!(rec.params["json"], false);
+    }
+
+    #[test]
+    fn params_include_profile_fields_when_profile_used() {
+        let args = make_args(None, false);
+        let mut result = make_result(Outcome::NoRealChange);
+        result.profile = crate::orchestrator::ProfileRunInfo {
+            used: true,
+            profile_id: Some("csv.loan_tape.core.v0".to_string()),
+            profile_sha256: Some("sha256:abc".to_string()),
+        };
+        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
+
+        assert_eq!(rec.params["profile_id"], "csv.loan_tape.core.v0");
+        assert_eq!(rec.params["profile_sha256"], "sha256:abc");
     }
 
     #[test]

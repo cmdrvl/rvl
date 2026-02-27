@@ -1,6 +1,8 @@
 {
   "version": "rvl.v0",
   "outcome": "REAL_CHANGE",
+  "profile_id": null,
+  "profile_sha256": null,
   "files": {
     "old": "tests/fixtures/regression/basic_old.csv",
     "new": "tests/fixtures/regression/basic_new.csv"

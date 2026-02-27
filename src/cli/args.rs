@@ -50,6 +50,14 @@ pub struct Args {
     #[arg(long, value_name = "DELIM", value_parser = parse_delimiter)]
     pub delimiter: Option<u8>,
 
+    /// Use profile YAML at this path for key derivation and column scoping.
+    #[arg(long, value_name = "PATH")]
+    pub profile: Option<PathBuf>,
+
+    /// Resolve profile by ID from ~/.epistemic/profiles/*.yaml (or from a direct path).
+    #[arg(long = "profile-id", value_name = "ID")]
+    pub profile_id: Option<String>,
+
     /// Write deterministic repro capsule artifacts to this directory (default: disabled).
     #[arg(long, value_name = "DIR")]
     pub capsule_out: Option<PathBuf>,
@@ -128,6 +136,14 @@ impl Args {
         Self::try_parse()
     }
 
+    pub fn parse_from<I, T>(itr: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        Self::try_parse_from(itr)
+    }
+
     /// Create Args directly (for API/library use).
     pub fn new(
         old: PathBuf,
@@ -145,6 +161,8 @@ impl Args {
             threshold,
             tolerance,
             delimiter,
+            profile: None,
+            profile_id: None,
             capsule_out: None,
             json,
             no_witness: false,
@@ -191,4 +209,31 @@ fn parse_finite(raw: &str, label: &str) -> Result<f64, String> {
 
 fn parse_delimiter(raw: &str) -> Result<u8, String> {
     parse_delimiter_arg(raw).map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Args;
+
+    #[test]
+    fn parse_accepts_profile_flags_without_clap_conflict() {
+        let args = Args::parse_from([
+            "rvl",
+            "old.csv",
+            "new.csv",
+            "--profile",
+            "draft.yaml",
+            "--profile-id",
+            "csv.demo.v0",
+        ])
+        .expect("flags should parse (conflict handled in orchestrator)");
+
+        assert_eq!(
+            args.profile
+                .as_ref()
+                .map(|path| path.to_string_lossy().to_string()),
+            Some("draft.yaml".to_string())
+        );
+        assert_eq!(args.profile_id.as_deref(), Some("csv.demo.v0"));
+    }
 }

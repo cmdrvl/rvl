@@ -1,6 +1,6 @@
 [package]
 name = "rvl"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 authors = ["CMD+RVL <engineering@cmdrvl.com>"]
 description = "Reveal the smallest set of numeric changes that explain what actually changed."
