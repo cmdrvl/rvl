@@ -6,9 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![GitHub release](https://img.shields.io/github/v/release/cmdrvl/rvl)](https://github.com/cmdrvl/rvl/releases)
 
-**Reveal the smallest set of numeric changes that explain what actually changed.**
-
-No AI. No inference. Pure deterministic arithmetic.
+**Two files. 50,000 cells. Something changed. What?**
 
 ```bash
 brew install cmdrvl/tap/rvl
@@ -18,22 +16,16 @@ brew install cmdrvl/tap/rvl
 
 ---
 
-## TL;DR
+Two CSV exports. 50,000 numeric cells. Your boss wants to know what changed and whether it matters — by end of day. You could open Excel and start scrolling. You could write a pandas script and spend the afternoon debugging edge cases. Or you could ask for the answer.
 
-**The Problem**: Comparing CSV exports by hand is slow and noisy — Excel hell, brittle scripts, eyeballing numbers. When two files differ, you need to know *what actually changed* and whether it matters.
+**rvl finds the smallest set of numeric changes that explain the difference.** Three cells out of 50,000, ranked by magnitude, accounting for 95.2% of all numeric change. That's the whole answer — not a diff of every row, not a spreadsheet full of deltas, just the cells that matter. If nothing changed, rvl proves it: every cell checked, max delta below tolerance, deterministic guarantee.
 
-**The Solution**: One command, one verdict. `rvl` finds the smallest ranked set of numeric deltas that explain the change — or proves nothing changed — using deterministic arithmetic. Never probabilistic. Never ambiguous.
+### What makes this different
 
-### Why Use rvl?
-
-| Feature | What It Does |
-|---------|--------------|
-| **Ranked explanations** | Finds the fewest cells that account for ≥95% of total numeric change |
-| **Three clear outcomes** | REAL CHANGE, NO REAL CHANGE, or REFUSAL — never a partial answer |
-| **Tolerance-aware** | Ignores floating-point noise below your threshold — no false positives |
-| **Machine-readable** | `--json` output for pipelines, CI gates, and automation |
-| **Zero config** | Auto-detects delimiters, numeric formats, currency symbols, accounting parens |
-| **Deterministic** | Same inputs always produce the same output — no sampling, no heuristics |
+- **Explanations, not diffs** — rvl doesn't show you every change. It ranks cells by `abs(delta)` and prints only the smallest prefix that reaches your coverage threshold (default 95%). Three cells explaining 95% of change is more useful than 10,000 rows of diff output.
+- **Refuses instead of guessing** — if the top 25 contributors can't reach the threshold, rvl refuses with `E_DIFFUSE` instead of printing a misleading partial list. If rows are reordered without a key, it refuses with `E_NEED_KEY` and suggests which column to use.
+- **Zero config** — auto-detects delimiters, parses currency symbols (`$1,234.56`), accounting parentheses (`(123.45)` → negative), and thousands separators. No format flags needed.
+- **Tolerance built in** — floating-point noise below `1e-9` (configurable) is zeroed out. No false positives from rounding differences.
 
 ---
 
