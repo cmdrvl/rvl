@@ -70,6 +70,10 @@ pub struct Args {
     #[arg(long)]
     pub no_witness: bool,
 
+    /// Print compiled operator.json and exit 0.
+    #[arg(long)]
+    pub describe: bool,
+
     #[command(subcommand)]
     pub command: Option<RvlCommand>,
 }
@@ -166,6 +170,7 @@ impl Args {
             capsule_out: None,
             json,
             no_witness: false,
+            describe: false,
             command: None,
         }
     }

@@ -14,6 +14,8 @@ pub mod refusal;
 pub mod repro;
 pub mod witness;
 
+const OPERATOR_JSON: &str = include_str!("../operator.json");
+
 /// Run the rvl pipeline. Returns exit code (0, 1, or 2).
 pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     let args = match cli::args::Args::parse() {
@@ -23,6 +25,11 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
             return Ok(2);
         }
     };
+
+    if args.describe {
+        println!("{OPERATOR_JSON}");
+        return Ok(0);
+    }
 
     if let Some(ref cmd) = args.command {
         return run_witness(cmd);

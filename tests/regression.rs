@@ -21,6 +21,7 @@ fn run_case(old: &str, new: &str, key: Option<&str>, json: bool) -> String {
         capsule_out: None,
         json,
         no_witness: true,
+        describe: false,
         command: None,
     };
     orchestrator::run(&args)

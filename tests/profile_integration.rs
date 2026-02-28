@@ -45,6 +45,7 @@ fn make_args(old: &PathBuf, new: &PathBuf) -> Args {
         capsule_out: None,
         json: true,
         no_witness: true,
+        describe: false,
         command: None,
     }
 }

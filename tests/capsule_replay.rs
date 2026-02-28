@@ -47,6 +47,7 @@ fn run_with_capsule(
         capsule_out: Some(capsule_root.to_path_buf()),
         json: true,
         no_witness: true,
+        describe: false,
         command: None,
     };
 
@@ -115,6 +116,7 @@ fn replay_from_manifest(manifest: &Value, capsule_dir: &Path) -> Value {
             .and_then(Value::as_bool)
             .expect("manifest.args.json"),
         no_witness: true,
+        describe: false,
         command: None,
     };
 
