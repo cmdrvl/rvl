@@ -327,6 +327,8 @@ Valid range: ASCII `0x01`–`0x7F`, excluding `"` (`0x22`), `\r` (`0x0D`), `\n` 
 
 ## Agent / CI Integration
 
+For the full toolchain guide, see the [Agent Operator Guide](https://github.com/cmdrvl/.github/blob/main/profile/AGENT_PROMPT.md).
+
 Both `rvl` and [`shape`](https://github.com/cmdrvl/shape) are designed to be consumed by agents and pipelines, not just humans.
 
 ### Agent workflow: shape → rvl
