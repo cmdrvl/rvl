@@ -48,6 +48,9 @@ fn run_with_capsule(
         json: true,
         no_witness: true,
         describe: false,
+        explicit: false,
+        schema: false,
+        version: false,
         command: None,
     };
 
@@ -117,6 +120,9 @@ fn replay_from_manifest(manifest: &Value, capsule_dir: &Path) -> Value {
             .expect("manifest.args.json"),
         no_witness: true,
         describe: false,
+        explicit: false,
+        schema: false,
+        version: false,
         command: None,
     };
 

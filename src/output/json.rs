@@ -111,10 +111,14 @@ impl Default for Limits {
 pub struct Contributor {
     pub row_id: String,
     pub column: String,
-    pub old: f64,
-    pub new: f64,
-    pub delta: f64,
-    pub contribution: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delta: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contribution: Option<f64>,
     pub share: f64,
     pub cumulative_share: f64,
 }
@@ -130,16 +134,30 @@ impl Contributor {
         contribution: f64,
         share: f64,
         cumulative_share: f64,
+        explicit: bool,
     ) -> Self {
-        Self {
-            row_id: encode_identifier_json(row_id),
-            column: encode_identifier_json(column),
-            old,
-            new,
-            delta,
-            contribution,
-            share,
-            cumulative_share,
+        if explicit {
+            Self {
+                row_id: encode_identifier_json(row_id),
+                column: encode_identifier_json(column),
+                old: Some(old),
+                new: Some(new),
+                delta: Some(delta),
+                contribution: Some(contribution),
+                share,
+                cumulative_share,
+            }
+        } else {
+            Self {
+                row_id: encode_identifier_json(row_id),
+                column: encode_identifier_json(column),
+                old: None,
+                new: None,
+                delta: None,
+                contribution: None,
+                share,
+                cumulative_share,
+            }
         }
     }
 }
@@ -340,7 +358,8 @@ mod tests {
     #[test]
     fn renders_real_change_json_shape() {
         let ctx = sample_context();
-        let contributor = Contributor::from_bytes(b"row1", b"value", 1.0, 2.0, 1.0, 1.0, 0.1, 0.1);
+        let contributor =
+            Contributor::from_bytes(b"row1", b"value", 1.0, 2.0, 1.0, 1.0, 0.1, 0.1, true);
         let output = JsonOutput::real_change(ctx, vec![contributor]);
         let value = serde_json::to_value(output).expect("json");
         assert_eq!(value["version"], "rvl.v0");

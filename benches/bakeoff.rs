@@ -73,7 +73,10 @@ fn main() {
         if let Some(avg_ms) = avg_ms {
             println!("case {}: avg_ms={avg_ms:.3}", case.name);
         } else {
-            println!("case {}: skipped (parse error)", case.name);
+            println!(
+                "case {}: skipped (parse error or dialect detection failure)",
+                case.name
+            );
         }
     }
 }
@@ -88,6 +91,14 @@ fn run_case(
     let bytes = std::fs::read(&case.path).ok()?;
     let input = guard_input_bytes(&bytes).ok()?;
     let dialect = choose_dialect(input, forced_delimiter)?;
+
+    // Check for unsupported escape mode before timing (bd-28c)
+    if matches!(parser, ParserKind::SimdCsv | ParserKind::Polars)
+        && matches!(dialect.escape, EscapeMode::Backslash)
+    {
+        println!("  skipped (unsupported backslash escape)");
+        return None;
+    }
 
     let mut row_count = None;
     for _ in 0..warmup {
@@ -228,6 +239,7 @@ fn parse_only_simd(input: &[u8], delimiter: u8, escape: EscapeMode, skip_sep: bo
     let mut reader = SimdReaderBuilder::new()
         .delimiter(delimiter)
         .quote(b'"')
+        .double_quote(true)
         .flexible(true)
         .has_headers(false)
         .from_reader(Cursor::new(input));

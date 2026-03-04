@@ -1,7 +1,7 @@
 {
   "schema_version": "operator.v0",
   "name": "rvl",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Numeric change explainer — finds the smallest set of cell-level changes that account for the difference between two CSV files",
   "repository": "https://github.com/cmdrvl/rvl",
   "license": "MIT",
@@ -33,7 +33,10 @@
     { "name": "capsule_out", "flag": "--capsule-out", "type": "directory_path", "description": "Write deterministic repro capsule artifacts to this directory (default: disabled)" },
     { "name": "json", "flag": "--json", "type": "flag", "description": "Emit JSON output (single object)" },
     { "name": "no_witness", "flag": "--no-witness", "type": "flag", "description": "Suppress witness ledger recording" },
-    { "name": "describe", "flag": "--describe", "type": "flag", "description": "Print compiled operator.json and exit 0 without positional args" }
+    { "name": "explicit", "flag": "--explicit", "type": "flag", "description": "Show raw data values in output (default: redacted for zero-retention safety)" },
+    { "name": "describe", "flag": "--describe", "type": "flag", "description": "Print compiled operator.json and exit 0 without positional args" },
+    { "name": "schema", "flag": "--schema", "type": "flag", "description": "Print JSON Schema for rvl.v0 output format and exit 0" },
+    { "name": "version", "flag": "--version", "type": "flag", "description": "Print version and exit 0" }
   ],
 
   "subcommands": [

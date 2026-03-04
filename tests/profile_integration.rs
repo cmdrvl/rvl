@@ -46,6 +46,9 @@ fn make_args(old: &PathBuf, new: &PathBuf) -> Args {
         json: true,
         no_witness: true,
         describe: false,
+        explicit: false,
+        schema: false,
+        version: false,
         command: None,
     }
 }

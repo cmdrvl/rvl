@@ -257,7 +257,7 @@ impl RefusalKind {
                     .to_string()
             }
             RefusalKind::MixedTypes { .. } => {
-                "normalize column values to numeric (or exclude the column) and rerun".to_string()
+                "normalize column values to numeric (or exclude the column) and rerun. Hint: if this is a cross-tab where row labels determine value types, reshape to long-form or split into typed sections before comparison".to_string()
             }
             RefusalKind::NoNumeric => {
                 "ensure common numeric columns exist (or adjust inputs) and rerun".to_string()

@@ -58,9 +58,11 @@ fn golden_real_change_human_output() {
             old: 1.0,
             new: 6.0,
             delta: 5.0,
+            share: 1.0,
         }],
         coverage: 0.95,
         threshold: 0.95,
+        explicit: true,
     };
 
     let mut lines = vec![
@@ -262,7 +264,7 @@ fn golden_json_real_change_output() {
         },
     };
     let contributors = vec![rvl::output::json::Contributor::from_bytes(
-        b"A", b"value", 1.0, 6.0, 5.0, 5.0, 1.0, 1.0,
+        b"A", b"value", 1.0, 6.0, 5.0, 5.0, 1.0, 1.0, true,
     )];
     let output = JsonOutput::real_change(ctx, contributors);
     let value = serde_json::to_value(output).expect("json");

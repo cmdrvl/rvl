@@ -10,6 +10,7 @@ pub struct RealChangeContributor {
     pub old: f64,
     pub new: f64,
     pub delta: f64,
+    pub share: f64,
 }
 
 #[derive(Debug)]
@@ -17,6 +18,7 @@ pub struct RealChangeBody<'a> {
     pub contributors: &'a [RealChangeContributor],
     pub coverage: f64,
     pub threshold: f64,
+    pub explicit: bool,
 }
 
 pub fn render_real_change_body(ctx: &RealChangeBody<'_>) -> Vec<String> {
@@ -32,17 +34,34 @@ pub fn render_real_change_body(ctx: &RealChangeBody<'_>) -> Vec<String> {
     ));
     lines.push(String::new());
     for (idx, contributor) in ctx.contributors.iter().enumerate() {
-        let delta = format_delta(contributor.delta);
-        let old = format_value(contributor.old);
-        let new = format_value(contributor.new);
-        lines.push(format!(
-            "{}. {}  {}  ({} -> {})",
-            idx + 1,
-            contributor.label,
-            delta,
-            old,
-            new
-        ));
+        if ctx.explicit {
+            let delta = format_delta(contributor.delta);
+            let old = format_value(contributor.old);
+            let new = format_value(contributor.new);
+            lines.push(format!(
+                "{}. {}  {}  ({} -> {})",
+                idx + 1,
+                contributor.label,
+                delta,
+                old,
+                new
+            ));
+        } else {
+            let direction = if contributor.delta > 0.0 {
+                "+"
+            } else if contributor.delta < 0.0 {
+                "-"
+            } else {
+                "~"
+            };
+            lines.push(format!(
+                "{}. {}  {}{} of total change",
+                idx + 1,
+                contributor.label,
+                direction,
+                format_percent_one_decimal(contributor.share)
+            ));
+        }
     }
     lines.push(String::new());
     lines.push(
@@ -67,17 +86,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn renders_real_change_body_lines() {
+    fn renders_real_change_body_lines_explicit() {
         let contributors = [RealChangeContributor {
             label: "NVDA.market_value".to_string(),
             old: 123.0,
             new: 1842223.0,
             delta: 1842100.0,
+            share: 0.952,
         }];
         let ctx = RealChangeBody {
             contributors: &contributors,
             coverage: 0.952,
             threshold: 0.95,
+            explicit: true,
         };
         let lines = render_real_change_body(&ctx);
         assert_eq!(
@@ -89,11 +110,25 @@ mod tests {
             lines[2],
             "1. NVDA.market_value  +1842100  (123 -> 1,842,223)"
         );
-        assert_eq!(lines[3], "");
-        assert_eq!(
-            lines[4],
-            "Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold)."
-        );
+    }
+
+    #[test]
+    fn renders_real_change_body_lines_redacted() {
+        let contributors = [RealChangeContributor {
+            label: "NVDA.market_value".to_string(),
+            old: 123.0,
+            new: 1842223.0,
+            delta: 1842100.0,
+            share: 0.952,
+        }];
+        let ctx = RealChangeBody {
+            contributors: &contributors,
+            coverage: 0.952,
+            threshold: 0.95,
+            explicit: false,
+        };
+        let lines = render_real_change_body(&ctx);
+        assert_eq!(lines[2], "1. NVDA.market_value  +95.2% of total change");
     }
 
     #[test]

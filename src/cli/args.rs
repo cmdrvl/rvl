@@ -70,9 +70,21 @@ pub struct Args {
     #[arg(long)]
     pub no_witness: bool,
 
+    /// Show raw data values in output (default: redacted for zero-retention safety).
+    #[arg(long)]
+    pub explicit: bool,
+
     /// Print compiled operator.json and exit 0.
     #[arg(long)]
     pub describe: bool,
+
+    /// Print JSON Schema for rvl.v0 output format and exit 0.
+    #[arg(long)]
+    pub schema: bool,
+
+    /// Print version and exit 0.
+    #[arg(long)]
+    pub version: bool,
 
     #[command(subcommand)]
     pub command: Option<RvlCommand>,
@@ -170,7 +182,10 @@ impl Args {
             capsule_out: None,
             json,
             no_witness: false,
+            explicit: false,
             describe: false,
+            schema: false,
+            version: false,
             command: None,
         }
     }

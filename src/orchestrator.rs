@@ -1351,7 +1351,7 @@ fn render_real_change(
     let contributor_summary = build_capsule_contributor_summary(details, total_change, coverage);
 
     let result = if args.json {
-        let contributors = build_json_contributors(details, total_change);
+        let contributors = build_json_contributors(details, total_change, args.explicit);
         let output = JsonOutput::real_change(ctx, contributors)
             .to_string()
             .unwrap_or_else(|_| "{}".to_string());
@@ -1377,11 +1377,12 @@ fn render_real_change(
             &new_display,
         ));
         lines.push(String::new());
-        let contributors = build_human_contributors(details);
+        let contributors = build_human_contributors(details, total_change);
         let body = RealChangeBody {
             contributors: &contributors,
             coverage,
             threshold: args.threshold,
+            explicit: args.explicit,
         };
         lines.extend(render_real_change_body(&body));
         PipelineResult {
@@ -1523,14 +1524,27 @@ fn to_human_profile<'a>(profile: &'a ProfileRunInfo) -> Option<HumanProfile<'a>>
     }
 }
 
-fn build_human_contributors(details: &[ContributionDetail]) -> Vec<RealChangeContributor> {
+fn build_human_contributors(
+    details: &[ContributionDetail],
+    total_change: f64,
+) -> Vec<RealChangeContributor> {
+    let mut cumulative = 0.0;
     details
         .iter()
-        .map(|detail| RealChangeContributor {
-            label: render_cell_label(&detail.id),
-            old: detail.old,
-            new: detail.new,
-            delta: detail.delta,
+        .map(|detail| {
+            let share = if total_change > 0.0 {
+                detail.contribution / total_change
+            } else {
+                0.0
+            };
+            cumulative += share;
+            RealChangeContributor {
+                label: render_cell_label(&detail.id),
+                old: detail.old,
+                new: detail.new,
+                delta: detail.delta,
+                share,
+            }
         })
         .collect()
 }
@@ -1538,6 +1552,7 @@ fn build_human_contributors(details: &[ContributionDetail]) -> Vec<RealChangeCon
 fn build_json_contributors(
     details: &[ContributionDetail],
     total_change: f64,
+    explicit: bool,
 ) -> Vec<crate::output::json::Contributor> {
     let mut contributors = Vec::with_capacity(details.len());
     let mut cumulative = 0.0;
@@ -1557,6 +1572,7 @@ fn build_json_contributors(
             detail.contribution,
             share,
             cumulative,
+            explicit,
         ));
     }
     contributors

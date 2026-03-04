@@ -26,8 +26,92 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
         }
     };
 
+    if args.version {
+        println!("rvl {}", env!("CARGO_PKG_VERSION"));
+        return Ok(0);
+    }
+
     if args.describe {
         println!("{OPERATOR_JSON}");
+        return Ok(0);
+    }
+
+    if args.schema {
+        let schema = serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://rvl.v0/schema.json",
+            "title": "rvl Output Schema",
+            "description": "JSON schema for rvl.v0 output format",
+            "type": "object",
+            "required": ["version", "outcome", "files", "alignment", "dialect", "threshold", "tolerance", "counts", "metrics", "limits", "contributors"],
+            "properties": {
+                "version": { "type": "string", "const": "rvl.v0" },
+                "outcome": { "type": "string", "enum": ["REAL_CHANGE", "NO_REAL_CHANGE", "REFUSAL"] },
+                "profile_id": { "type": ["string", "null"] },
+                "profile_sha256": { "type": ["string", "null"] },
+                "files": {
+                    "type": "object",
+                    "properties": {
+                        "old": { "type": "string" },
+                        "new": { "type": "string" }
+                    },
+                    "required": ["old", "new"]
+                },
+                "alignment": {
+                    "type": "object",
+                    "properties": {
+                        "mode": { "type": "string", "enum": ["key", "row_order"] },
+                        "key_column": { "type": ["string", "null"] }
+                    },
+                    "required": ["mode"]
+                },
+                "dialect": {
+                    "type": "object",
+                    "properties": {
+                        "old": { "type": ["object", "null"] },
+                        "new": { "type": ["object", "null"] }
+                    }
+                },
+                "threshold": { "type": "number" },
+                "tolerance": { "type": "number" },
+                "counts": { "type": "object" },
+                "metrics": { "type": "object" },
+                "limits": {
+                    "type": "object",
+                    "properties": {
+                        "max_contributors": { "type": "integer" }
+                    },
+                    "required": ["max_contributors"]
+                },
+                "contributors": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "row_id": { "type": "string" },
+                            "column": { "type": "string" },
+                            "old": { "type": "number" },
+                            "new": { "type": "number" },
+                            "delta": { "type": "number" },
+                            "contribution": { "type": "number" },
+                            "share": { "type": "number" },
+                            "cumulative_share": { "type": "number" }
+                        },
+                        "required": ["row_id", "column", "old", "new", "delta", "contribution", "share", "cumulative_share"]
+                    }
+                },
+                "refusal": {
+                    "type": ["object", "null"],
+                    "properties": {
+                        "code": { "type": "string" },
+                        "message": { "type": "string" },
+                        "detail": {}
+                    },
+                    "required": ["code", "message", "detail"]
+                }
+            }
+        });
+        println!("{}", serde_json::to_string_pretty(&schema)?);
         return Ok(0);
     }
 
