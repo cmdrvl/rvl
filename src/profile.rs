@@ -106,6 +106,33 @@ pub fn resolve_profile_id(selector: &str) -> Result<ResolvedProfile, ResolveErro
     resolve_profile_id_in_directory(selector, &search_root)
 }
 
+pub fn render_profile_yaml(profile: &ResolvedProfile) -> String {
+    let mut out = String::new();
+    if let Some(profile_id) = profile.profile_id.as_deref() {
+        out.push_str("profile_id: ");
+        out.push_str(profile_id);
+        out.push('\n');
+    }
+    if let Some(profile_sha256) = profile.profile_sha256.as_deref() {
+        out.push_str("profile_sha256: ");
+        out.push_str(profile_sha256);
+        out.push('\n');
+    }
+    out.push_str("include_columns:\n");
+    for column in &profile.include_columns {
+        out.push_str("  - ");
+        out.push_str(&encode_profile_identifier(column));
+        out.push('\n');
+    }
+    out.push_str("key:\n");
+    for key in &profile.key_columns {
+        out.push_str("  - ");
+        out.push_str(&encode_profile_identifier(key));
+        out.push('\n');
+    }
+    out
+}
+
 fn default_profile_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
@@ -239,6 +266,20 @@ fn parse_key_entry(raw: &str) -> Option<(Vec<u8>, String)> {
     }
 }
 
+fn encode_profile_identifier(bytes: &[u8]) -> String {
+    if bytes.contains(&b'#') {
+        let mut out = String::with_capacity(4 + bytes.len() * 2);
+        out.push_str("hex:");
+        for byte in bytes {
+            use std::fmt::Write as _;
+            let _ = write!(out, "{byte:02x}");
+        }
+        return out;
+    }
+
+    crate::format::ident_json::encode_identifier_json(bytes)
+}
+
 fn is_frozen_with_id(profile: &ResolvedProfile, selector: &str) -> bool {
     matches!(profile.profile_id.as_deref(), Some(id) if id == selector)
         && profile.profile_sha256.is_some()
@@ -340,6 +381,28 @@ key: [loan_id]
         let resolved = resolve_profile_id_in_directory("csv.demo.v0", &dir).expect("resolved");
         assert_eq!(resolved.profile_id.as_deref(), Some("csv.demo.v0"));
         assert_eq!(resolved.profile_sha256.as_deref(), Some("sha256:abc"));
+
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn rendered_profile_round_trips_through_loader() {
+        let dir = temp_dir();
+        let path = dir.join("rendered.yaml");
+        let profile = ResolvedProfile {
+            include_columns: vec![b"loan_id".to_vec(), b"\xff#".to_vec()],
+            key_columns: vec![b"loan_id".to_vec()],
+            key_labels: vec!["loan_id".to_string()],
+            profile_id: Some("csv.demo.v0".to_string()),
+            profile_sha256: Some("sha256:abc123".to_string()),
+        };
+        std::fs::write(&path, render_profile_yaml(&profile)).unwrap();
+
+        let loaded = load_profile_from_path(&path).expect("rendered profile should load");
+        assert_eq!(loaded.include_columns, profile.include_columns);
+        assert_eq!(loaded.key_columns, profile.key_columns);
+        assert_eq!(loaded.profile_id, profile.profile_id);
+        assert_eq!(loaded.profile_sha256, profile.profile_sha256);
 
         std::fs::remove_dir_all(dir).ok();
     }

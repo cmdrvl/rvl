@@ -73,6 +73,7 @@ pub struct ProfileRunInfo {
     pub used: bool,
     pub profile_id: Option<String>,
     pub profile_sha256: Option<String>,
+    pub capsule_profile: Option<ResolvedProfile>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -275,14 +276,18 @@ fn resolve_active_profile(
 }
 
 fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
+    let include_scope = Some(profile.include_set());
+    let key = profile.primary_key().map(|key| key.to_vec());
+    let key_labels = profile.key_labels.clone();
     ActiveProfile {
-        include_scope: Some(profile.include_set()),
-        key: profile.primary_key().map(|key| key.to_vec()),
-        key_labels: profile.key_labels,
+        include_scope,
+        key,
+        key_labels,
         info: ProfileRunInfo {
             used: true,
-            profile_id: profile.profile_id,
-            profile_sha256: profile.profile_sha256,
+            profile_id: profile.profile_id.clone(),
+            profile_sha256: profile.profile_sha256.clone(),
+            capsule_profile: Some(profile),
         },
     }
 }
@@ -1493,6 +1498,7 @@ fn json_context(
         profile_used: profile.used,
         profile_id: profile.profile_id.clone(),
         profile_sha256: profile.profile_sha256.clone(),
+        capsule_profile: profile.capsule_profile.clone(),
         threshold: args.threshold,
         tolerance: args.tolerance,
         counts,
@@ -1505,6 +1511,7 @@ fn profile_from_json_context(ctx: &JsonContext) -> ProfileRunInfo {
         used: ctx.profile_used,
         profile_id: ctx.profile_id.clone(),
         profile_sha256: ctx.profile_sha256.clone(),
+        capsule_profile: ctx.capsule_profile.clone(),
     }
 }
 

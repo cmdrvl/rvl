@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rvl::cli::args::Args;
@@ -29,6 +30,56 @@ fn cleanup(dir: &Path) {
     std::fs::remove_dir_all(dir).ok();
 }
 
+fn write_file(dir: &Path, name: &str, content: &str) -> PathBuf {
+    let path = dir.join(name);
+    std::fs::write(&path, content).expect("test file should be writable");
+    path
+}
+
+fn only_capsule_dir(capsule_root: &Path) -> PathBuf {
+    let mut capsule_dirs = std::fs::read_dir(capsule_root)
+        .expect("capsule root should exist")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    capsule_dirs.sort();
+    assert_eq!(
+        capsule_dirs.len(),
+        1,
+        "expected exactly one capsule directory"
+    );
+    capsule_dirs.pop().expect("capsule dir")
+}
+
+fn run_rvl_binary(current_dir: &Path, home: Option<&Path>, args: &[&str]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_rvl"));
+    command.current_dir(current_dir).args(args);
+    if let Some(home) = home {
+        command.env("HOME", home);
+    }
+    command.output().expect("rvl invocation should execute")
+}
+
+fn run_replay_script(capsule_dir: &Path, home: Option<&Path>) -> Output {
+    let mut command = Command::new("./replay.sh");
+    let bin_dir = Path::new(env!("CARGO_BIN_EXE_rvl"))
+        .parent()
+        .expect("rvl binary path should have parent");
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let mut joined_path = std::ffi::OsString::new();
+    joined_path.push(bin_dir.as_os_str());
+    joined_path.push(":");
+    joined_path.push(path);
+    command.current_dir(capsule_dir).env("PATH", joined_path);
+    if let Some(home) = home {
+        command.env("HOME", home);
+    }
+    command
+        .output()
+        .expect("capsule replay script should execute")
+}
+
 fn run_with_capsule(
     old: &Path,
     new: &Path,
@@ -57,19 +108,7 @@ fn run_with_capsule(
     let first = orchestrator::run(&args).expect("first run should succeed");
     let first_json: Value = serde_json::from_str(&first.output).expect("first output should parse");
 
-    let mut capsule_dirs = std::fs::read_dir(capsule_root)
-        .expect("capsule root should exist")
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-        .collect::<Vec<_>>();
-    capsule_dirs.sort();
-    assert_eq!(
-        capsule_dirs.len(),
-        1,
-        "expected exactly one capsule directory"
-    );
-    let capsule_dir = capsule_dirs.pop().unwrap();
+    let capsule_dir = only_capsule_dir(capsule_root);
 
     let manifest_path = capsule_dir.join("manifest.json");
     let manifest_raw = std::fs::read_to_string(&manifest_path).expect("manifest should exist");
@@ -237,6 +276,127 @@ fn capsule_replay_refusal_preserves_refusal_code() {
     let replay_json = replay_from_manifest(&manifest, &capsule_dir);
     assert_eq!(replay_json["outcome"], "REFUSAL");
     assert_eq!(replay_json["refusal"]["code"], refusal_code);
+
+    cleanup(&dir);
+}
+
+#[test]
+fn capsule_replay_script_is_self_contained_for_relative_profile_path() {
+    let dir = temp_dir();
+    let capsule_root = dir.join("capsules");
+    std::fs::create_dir_all(&capsule_root).unwrap();
+    write_file(&dir, "old.csv", "loan_id,balance\nA,100\n");
+    write_file(&dir, "new.csv", "loan_id,balance\nA,110\n");
+    write_file(
+        &dir,
+        "profile.yaml",
+        "profile_id: csv.loan_tape.core.v0\nprofile_sha256: sha256:abc123\ninclude_columns:\n  - loan_id\n  - balance\nkey:\n  - loan_id\n",
+    );
+
+    let first = run_rvl_binary(
+        &dir,
+        None,
+        &[
+            "old.csv",
+            "new.csv",
+            "--json",
+            "--no-witness",
+            "--capsule-out",
+            "capsules",
+            "--profile",
+            "profile.yaml",
+        ],
+    );
+    assert_eq!(first.status.code(), Some(1));
+    let first_stderr = String::from_utf8_lossy(&first.stderr);
+    assert!(
+        first_stderr.trim().is_empty(),
+        "unexpected stderr: {}",
+        first_stderr
+    );
+    let first_json: Value = serde_json::from_slice(&first.stdout).expect("first output json");
+
+    let capsule_dir = only_capsule_dir(&capsule_root);
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(capsule_dir.join("manifest.json")).expect("manifest"),
+    )
+    .expect("manifest json");
+    assert_eq!(manifest["artifacts"]["profile"]["path"], "profile.yaml");
+    assert_eq!(
+        manifest["replay_command"],
+        "rvl old.csv new.csv --profile profile.yaml --threshold 0.95 --tolerance 0.000000001 --json --no-witness"
+    );
+
+    let replay = run_replay_script(&capsule_dir, None);
+    assert_eq!(replay.status.code(), Some(1));
+    let replay_stderr = String::from_utf8_lossy(&replay.stderr);
+    assert!(
+        replay_stderr.trim().is_empty(),
+        "unexpected replay stderr: {}",
+        replay_stderr
+    );
+    let replay_json: Value = serde_json::from_slice(&replay.stdout).expect("replay output json");
+    assert_eq!(replay_json["outcome"], first_json["outcome"]);
+    assert_eq!(replay_json["profile_id"], first_json["profile_id"]);
+    assert_eq!(replay_json["profile_sha256"], first_json["profile_sha256"]);
+
+    cleanup(&dir);
+}
+
+#[test]
+fn capsule_replay_script_is_self_contained_for_profile_id_runs() {
+    let dir = temp_dir();
+    let capsule_root = dir.join("capsules");
+    let home = dir.join("home");
+    let profiles_dir = home.join(".epistemic").join("profiles");
+    std::fs::create_dir_all(&profiles_dir).unwrap();
+    write_file(&dir, "old.csv", "loan_id,balance\nA,100\n");
+    write_file(&dir, "new.csv", "loan_id,balance\nA,110\n");
+    write_file(
+        &profiles_dir,
+        "loan_tape.yaml",
+        "profile_id: csv.loan_tape.core.v0\nprofile_sha256: sha256:abc123\ninclude_columns:\n  - loan_id\n  - balance\nkey:\n  - loan_id\n",
+    );
+
+    let first = run_rvl_binary(
+        &dir,
+        Some(&home),
+        &[
+            "old.csv",
+            "new.csv",
+            "--json",
+            "--no-witness",
+            "--capsule-out",
+            "capsules",
+            "--profile-id",
+            "csv.loan_tape.core.v0",
+        ],
+    );
+    assert_eq!(first.status.code(), Some(1));
+    let first_json: Value = serde_json::from_slice(&first.stdout).expect("first output json");
+
+    let capsule_dir = only_capsule_dir(&capsule_root);
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(capsule_dir.join("manifest.json")).expect("manifest"),
+    )
+    .expect("manifest json");
+    assert_eq!(manifest["artifacts"]["profile"]["path"], "profile.yaml");
+    assert_eq!(manifest["args"]["profile_id"], "csv.loan_tape.core.v0");
+
+    let replay_home = dir.join("empty-home");
+    std::fs::create_dir_all(&replay_home).unwrap();
+    let replay = run_replay_script(&capsule_dir, Some(&replay_home));
+    assert_eq!(replay.status.code(), Some(1));
+    let replay_stderr = String::from_utf8_lossy(&replay.stderr);
+    assert!(
+        replay_stderr.trim().is_empty(),
+        "unexpected replay stderr: {}",
+        replay_stderr
+    );
+    let replay_json: Value = serde_json::from_slice(&replay.stdout).expect("replay output json");
+    assert_eq!(replay_json["outcome"], first_json["outcome"]);
+    assert_eq!(replay_json["profile_id"], first_json["profile_id"]);
+    assert_eq!(replay_json["profile_sha256"], first_json["profile_sha256"]);
 
     cleanup(&dir);
 }

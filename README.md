@@ -273,7 +273,7 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--threshold <float>` | float | `0.95` | Coverage target (0 < x ≤ 1.0). The minimum fraction of total numeric change that the top contributors must explain. |
 | `--tolerance <float>` | float | `1e-9` | Per-cell noise floor (x ≥ 0). Absolute deltas ≤ this value are treated as zero. |
 | `--delimiter <delim>` | string | *(auto-detect)* | Force CSV delimiter for both files. See [Delimiter](#delimiter). |
-| `--capsule-out <dir>` | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`) to `<dir>/capsule-<id>/`. |
+| `--capsule-out <dir>` | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`, and `profile.yaml` when a profile is active) to `<dir>/capsule-<id>/`. |
 | `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
 
 Invalid `--threshold` or `--tolerance` values are CLI argument errors (exit 2).
@@ -369,7 +369,7 @@ rvl old.csv new.csv --key id --json --capsule-out ./capsules > run.json
 
 # 2. Inspect generated capsule
 ls ./capsules/capsule-*/
-# manifest.json old.csv new.csv output.txt replay.sh
+# manifest.json old.csv new.csv output.txt replay.sh [profile.yaml]
 
 # 3. Re-run exactly from the capsule payload
 cd ./capsules/capsule-<id>
@@ -381,6 +381,8 @@ cd ./capsules/capsule-<id>
 - outcome and refusal code (if any)
 - contributor summary for REAL_CHANGE
 - replay command plus artifact hashes for integrity checks
+
+When `--profile` or `--profile-id` is active, capsules also include a local `profile.yaml` artifact and `replay.sh` uses it, so replay does not depend on the original working directory or `~/.epistemic/profiles`.
 
 For troubleshooting, compare `run.json` vs `replay.json` outcome/refusal code first; if they differ, the environment or binary changed.
 

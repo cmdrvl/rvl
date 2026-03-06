@@ -5,11 +5,13 @@ use serde::Serialize;
 
 use crate::cli::args::Args;
 use crate::cli::exit::Outcome;
+use crate::profile::render_profile_yaml;
 use crate::witness::hash::hash_bytes;
 
 use super::PipelineResult;
 
 const CAPSULE_MANIFEST_VERSION: &str = "rvl.capsule.v0";
+const PROFILE_ARTIFACT_PATH: &str = "profile.yaml";
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct CapsuleRunSummary {
@@ -106,6 +108,8 @@ struct CapsuleArtifacts {
     new_csv: CapsuleArtifact,
     output: CapsuleArtifact,
     replay: CapsuleArtifact,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    profile: Option<CapsuleArtifact>,
 }
 
 #[derive(Debug, Serialize)]
@@ -134,6 +138,12 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
     let old_hash = format!("blake3:{}", hash_bytes(&old_bytes));
     let new_hash = format!("blake3:{}", hash_bytes(&new_bytes));
     let output_hash = format!("blake3:{}", hash_bytes(result.output.as_bytes()));
+    let profile_bytes = result
+        .profile
+        .capsule_profile
+        .as_ref()
+        .map(render_profile_yaml)
+        .map(String::into_bytes);
 
     let args_manifest = CapsuleArgs {
         old: old_path,
@@ -151,7 +161,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
         no_witness: args.no_witness,
     };
 
-    let replay_command = build_replay_command(args);
+    let replay_command = build_replay_command(args, profile_bytes.is_some());
     let replay_script = format!("#!/usr/bin/env bash\nset -euo pipefail\n{replay_command}\n");
     let replay_hash = format!("blake3:{}", hash_bytes(replay_script.as_bytes()));
 
@@ -189,6 +199,11 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
         hash: replay_hash,
         bytes: replay_script.len() as u64,
     };
+    let profile_artifact = profile_bytes.as_ref().map(|bytes| CapsuleArtifact {
+        path: PROFILE_ARTIFACT_PATH.to_string(),
+        hash: format!("blake3:{}", hash_bytes(bytes)),
+        bytes: bytes.len() as u64,
+    });
 
     if fs::write(capsule_dir.join(&old_artifact.path), &old_bytes).is_err() {
         return;
@@ -209,6 +224,24 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
         replay_script.as_bytes(),
     )
     .is_err()
+    {
+        return;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let replay_path = capsule_dir.join(&replay_artifact.path);
+        let Ok(mut permissions) = fs::metadata(&replay_path).map(|meta| meta.permissions()) else {
+            return;
+        };
+        permissions.set_mode(0o755);
+        if fs::set_permissions(&replay_path, permissions).is_err() {
+            return;
+        }
+    }
+    if let Some(profile_bytes) = profile_bytes.as_ref()
+        && fs::write(capsule_dir.join(PROFILE_ARTIFACT_PATH), profile_bytes).is_err()
     {
         return;
     }
@@ -243,6 +276,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
             new_csv: new_artifact,
             output: output_artifact,
             replay: replay_artifact,
+            profile: profile_artifact,
         },
     };
 
@@ -252,7 +286,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
     let _ = fs::write(capsule_dir.join(Path::new("manifest.json")), manifest_json);
 }
 
-fn build_replay_command(args: &Args) -> String {
+fn build_replay_command(args: &Args, use_local_profile: bool) -> String {
     let mut parts = vec![
         "rvl".to_string(),
         "old.csv".to_string(),
@@ -263,11 +297,13 @@ fn build_replay_command(args: &Args) -> String {
         parts.push("--key".to_string());
         parts.push(shell_escape(key));
     }
-    if let Some(profile) = args.profile.as_ref() {
+    if use_local_profile {
+        parts.push("--profile".to_string());
+        parts.push(PROFILE_ARTIFACT_PATH.to_string());
+    } else if let Some(profile) = args.profile.as_ref() {
         parts.push("--profile".to_string());
         parts.push(shell_escape(&profile.to_string_lossy()));
-    }
-    if let Some(profile_id) = args.profile_id.as_deref() {
+    } else if let Some(profile_id) = args.profile_id.as_deref() {
         parts.push("--profile-id".to_string());
         parts.push(shell_escape(profile_id));
     }
@@ -324,12 +360,32 @@ mod tests {
             Some(b','),
             true,
         );
-        let replay = build_replay_command(&args);
+        let replay = build_replay_command(&args, false);
         assert!(replay.contains("rvl old.csv new.csv"));
         assert!(replay.contains("--key 'portfolio id'"));
         assert!(replay.contains("--threshold 0.95"));
         assert!(replay.contains("--tolerance "));
         assert!(replay.contains("--delimiter 0x2c"));
         assert!(replay.contains("--json"));
+    }
+
+    #[test]
+    fn replay_command_prefers_local_profile_artifact_when_available() {
+        let mut args = Args::new(
+            PathBuf::from("old.csv"),
+            PathBuf::from("new.csv"),
+            None,
+            0.95,
+            1e-9,
+            None,
+            true,
+        );
+        args.profile = Some(PathBuf::from("profiles/demo.yaml"));
+        args.profile_id = Some("csv.demo.v0".to_string());
+
+        let replay = build_replay_command(&args, true);
+        assert!(replay.contains("--profile profile.yaml"));
+        assert!(!replay.contains("profiles/demo.yaml"));
+        assert!(!replay.contains("--profile-id"));
     }
 }

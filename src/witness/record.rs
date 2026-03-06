@@ -434,6 +434,7 @@ mod tests {
             used: true,
             profile_id: Some("csv.loan_tape.core.v0".to_string()),
             profile_sha256: Some("sha256:abc".to_string()),
+            capsule_profile: None,
         };
         let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
 

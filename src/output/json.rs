@@ -2,6 +2,7 @@
 
 use crate::diff::heap::MAX_CONTRIBUTORS;
 use crate::format::ident_json::encode_identifier_json;
+use crate::profile::ResolvedProfile;
 use crate::refusal::codes::RefusalCode;
 use serde::Serialize;
 use serde_json::Value;
@@ -187,6 +188,7 @@ pub struct JsonContext {
     pub profile_used: bool,
     pub profile_id: Option<String>,
     pub profile_sha256: Option<String>,
+    pub capsule_profile: Option<ResolvedProfile>,
     pub threshold: f64,
     pub tolerance: f64,
     pub counts: Counts,
@@ -332,6 +334,7 @@ mod tests {
             profile_used: false,
             profile_id: None,
             profile_sha256: None,
+            capsule_profile: None,
             threshold: 0.95,
             tolerance: 1e-9,
             counts: Counts {

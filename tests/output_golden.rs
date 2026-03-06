@@ -242,6 +242,7 @@ fn golden_json_real_change_output() {
         profile_used: false,
         profile_id: None,
         profile_sha256: None,
+        capsule_profile: None,
         threshold: 0.95,
         tolerance: 1e-9,
         counts: Counts {
@@ -329,6 +330,7 @@ fn golden_json_no_real_change_output() {
         profile_used: false,
         profile_id: None,
         profile_sha256: None,
+        capsule_profile: None,
         threshold: 0.95,
         tolerance: 1e-9,
         counts: Counts {
@@ -404,6 +406,7 @@ fn golden_json_refusal_output() {
         profile_used: false,
         profile_id: None,
         profile_sha256: None,
+        capsule_profile: None,
         threshold: 0.95,
         tolerance: 1e-9,
         counts: Counts::default(),
