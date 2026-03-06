@@ -74,8 +74,51 @@ fn make_raw_record(outcome: &str, ts: &str) -> String {
             "REAL_CHANGE" => 1,
             "REFUSAL" => 2,
             _ => 0,
-        },
+        }
     )
+}
+
+#[test]
+fn version_short_circuits_before_invalid_threshold_is_parsed() {
+    let output = Command::new(rvl_binary())
+        .args(["--version", "--threshold", "nope"])
+        .output()
+        .expect("failed to run rvl --version");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        format!("rvl {}\n", env!("CARGO_PKG_VERSION"))
+    );
+    assert!(output.stderr.is_empty(), "stderr should remain empty");
+}
+
+#[test]
+fn describe_short_circuits_before_invalid_threshold_is_parsed() {
+    let output = Command::new(rvl_binary())
+        .args(["--describe", "--threshold", "nope"])
+        .output()
+        .expect("failed to run rvl --describe");
+
+    assert_eq!(output.status.code(), Some(0));
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("describe should emit operator JSON");
+    assert_eq!(manifest["name"], "rvl");
+    assert!(output.stderr.is_empty(), "stderr should remain empty");
+}
+
+#[test]
+fn schema_short_circuits_before_invalid_witness_args_are_parsed() {
+    let output = Command::new(rvl_binary())
+        .args(["--schema", "witness", "query", "--limit", "nope"])
+        .output()
+        .expect("failed to run rvl --schema");
+
+    assert_eq!(output.status.code(), Some(0));
+    let schema: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("schema should emit valid JSON");
+    assert_eq!(schema["$id"], "https://rvl.v0/schema.json");
+    assert!(output.stderr.is_empty(), "stderr should remain empty");
 }
 
 // --- witness last ---

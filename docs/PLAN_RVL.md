@@ -860,6 +860,58 @@ Note: `columns_common: 4` reflects profile scoping — the original 8-column CSV
 - directory diffs
 - numeric diff over time windows
 
+### Decision Notes: Cross-Tab / Row-Typed Comparison (bd-2dj)
+Decision: **Defer**. Need 2–3 more real-world use cases before committing to an approach.
+
+Rationale:
+- CRE appraisal documents (sales comp grids, rent rolls, operating statements) are almost always cross-tab structures where the row label determines value type — dollars on one row, percentages on the next, dates on the third, all in the same column.
+- rvl correctly refuses with `E_MIXED_TYPES` because its type analysis is column-level. But this makes rvl unusable on one of the most common document shapes in commercial real estate.
+- The fix is non-trivial and there are at least three valid approaches. Choosing wrong locks us into a bad abstraction.
+
+Observed during spring11 extraction pipeline (sales comp adjustment grids from two CRE appraisals):
+```
+$ rvl comp_grid_v1.csv comp_grid_v2.csv --key field
+E_MIXED_TYPES: column 'comp_1' contains mixed numeric/non-numeric values
+```
+
+The CSV looked like:
+```
+field,comp_1,comp_2,comp_3
+Property Name,Gateway Place,Saddletree,RISE West Arlington
+Total Units,142,224,220
+Occupancy,91%,91%,92%
+Cap Rate,5.77%,6.03%,5.38%
+Sales Price,"$19,600,000","$28,600,000","$29,500,000"
+Year Built,1983 (2023),1983 (2022),1985 (2001)
+Location Adj,0%,0%,-5%
+```
+
+All types in `comp_1` are correct — the `field` column is the type discriminator.
+
+Candidate approaches (evaluate after more use cases):
+
+**A. rvl gets `--cross-tab` / `--row-typed` mode:**
+- Type inference shifts from column-level to row-level, using the key column as discriminator.
+- Keeps the pipeline short (`rvl old.csv new.csv --key field --cross-tab`).
+- But it's a significant internal change — rvl's entire comparison model is columnar.
+
+**B. Upstream reshape tool (melt to long-form):**
+- A new tool (or canon mode) melts the cross-tab into `field, comp, value` rows.
+- rvl works as-is on homogeneous columns.
+- But loses the grid structure, and the melt tool needs to know column roles.
+
+**C. Upstream split (typed sections):**
+- Normalize step emits separate CSVs per section (property data, adjustments).
+- Adjustments CSV is all-numeric, rvl works perfectly on it.
+- But property data (mixed types) still can't be compared via rvl.
+
+Open questions:
+- Do rent rolls and operating statements have the same cross-tab shape? (Likely yes.)
+- Is row-level type inference general enough, or do some grids have sub-sections with different schemas?
+- Would a `--row-typed` flag compose cleanly with `--profile` scoping?
+
+Near-term action (bd-2dj): Improve `E_MIXED_TYPES` error message with a cross-tab hint. This is pure UX and doesn't commit to any architecture.
+
 ### Decision Notes: Parquet/JSON Input (bd-7t9)
 Decision: **Defer**. Only pursue after v0 is loved and CSV remains the clear bottleneck.
 

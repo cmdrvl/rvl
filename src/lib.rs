@@ -18,6 +18,10 @@ const OPERATOR_JSON: &str = include_str!("../operator.json");
 
 /// Run the rvl pipeline. Returns exit code (0, 1, or 2).
 pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
+    if let Some(display_mode) = detect_display_mode(std::env::args_os()) {
+        return handle_display_mode(display_mode);
+    }
+
     let args = match cli::args::Args::parse() {
         Ok(args) => args,
         Err(err) => {
@@ -27,92 +31,15 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     };
 
     if args.version {
-        println!("rvl {}", env!("CARGO_PKG_VERSION"));
-        return Ok(0);
+        return handle_display_mode(DisplayMode::Version);
     }
 
     if args.describe {
-        println!("{OPERATOR_JSON}");
-        return Ok(0);
+        return handle_display_mode(DisplayMode::Describe);
     }
 
     if args.schema {
-        let schema = serde_json::json!({
-            "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "$id": "https://rvl.v0/schema.json",
-            "title": "rvl Output Schema",
-            "description": "JSON schema for rvl.v0 output format",
-            "type": "object",
-            "required": ["version", "outcome", "files", "alignment", "dialect", "threshold", "tolerance", "counts", "metrics", "limits", "contributors"],
-            "properties": {
-                "version": { "type": "string", "const": "rvl.v0" },
-                "outcome": { "type": "string", "enum": ["REAL_CHANGE", "NO_REAL_CHANGE", "REFUSAL"] },
-                "profile_id": { "type": ["string", "null"] },
-                "profile_sha256": { "type": ["string", "null"] },
-                "files": {
-                    "type": "object",
-                    "properties": {
-                        "old": { "type": "string" },
-                        "new": { "type": "string" }
-                    },
-                    "required": ["old", "new"]
-                },
-                "alignment": {
-                    "type": "object",
-                    "properties": {
-                        "mode": { "type": "string", "enum": ["key", "row_order"] },
-                        "key_column": { "type": ["string", "null"] }
-                    },
-                    "required": ["mode"]
-                },
-                "dialect": {
-                    "type": "object",
-                    "properties": {
-                        "old": { "type": ["object", "null"] },
-                        "new": { "type": ["object", "null"] }
-                    }
-                },
-                "threshold": { "type": "number" },
-                "tolerance": { "type": "number" },
-                "counts": { "type": "object" },
-                "metrics": { "type": "object" },
-                "limits": {
-                    "type": "object",
-                    "properties": {
-                        "max_contributors": { "type": "integer" }
-                    },
-                    "required": ["max_contributors"]
-                },
-                "contributors": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "row_id": { "type": "string" },
-                            "column": { "type": "string" },
-                            "old": { "type": "number" },
-                            "new": { "type": "number" },
-                            "delta": { "type": "number" },
-                            "contribution": { "type": "number" },
-                            "share": { "type": "number" },
-                            "cumulative_share": { "type": "number" }
-                        },
-                        "required": ["row_id", "column", "old", "new", "delta", "contribution", "share", "cumulative_share"]
-                    }
-                },
-                "refusal": {
-                    "type": ["object", "null"],
-                    "properties": {
-                        "code": { "type": "string" },
-                        "message": { "type": "string" },
-                        "detail": {}
-                    },
-                    "required": ["code", "message", "detail"]
-                }
-            }
-        });
-        println!("{}", serde_json::to_string_pretty(&schema)?);
-        return Ok(0);
+        return handle_display_mode(DisplayMode::Schema);
     }
 
     if let Some(ref cmd) = args.command {
@@ -127,6 +54,125 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     }
 
     run_comparison(args)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DisplayMode {
+    Version,
+    Describe,
+    Schema,
+}
+
+fn detect_display_mode<I, T>(args: I) -> Option<DisplayMode>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString>,
+{
+    let args = args
+        .into_iter()
+        .map(Into::into)
+        .collect::<Vec<std::ffi::OsString>>();
+
+    if args.iter().skip(1).any(|arg| arg == "--version") {
+        Some(DisplayMode::Version)
+    } else if args.iter().skip(1).any(|arg| arg == "--describe") {
+        Some(DisplayMode::Describe)
+    } else if args.iter().skip(1).any(|arg| arg == "--schema") {
+        Some(DisplayMode::Schema)
+    } else {
+        None
+    }
+}
+
+fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Error>> {
+    match mode {
+        DisplayMode::Version => {
+            println!("rvl {}", env!("CARGO_PKG_VERSION"));
+            Ok(0)
+        }
+        DisplayMode::Describe => {
+            println!("{OPERATOR_JSON}");
+            Ok(0)
+        }
+        DisplayMode::Schema => {
+            let schema = serde_json::json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://rvl.v0/schema.json",
+                "title": "rvl Output Schema",
+                "description": "JSON schema for rvl.v0 output format",
+                "type": "object",
+                "required": ["version", "outcome", "files", "alignment", "dialect", "threshold", "tolerance", "counts", "metrics", "limits", "contributors"],
+                "properties": {
+                    "version": { "type": "string", "const": "rvl.v0" },
+                    "outcome": { "type": "string", "enum": ["REAL_CHANGE", "NO_REAL_CHANGE", "REFUSAL"] },
+                    "profile_id": { "type": ["string", "null"] },
+                    "profile_sha256": { "type": ["string", "null"] },
+                    "files": {
+                        "type": "object",
+                        "properties": {
+                            "old": { "type": "string" },
+                            "new": { "type": "string" }
+                        },
+                        "required": ["old", "new"]
+                    },
+                    "alignment": {
+                        "type": "object",
+                        "properties": {
+                            "mode": { "type": "string", "enum": ["key", "row_order"] },
+                            "key_column": { "type": ["string", "null"] }
+                        },
+                        "required": ["mode"]
+                    },
+                    "dialect": {
+                        "type": "object",
+                        "properties": {
+                            "old": { "type": ["object", "null"] },
+                            "new": { "type": ["object", "null"] }
+                        }
+                    },
+                    "threshold": { "type": "number" },
+                    "tolerance": { "type": "number" },
+                    "counts": { "type": "object" },
+                    "metrics": { "type": "object" },
+                    "limits": {
+                        "type": "object",
+                        "properties": {
+                            "max_contributors": { "type": "integer" }
+                        },
+                        "required": ["max_contributors"]
+                    },
+                    "contributors": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "row_id": { "type": "string" },
+                                "column": { "type": "string" },
+                                "old": { "type": "number" },
+                                "new": { "type": "number" },
+                                "delta": { "type": "number" },
+                                "contribution": { "type": "number" },
+                                "share": { "type": "number" },
+                                "cumulative_share": { "type": "number" }
+                            },
+                            "required": ["row_id", "column", "old", "new", "delta", "contribution", "share", "cumulative_share"]
+                        }
+                    },
+                    "refusal": {
+                        "type": ["object", "null"],
+                        "properties": {
+                            "code": { "type": "string" },
+                            "message": { "type": "string" },
+                            "detail": {}
+                        },
+                        "required": ["code", "message", "detail"]
+                    }
+                }
+            });
+            println!("{}", serde_json::to_string_pretty(&schema)?);
+            Ok(0)
+        }
+    }
 }
 
 /// Run the CSV comparison pipeline (the default mode).
