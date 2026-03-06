@@ -105,6 +105,15 @@ struct RefusalContext<'a> {
     metrics: Metrics,
 }
 
+#[derive(Clone, Copy)]
+struct RunContext<'a> {
+    args: &'a Args,
+    dialect_old: Option<DialectReceipt>,
+    dialect_new: Option<DialectReceipt>,
+    rerun_paths: RerunPaths<'a>,
+    active_profile: &'a ActiveProfile,
+}
+
 #[derive(Clone, Debug)]
 struct RowRef {
     old_record: u64,
@@ -139,7 +148,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         Ok(profile) => profile,
         Err(refusal) => {
             return Ok(render_refusal(
-                refusal,
+                *refusal,
                 args,
                 None,
                 None,
@@ -203,71 +212,61 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
 
     let dialect_old = Some(dialect_receipt(&old));
     let dialect_new = Some(dialect_receipt(&new));
+    let context = RunContext {
+        args,
+        dialect_old,
+        dialect_new,
+        rerun_paths,
+        active_profile: &active_profile,
+    };
 
     if let Some(key) = key_bytes.as_deref() {
-        run_key_mode(
-            args,
-            key,
-            old,
-            new,
-            dialect_old,
-            dialect_new,
-            rerun_paths,
-            &active_profile,
-        )
+        run_key_mode(key, old, new, context)
     } else {
-        run_row_order(
-            args,
-            old,
-            new,
-            dialect_old,
-            dialect_new,
-            rerun_paths,
-            &active_profile,
-        )
+        run_row_order(old, new, context)
     }
 }
 
 fn resolve_active_profile(
     args: &Args,
     rerun_paths: RerunPaths<'_>,
-) -> Result<ActiveProfile, RefusalPayload> {
+) -> Result<ActiveProfile, Box<RefusalPayload>> {
     if let (Some(profile_path), Some(profile_id)) =
         (args.profile.as_ref(), args.profile_id.as_ref())
     {
-        return Err(RefusalPayload::with_default_next(
+        return Err(Box::new(RefusalPayload::with_default_next(
             RefusalCode::AmbiguousProfile,
             RefusalKind::AmbiguousProfile {
                 profile_path: profile_path.to_string_lossy().to_string(),
                 profile_id: profile_id.clone(),
             },
             rerun_paths,
-        ));
+        )));
     }
 
     if let Some(profile_path) = args.profile.as_ref() {
         let selector = profile_path.to_string_lossy().to_string();
         let resolved = load_profile_from_path(profile_path).map_err(|_| {
-            RefusalPayload::with_default_next(
+            Box::new(RefusalPayload::with_default_next(
                 RefusalCode::ProfileNotFound,
                 RefusalKind::ProfileNotFound {
                     profile_id: selector.clone(),
                 },
                 rerun_paths,
-            )
+            ))
         })?;
         return Ok(active_profile_from_resolved(resolved));
     }
 
     if let Some(profile_id) = args.profile_id.as_ref() {
         let resolved = resolve_profile_id(profile_id).map_err(|_| {
-            RefusalPayload::with_default_next(
+            Box::new(RefusalPayload::with_default_next(
                 RefusalCode::ProfileNotFound,
                 RefusalKind::ProfileNotFound {
                     profile_id: profile_id.clone(),
                 },
                 rerun_paths,
-            )
+            ))
         })?;
         return Ok(active_profile_from_resolved(resolved));
     }
@@ -289,15 +288,17 @@ fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
 }
 
 fn run_key_mode(
-    args: &Args,
     key: &[u8],
     old: ParsedCsv,
     new: ParsedCsv,
-    dialect_old: Option<DialectReceipt>,
-    dialect_new: Option<DialectReceipt>,
-    rerun_paths: RerunPaths<'_>,
-    active_profile: &ActiveProfile,
+    context: RunContext<'_>,
 ) -> Result<PipelineResult, Box<dyn Error>> {
+    let args = context.args;
+    let dialect_old = context.dialect_old;
+    let dialect_new = context.dialect_new;
+    let rerun_paths = context.rerun_paths;
+    let active_profile = context.active_profile;
+
     let old_key_index = match find_key_index(&old.headers, key) {
         Some(index) => index,
         None => {
@@ -401,7 +402,6 @@ fn run_key_mode(
     };
 
     run_diff(
-        args,
         AlignmentContext::Key {
             key: key.to_vec(),
             rows_old,
@@ -410,22 +410,21 @@ fn run_key_mode(
         },
         old.headers,
         new.headers,
-        dialect_old,
-        dialect_new,
-        rerun_paths,
-        active_profile,
+        context,
     )
 }
 
 fn run_row_order(
-    args: &Args,
     old: ParsedCsv,
     new: ParsedCsv,
-    dialect_old: Option<DialectReceipt>,
-    dialect_new: Option<DialectReceipt>,
-    rerun_paths: RerunPaths<'_>,
-    active_profile: &ActiveProfile,
+    context: RunContext<'_>,
 ) -> Result<PipelineResult, Box<dyn Error>> {
+    let args = context.args;
+    let dialect_old = context.dialect_old;
+    let dialect_new = context.dialect_new;
+    let rerun_paths = context.rerun_paths;
+    let active_profile = context.active_profile;
+
     if old.records.len() != new.records.len() {
         let suggested_keys = discover_key_candidates(
             &old.headers,
@@ -483,17 +482,13 @@ fn run_row_order(
     }
 
     run_diff(
-        args,
         AlignmentContext::RowOrder {
             old_rows: old.records,
             new_rows: new.records,
         },
         old.headers,
         new.headers,
-        dialect_old,
-        dialect_new,
-        rerun_paths,
-        active_profile,
+        context,
     )
 }
 
@@ -511,15 +506,17 @@ enum AlignmentContext {
 }
 
 fn run_diff(
-    args: &Args,
     alignment: AlignmentContext,
     old_headers: Vec<Vec<u8>>,
     new_headers: Vec<Vec<u8>>,
-    dialect_old: Option<DialectReceipt>,
-    dialect_new: Option<DialectReceipt>,
-    rerun_paths: RerunPaths<'_>,
-    active_profile: &ActiveProfile,
+    context: RunContext<'_>,
 ) -> Result<PipelineResult, Box<dyn Error>> {
+    let args = context.args;
+    let dialect_old = context.dialect_old;
+    let dialect_new = context.dialect_new;
+    let rerun_paths = context.rerun_paths;
+    let active_profile = context.active_profile;
+
     let key_bytes = match &alignment {
         AlignmentContext::Key { key, .. } => Some(key.as_slice()),
         AlignmentContext::RowOrder { .. } => None,

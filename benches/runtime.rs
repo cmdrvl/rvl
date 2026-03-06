@@ -81,9 +81,15 @@ fn run_case(case: &Case, iterations: u64, warmup: u64) -> f64 {
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
+        profile: None,
+        profile_id: None,
         capsule_out: None,
         json: false,
         no_witness: true,
+        explicit: false,
+        describe: false,
+        schema: false,
+        version: false,
         command: None,
     };
 

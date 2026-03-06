@@ -239,7 +239,6 @@ fn parse_only_simd(input: &[u8], delimiter: u8, escape: EscapeMode, skip_sep: bo
     let mut reader = SimdReaderBuilder::new()
         .delimiter(delimiter)
         .quote(b'"')
-        .double_quote(true)
         .flexible(true)
         .has_headers(false)
         .from_reader(Cursor::new(input));

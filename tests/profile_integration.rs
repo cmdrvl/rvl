@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rvl::cli::args::Args;
@@ -17,7 +17,7 @@ fn temp_dir() -> PathBuf {
     dir
 }
 
-fn write_file(dir: &PathBuf, name: &str, content: &str) -> PathBuf {
+fn write_file(dir: &Path, name: &str, content: &str) -> PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, content).unwrap();
     path
@@ -32,10 +32,10 @@ fn run_json(args: &Args) -> serde_json::Value {
     serde_json::from_str(&result.output).expect("json output should parse")
 }
 
-fn make_args(old: &PathBuf, new: &PathBuf) -> Args {
+fn make_args(old: &Path, new: &Path) -> Args {
     Args {
-        old: Some(old.clone()),
-        new: Some(new.clone()),
+        old: Some(old.to_path_buf()),
+        new: Some(new.to_path_buf()),
         key: None,
         threshold: 0.95,
         tolerance: 1e-9,
@@ -53,7 +53,7 @@ fn make_args(old: &PathBuf, new: &PathBuf) -> Args {
     }
 }
 
-fn cleanup(dir: &PathBuf) {
+fn cleanup(dir: &Path) {
     std::fs::remove_dir_all(dir).ok();
 }
 
