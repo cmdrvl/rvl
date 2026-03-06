@@ -108,6 +108,43 @@ fn no_witness_flag_suppresses_recording() {
 }
 
 #[test]
+fn empty_epistemic_witness_falls_back_to_home_default() {
+    let dir = temp_dir();
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let old = write_csv(&dir, "old.csv", "id,value\nA,1\nB,2\n");
+    let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,3\n");
+    let ledger = home.join(".epistemic").join("witness.jsonl");
+
+    let output = Command::new(rvl_binary())
+        .arg(old.to_str().unwrap())
+        .arg(new.to_str().unwrap())
+        .env("HOME", &home)
+        .env("EPISTEMIC_WITNESS", "")
+        .output()
+        .expect("failed to run rvl");
+
+    assert!(
+        output.status.success() || output.status.code() == Some(1),
+        "rvl should exit 0 or 1, got {:?}",
+        output.status.code()
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).trim().is_empty(),
+        "empty witness env should not produce witness errors: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(ledger.exists(), "default witness ledger should be created");
+
+    let content = std::fs::read_to_string(&ledger).unwrap();
+    let line = content.lines().next().expect("expected witness record");
+    let parsed: serde_json::Value = serde_json::from_str(line).unwrap();
+    assert_eq!(parsed["tool"], "rvl");
+
+    cleanup(&dir);
+}
+
+#[test]
 fn consecutive_runs_produce_hash_chain() {
     let dir = temp_dir();
     let old = write_csv(&dir, "old.csv", "id,value\nA,1\nB,2\n");

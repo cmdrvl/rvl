@@ -10,7 +10,9 @@ use crate::witness::record::{WitnessRecord, canonical_json};
 /// 1. `EPISTEMIC_WITNESS` env var (if set, use as file path)
 /// 2. Default: `~/.epistemic/witness.jsonl`
 pub(crate) fn resolve_ledger_path() -> io::Result<PathBuf> {
-    if let Ok(env_path) = std::env::var("EPISTEMIC_WITNESS") {
+    if let Ok(env_path) = std::env::var("EPISTEMIC_WITNESS")
+        && !env_path.trim().is_empty()
+    {
         Ok(PathBuf::from(env_path))
     } else {
         let home = home_dir().ok_or_else(|| {
