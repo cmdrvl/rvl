@@ -28,6 +28,7 @@ blake3 = "1"
 jsonschema = "0.42"
 polars = { version = "0.52.0", default-features = false, features = ["csv"] }
 simd-csv = "0.10.3"
+spine-rules = { git = "https://github.com/cmdrvl/spine-rules" }
 
 [[bench]]
 name = "runtime"
