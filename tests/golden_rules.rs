@@ -5,8 +5,11 @@ golden_rules_suite! {
     binary: env!("CARGO_BIN_EXE_rvl"),
     operator_json: include_str!("../operator.json"),
     source_files: &["src/refusal/codes.rs", "src/output/json.rs"],
-    // NOTE: fixture_success_args omitted — rvl exits 1 when EPISTEMIC_WITNESS
-    // is set even with --no-witness (R-008/R-017 compliance bug).
+    fixture_success_args: &[
+        "tests/fixtures/basic_old.csv",
+        "tests/fixtures/basic_new.csv",
+        "--json", "--no-witness",
+    ],
     fixture_refusal_args: &[
         "/nonexistent/old.csv",
         "/nonexistent/new.csv",
