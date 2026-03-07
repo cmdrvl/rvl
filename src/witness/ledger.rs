@@ -1,5 +1,5 @@
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufRead, Write};
+use std::fs::{self, OpenOptions};
+use std::io::{self, Write};
 use std::path::PathBuf;
 
 use crate::witness::record::{WitnessRecord, canonical_json};
@@ -39,25 +39,6 @@ impl LedgerWriter {
     /// Create a writer targeting a specific path (for testing and direct use).
     pub fn with_path(path: PathBuf) -> Self {
         Self { path }
-    }
-
-    /// Read the `id` from the last record in the ledger (for prev chaining).
-    ///
-    /// Returns `None` if the ledger is empty, doesn't exist, or the last line
-    /// isn't valid JSON. Never fails — this is best-effort chaining.
-    pub fn read_prev(&self) -> Option<String> {
-        let file = File::open(&self.path).ok()?;
-        let reader = io::BufReader::new(file);
-        let mut last_line = None;
-        for l in reader.lines().map_while(Result::ok) {
-            let trimmed = l.trim().to_string();
-            if !trimmed.is_empty() {
-                last_line = Some(trimmed);
-            }
-        }
-        let last = last_line?;
-        let value: serde_json::Value = serde_json::from_str(&last).ok()?;
-        value.get("id")?.as_str().map(|s| s.to_string())
     }
 
     /// Append a record to the ledger using canonical JSON (sorted keys).
@@ -105,7 +86,7 @@ mod tests {
     use crate::cli::exit::Outcome;
     use crate::orchestrator::PipelineResult;
 
-    fn make_record(prev: Option<String>) -> WitnessRecord {
+    fn make_record() -> WitnessRecord {
         let args = Args::new(
             PathBuf::from("old.csv"),
             PathBuf::from("new.csv"),
@@ -120,8 +101,7 @@ mod tests {
             output: "test output".to_string(),
             profile: crate::orchestrator::ProfileRunInfo::default(),
         };
-        let mut rec =
-            WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv", prev);
+        let mut rec = WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv");
         rec.ts = "2026-01-01T00:00:00Z".to_string();
         rec.compute_id();
         rec
@@ -144,7 +124,7 @@ mod tests {
     fn append_creates_new_file_with_one_line() {
         let path = temp_ledger_path();
         let writer = LedgerWriter::with_path(path.clone());
-        let rec = make_record(None);
+        let rec = make_record();
         writer.append(&rec).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
@@ -160,17 +140,16 @@ mod tests {
     }
 
     #[test]
-    fn append_twice_produces_two_lines_with_prev_chaining() {
+    fn append_twice_produces_two_lines() {
         let path = temp_ledger_path();
         let writer = LedgerWriter::with_path(path.clone());
 
-        let rec1 = make_record(None);
+        let rec1 = make_record();
         writer.append(&rec1).unwrap();
 
-        let prev_id = writer.read_prev();
-        assert_eq!(prev_id, Some(rec1.id.clone()));
-
-        let rec2 = make_record(prev_id);
+        let mut rec2 = make_record();
+        rec2.outcome = "REAL_CHANGE".to_string();
+        rec2.compute_id();
         writer.append(&rec2).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
@@ -178,73 +157,7 @@ mod tests {
         assert_eq!(lines.len(), 2, "should have two JSONL lines");
 
         let parsed2: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
-        assert_eq!(parsed2["prev"].as_str().unwrap(), rec1.id);
-
-        fs::remove_file(&path).ok();
-        fs::remove_dir(path.parent().unwrap()).ok();
-    }
-
-    #[test]
-    fn read_prev_on_empty_file_returns_none() {
-        let path = temp_ledger_path();
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, "").unwrap();
-
-        let writer = LedgerWriter::with_path(path.clone());
-        assert!(writer.read_prev().is_none());
-
-        fs::remove_file(&path).ok();
-        fs::remove_dir(path.parent().unwrap()).ok();
-    }
-
-    #[test]
-    fn read_prev_on_nonexistent_file_returns_none() {
-        let path = temp_ledger_path();
-        let writer = LedgerWriter::with_path(path);
-        assert!(writer.read_prev().is_none());
-    }
-
-    #[test]
-    fn read_prev_on_one_record_returns_id() {
-        let path = temp_ledger_path();
-        let writer = LedgerWriter::with_path(path.clone());
-        let rec = make_record(None);
-        writer.append(&rec).unwrap();
-
-        let prev = writer.read_prev();
-        assert_eq!(prev, Some(rec.id.clone()));
-
-        fs::remove_file(&path).ok();
-        fs::remove_dir(path.parent().unwrap()).ok();
-    }
-
-    #[test]
-    fn read_prev_on_corrupt_last_line_returns_none() {
-        let path = temp_ledger_path();
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, "this is not valid json\n").unwrap();
-
-        let writer = LedgerWriter::with_path(path.clone());
-        assert!(writer.read_prev().is_none());
-
-        fs::remove_file(&path).ok();
-        fs::remove_dir(path.parent().unwrap()).ok();
-    }
-
-    #[test]
-    fn read_prev_skips_trailing_blank_lines() {
-        let path = temp_ledger_path();
-        let writer = LedgerWriter::with_path(path.clone());
-        let rec = make_record(None);
-        writer.append(&rec).unwrap();
-
-        // Append trailing blank lines.
-        let mut file = OpenOptions::new().append(true).open(&path).unwrap();
-        writeln!(file).unwrap();
-        writeln!(file).unwrap();
-
-        let prev = writer.read_prev();
-        assert_eq!(prev, Some(rec.id.clone()));
+        assert_eq!(parsed2["id"], rec2.id);
 
         fs::remove_file(&path).ok();
         fs::remove_dir(path.parent().unwrap()).ok();
@@ -254,7 +167,7 @@ mod tests {
     fn ledger_lines_are_canonical_json_verifiable() {
         let path = temp_ledger_path();
         let writer = LedgerWriter::with_path(path.clone());
-        let rec = make_record(None);
+        let rec = make_record();
         writer.append(&rec).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
@@ -284,7 +197,7 @@ mod tests {
     fn append_to_bad_path_returns_error() {
         // /dev/null is a file, not a directory, so creating children fails.
         let writer = LedgerWriter::with_path(PathBuf::from("/dev/null/impossible/witness.jsonl"));
-        let rec = make_record(None);
+        let rec = make_record();
         assert!(writer.append(&rec).is_err());
     }
 
@@ -294,7 +207,7 @@ mod tests {
         // directly with the record (try_append uses open() internally, but we
         // test the non-panic behavior).
         let writer = LedgerWriter::with_path(PathBuf::from("/dev/null/impossible/witness.jsonl"));
-        let rec = make_record(None);
+        let rec = make_record();
         // This should not panic — errors are swallowed.
         let result = writer.append(&rec);
         assert!(result.is_err());
@@ -315,7 +228,7 @@ mod tests {
             .join("witness.jsonl");
 
         let writer = LedgerWriter::with_path(path.clone());
-        let rec = make_record(None);
+        let rec = make_record();
         writer.append(&rec).unwrap();
 
         assert!(path.exists());
@@ -339,38 +252,33 @@ mod tests {
     }
 
     #[test]
-    fn three_record_chain() {
+    fn append_multiple_records_is_additive() {
         let path = temp_ledger_path();
         let writer = LedgerWriter::with_path(path.clone());
 
-        let rec1 = make_record(None);
+        let rec1 = make_record();
         writer.append(&rec1).unwrap();
 
-        let prev1 = writer.read_prev();
-        assert_eq!(prev1.as_ref(), Some(&rec1.id));
-
-        let mut rec2 = make_record(prev1);
+        let mut rec2 = make_record();
         rec2.outcome = "REAL_CHANGE".to_string();
         rec2.compute_id();
         writer.append(&rec2).unwrap();
 
-        let prev2 = writer.read_prev();
-        assert_eq!(prev2.as_ref(), Some(&rec2.id));
-
-        let rec3 = make_record(prev2);
+        let mut rec3 = make_record();
+        rec3.outcome = "REFUSAL".to_string();
+        rec3.compute_id();
         writer.append(&rec3).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 3);
 
-        // Verify chain: rec3.prev == rec2.id, rec2.prev == rec1.id
         let p3: serde_json::Value = serde_json::from_str(lines[2]).unwrap();
         let p2: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
         let p1: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
-        assert_eq!(p3["prev"].as_str().unwrap(), p2["id"].as_str().unwrap());
-        assert_eq!(p2["prev"].as_str().unwrap(), p1["id"].as_str().unwrap());
-        assert!(p1["prev"].is_null());
+        assert_eq!(p1["outcome"], "NO_REAL_CHANGE");
+        assert_eq!(p2["outcome"], "REAL_CHANGE");
+        assert_eq!(p3["outcome"], "REFUSAL");
 
         fs::remove_file(&path).ok();
         fs::remove_dir(path.parent().unwrap()).ok();

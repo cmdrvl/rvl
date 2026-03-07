@@ -16,7 +16,6 @@ pub struct WitnessRecord {
     pub outcome: String,
     pub exit_code: u8,
     pub output_hash: String,
-    pub prev: Option<String>,
     pub ts: String,
 }
 
@@ -54,7 +53,6 @@ impl WitnessRecord {
         new_bytes: &[u8],
         old_path: &str,
         new_path: &str,
-        prev: Option<String>,
     ) -> Self {
         let binary_hash = hash_self()
             .map(|h| format!("blake3:{h}"))
@@ -147,7 +145,6 @@ impl WitnessRecord {
             outcome: outcome_str.to_string(),
             exit_code: exit::exit_code(result.outcome),
             output_hash: format!("blake3:{}", hash_bytes(result.output.as_bytes())),
-            prev,
             ts,
         }
     }
@@ -209,7 +206,7 @@ mod tests {
         let old = b"old content";
         let new = b"new content";
 
-        let mut rec = WitnessRecord::from_run(&args, &result, old, new, "old.csv", "new.csv", None);
+        let mut rec = WitnessRecord::from_run(&args, &result, old, new, "old.csv", "new.csv");
         rec.compute_id();
 
         assert!(!rec.id.is_empty());
@@ -226,7 +223,6 @@ mod tests {
         assert_eq!(rec.outcome, "REAL_CHANGE");
         assert_eq!(rec.exit_code, 1);
         assert!(rec.output_hash.starts_with("blake3:"));
-        assert!(rec.prev.is_none());
         assert!(!rec.ts.is_empty());
         assert!(rec.ts.ends_with('Z'));
     }
@@ -242,7 +238,6 @@ mod tests {
             b"b",
             "a.csv",
             "b.csv",
-            None,
         );
         assert_eq!(r1.outcome, "NO_REAL_CHANGE");
         assert_eq!(r1.exit_code, 0);
@@ -254,7 +249,6 @@ mod tests {
             b"b",
             "a.csv",
             "b.csv",
-            None,
         );
         assert_eq!(r2.outcome, "REAL_CHANGE");
         assert_eq!(r2.exit_code, 1);
@@ -266,7 +260,6 @@ mod tests {
             b"b",
             "a.csv",
             "b.csv",
-            None,
         );
         assert_eq!(r3.outcome, "REFUSAL");
         assert_eq!(r3.exit_code, 2);
@@ -277,7 +270,7 @@ mod tests {
         let args = make_args(Some("key"), false);
         let result = make_result(Outcome::NoRealChange);
 
-        let mut r1 = WitnessRecord::from_run(&args, &result, b"x", b"y", "a.csv", "b.csv", None);
+        let mut r1 = WitnessRecord::from_run(&args, &result, b"x", b"y", "a.csv", "b.csv");
         // Force a fixed timestamp for determinism.
         r1.ts = "2026-01-01T00:00:00Z".to_string();
         r1.binary_hash = "blake3:fixed".to_string();
@@ -295,7 +288,7 @@ mod tests {
         let args = make_args(None, false);
         let result = make_result(Outcome::RealChange);
 
-        let mut base = WitnessRecord::from_run(&args, &result, b"x", b"y", "a.csv", "b.csv", None);
+        let mut base = WitnessRecord::from_run(&args, &result, b"x", b"y", "a.csv", "b.csv");
         base.ts = "2026-01-01T00:00:00Z".to_string();
         base.binary_hash = "blake3:fixed".to_string();
         base.compute_id();
@@ -313,12 +306,6 @@ mod tests {
         variant.compute_id();
         assert_ne!(variant.id, base_id, "id should change when tool changes");
 
-        // Change prev.
-        let mut variant = base.clone();
-        variant.prev = Some("blake3:abc".to_string());
-        variant.compute_id();
-        assert_ne!(variant.id, base_id, "id should change when prev changes");
-
         // Change ts.
         let mut variant = base.clone();
         variant.ts = "2099-12-31T23:59:59Z".to_string();
@@ -330,7 +317,7 @@ mod tests {
     fn canonical_json_has_alphabetically_sorted_keys() {
         let args = make_args(Some("id"), true);
         let result = make_result(Outcome::RealChange);
-        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
+        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");
 
         let json = canonical_json(&rec);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -345,7 +332,6 @@ mod tests {
             "outcome",
             "output_hash",
             "params",
-            "prev",
             "tool",
             "ts",
             "version",
@@ -362,7 +348,7 @@ mod tests {
     fn canonical_json_inputs_have_sorted_keys() {
         let args = make_args(None, false);
         let result = make_result(Outcome::NoRealChange);
-        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
+        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");
 
         let json = canonical_json(&rec);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -381,7 +367,7 @@ mod tests {
     fn canonical_json_params_have_sorted_keys() {
         let args = make_args(Some("loan_id"), true);
         let result = make_result(Outcome::RealChange);
-        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
+        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");
 
         let json = canonical_json(&rec);
         let value: serde_json::Value = serde_json::from_str(&json).unwrap();
@@ -406,7 +392,7 @@ mod tests {
             true,
         );
         let result = make_result(Outcome::RealChange);
-        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
+        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");
 
         assert_eq!(rec.params["key"], "account_id");
         assert_eq!(rec.params["threshold"], 0.80);
@@ -419,7 +405,7 @@ mod tests {
     fn params_null_when_not_set() {
         let args = make_args(None, false);
         let result = make_result(Outcome::NoRealChange);
-        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
+        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");
 
         assert!(rec.params["key"].is_null());
         assert!(rec.params["delimiter"].is_null());
@@ -436,40 +422,26 @@ mod tests {
             profile_sha256: Some("sha256:abc".to_string()),
             capsule_profile: None,
         };
-        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
+        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");
 
         assert_eq!(rec.params["profile_id"], "csv.loan_tape.core.v0");
         assert_eq!(rec.params["profile_sha256"], "sha256:abc");
     }
 
     #[test]
-    fn prev_chaining() {
+    fn from_run_leaves_id_empty_until_compute_id() {
         let args = make_args(None, false);
         let result = make_result(Outcome::NoRealChange);
 
-        let rec_no_prev =
-            WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
-        assert!(rec_no_prev.prev.is_none());
-
-        let prev_id = "blake3:abc123".to_string();
-        let rec_with_prev = WitnessRecord::from_run(
-            &args,
-            &result,
-            b"a",
-            b"b",
-            "a.csv",
-            "b.csv",
-            Some(prev_id.clone()),
-        );
-        assert_eq!(rec_with_prev.prev, Some(prev_id));
+        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");
+        assert!(rec.id.is_empty());
     }
 
     #[test]
     fn roundtrip_serialize_deserialize() {
         let args = make_args(Some("id"), true);
         let result = make_result(Outcome::RealChange);
-        let mut rec =
-            WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv", None);
+        let mut rec = WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv");
         rec.compute_id();
 
         let json = canonical_json(&rec);
@@ -480,7 +452,6 @@ mod tests {
         assert_eq!(deserialized.version, rec.version);
         assert_eq!(deserialized.outcome, rec.outcome);
         assert_eq!(deserialized.exit_code, rec.exit_code);
-        assert_eq!(deserialized.prev, rec.prev);
         assert_eq!(deserialized.ts, rec.ts);
         assert_eq!(deserialized.inputs.len(), 2);
     }
@@ -489,7 +460,7 @@ mod tests {
     fn ts_format_is_iso8601() {
         let args = make_args(None, false);
         let result = make_result(Outcome::NoRealChange);
-        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv", None);
+        let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");
 
         // Pattern: YYYY-MM-DDTHH:MM:SSZ
         assert!(rec.ts.ends_with('Z'));

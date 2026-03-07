@@ -39,11 +39,8 @@ fn record_run_with_writer(
     let old_path = args.old_path().to_string_lossy().to_string();
     let new_path = args.new_path().to_string_lossy().to_string();
 
-    let prev = writer.read_prev();
-
-    let mut rec = record::WitnessRecord::from_run(
-        args, result, &old_bytes, &new_bytes, &old_path, &new_path, prev,
-    );
+    let mut rec =
+        record::WitnessRecord::from_run(args, result, &old_bytes, &new_bytes, &old_path, &new_path);
     rec.compute_id();
     writer.append(&rec)?;
     Ok(())
@@ -110,7 +107,6 @@ mod tests {
         assert_eq!(parsed["tool"], "rvl");
         assert_eq!(parsed["outcome"], "REAL_CHANGE");
         assert_eq!(parsed["exit_code"], 1);
-        assert!(parsed["prev"].is_null());
 
         cleanup(&dir);
     }
@@ -171,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn record_run_chains_prev_on_consecutive_calls() {
+    fn record_run_appends_consecutive_receipts() {
         let dir = temp_dir();
         let old = write_csv(&dir, "old.csv", "id,value\nA,1\n");
         let new = write_csv(&dir, "new.csv", "id,value\nA,2\n");
@@ -195,12 +191,12 @@ mod tests {
         let rec1: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
         let rec2: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
 
-        assert!(rec1["prev"].is_null(), "first record should have null prev");
-        assert_eq!(
-            rec2["prev"].as_str().unwrap(),
-            rec1["id"].as_str().unwrap(),
-            "second record's prev should equal first record's id"
+        assert_ne!(
+            rec1["id"], rec2["id"],
+            "separate runs should have distinct receipt ids"
         );
+        assert_eq!(rec1["outcome"], "REAL_CHANGE");
+        assert_eq!(rec2["outcome"], "NO_REAL_CHANGE");
 
         cleanup(&dir);
     }
@@ -228,11 +224,6 @@ mod tests {
         let r2: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
         let r3: serde_json::Value = serde_json::from_str(lines[2]).unwrap();
 
-        assert!(r1["prev"].is_null());
-        assert_eq!(r2["prev"].as_str().unwrap(), r1["id"].as_str().unwrap());
-        assert_eq!(r3["prev"].as_str().unwrap(), r2["id"].as_str().unwrap());
-
-        // Verify outcomes.
         assert_eq!(r1["outcome"], "REAL_CHANGE");
         assert_eq!(r2["outcome"], "NO_REAL_CHANGE");
         assert_eq!(r3["outcome"], "REFUSAL");

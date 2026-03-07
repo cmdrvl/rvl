@@ -14,7 +14,6 @@
     "outcome",
     "exit_code",
     "output_hash",
-    "prev",
     "ts"
   ],
   "additionalProperties": false,
@@ -85,18 +84,6 @@
       "type": "string",
       "pattern": "^blake3:[0-9a-f]{64}$",
       "description": "BLAKE3 hash of the tool's output text."
-    },
-    "prev": {
-      "oneOf": [
-        {
-          "type": "string",
-          "pattern": "^blake3:[0-9a-f]{64}$"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "ID of the previous record in the ledger chain, or null for the first record."
     },
     "ts": {
       "type": "string",

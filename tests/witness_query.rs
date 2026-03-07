@@ -69,7 +69,7 @@ fn write_raw_ledger(ledger: &Path, records: &[&str]) {
 
 fn make_raw_record(outcome: &str, ts: &str) -> String {
     format!(
-        r#"{{"binary_hash":"blake3:test","exit_code":{},"id":"blake3:fake","inputs":[{{"bytes":10,"hash":"blake3:aaa","path":"old.csv"}},{{"bytes":10,"hash":"blake3:bbb","path":"new.csv"}}],"outcome":"{outcome}","output_hash":"blake3:out","params":{{"delimiter":null,"json":false,"key":null,"threshold":0.95,"tolerance":1e-9}},"prev":null,"tool":"rvl","ts":"{ts}","version":"0.1.1"}}"#,
+        r#"{{"binary_hash":"blake3:test","exit_code":{},"id":"blake3:fake","inputs":[{{"bytes":10,"hash":"blake3:aaa","path":"old.csv"}},{{"bytes":10,"hash":"blake3:bbb","path":"new.csv"}}],"outcome":"{outcome}","output_hash":"blake3:out","params":{{"delimiter":null,"json":false,"key":null,"threshold":0.95,"tolerance":1e-9}},"tool":"rvl","ts":"{ts}","version":"0.1.1"}}"#,
         match outcome {
             "REAL_CHANGE" => 1,
             "REFUSAL" => 2,

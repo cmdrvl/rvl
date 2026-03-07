@@ -99,8 +99,7 @@ mod tests {
             output: "test output".to_string(),
             profile: crate::orchestrator::ProfileRunInfo::default(),
         };
-        let mut rec =
-            WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv", None);
+        let mut rec = WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv");
         rec.ts = ts.to_string();
         rec.compute_id();
         rec

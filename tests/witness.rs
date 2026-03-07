@@ -3,7 +3,7 @@
 //! Tests exercise the compiled binary to verify that:
 //! - Normal runs produce witness records
 //! - `--no-witness` suppresses recording
-//! - Consecutive runs produce hash-chained records
+//! - Consecutive runs append distinct receipt records
 //! - Witness failures do not affect exit codes
 
 use std::path::{Path, PathBuf};
@@ -73,7 +73,6 @@ fn normal_run_creates_witness_record() {
     let parsed: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
     assert!(parsed["id"].as_str().unwrap().starts_with("blake3:"));
     assert_eq!(parsed["tool"], "rvl");
-    assert!(parsed["prev"].is_null());
 
     cleanup(&dir);
 }
@@ -145,7 +144,7 @@ fn empty_epistemic_witness_falls_back_to_home_default() {
 }
 
 #[test]
-fn consecutive_runs_produce_hash_chain() {
+fn consecutive_runs_append_receipts() {
     let dir = temp_dir();
     let old = write_csv(&dir, "old.csv", "id,value\nA,1\nB,2\n");
     let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,3\n");
@@ -184,12 +183,9 @@ fn consecutive_runs_produce_hash_chain() {
     let rec1: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
     let rec2: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
 
-    assert!(rec1["prev"].is_null(), "first record should have null prev");
-    assert_eq!(
-        rec2["prev"].as_str().unwrap(),
-        rec1["id"].as_str().unwrap(),
-        "second record's prev must chain to first record's id"
-    );
+    assert_eq!(rec1["tool"], "rvl");
+    assert_eq!(rec2["tool"], "rvl");
+    assert_eq!(rec1["outcome"], rec2["outcome"]);
 
     cleanup(&dir);
 }

@@ -215,7 +215,6 @@ fn frozen_profile_populates_json_and_witness_metadata() {
         b"loan_id,balance\nA,110\n",
         "old.csv",
         "new.csv",
-        None,
     );
     witness.compute_id();
     assert_eq!(witness.params["profile_id"], "csv.loan_tape.core.v0");

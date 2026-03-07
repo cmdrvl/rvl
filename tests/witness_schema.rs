@@ -26,7 +26,7 @@ fn validate(instance: &serde_json::Value) -> Result<(), String> {
     }
 }
 
-fn make_record(outcome: Outcome, prev: Option<String>) -> WitnessRecord {
+fn make_record(outcome: Outcome) -> WitnessRecord {
     let args = Args::new(
         PathBuf::from("old.csv"),
         PathBuf::from("new.csv"),
@@ -48,7 +48,6 @@ fn make_record(outcome: Outcome, prev: Option<String>) -> WitnessRecord {
         b"new content",
         "old.csv",
         "new.csv",
-        prev,
     );
     rec.ts = "2026-01-15T12:00:00Z".to_string();
     rec.compute_id();
@@ -59,7 +58,7 @@ fn make_record(outcome: Outcome, prev: Option<String>) -> WitnessRecord {
 
 #[test]
 fn schema_validates_no_real_change_record() {
-    let rec = make_record(Outcome::NoRealChange, None);
+    let rec = make_record(Outcome::NoRealChange);
     let json = canonical_json(&rec);
     let value: serde_json::Value = serde_json::from_str(&json).unwrap();
     validate(&value).expect("NO_REAL_CHANGE record should validate");
@@ -67,7 +66,7 @@ fn schema_validates_no_real_change_record() {
 
 #[test]
 fn schema_validates_real_change_record() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let value: serde_json::Value = serde_json::from_str(&json).unwrap();
     validate(&value).expect("REAL_CHANGE record should validate");
@@ -75,19 +74,10 @@ fn schema_validates_real_change_record() {
 
 #[test]
 fn schema_validates_refusal_record() {
-    let rec = make_record(Outcome::Refusal, None);
+    let rec = make_record(Outcome::Refusal);
     let json = canonical_json(&rec);
     let value: serde_json::Value = serde_json::from_str(&json).unwrap();
     validate(&value).expect("REFUSAL record should validate");
-}
-
-#[test]
-fn schema_validates_record_with_prev() {
-    let first = make_record(Outcome::RealChange, None);
-    let second = make_record(Outcome::NoRealChange, Some(first.id.clone()));
-    let json = canonical_json(&second);
-    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
-    validate(&value).expect("record with prev should validate");
 }
 
 #[test]
@@ -106,8 +96,7 @@ fn schema_validates_record_with_all_params() {
         output: "json output".to_string(),
         profile: rvl::orchestrator::ProfileRunInfo::default(),
     };
-    let mut rec =
-        WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv", None);
+    let mut rec = WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv");
     rec.ts = "2026-01-15T12:00:00Z".to_string();
     rec.compute_id();
     let json = canonical_json(&rec);
@@ -119,7 +108,7 @@ fn schema_validates_record_with_all_params() {
 
 #[test]
 fn schema_rejects_missing_id() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value.as_object_mut().unwrap().remove("id");
@@ -128,7 +117,7 @@ fn schema_rejects_missing_id() {
 
 #[test]
 fn schema_rejects_missing_tool() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value.as_object_mut().unwrap().remove("tool");
@@ -137,7 +126,7 @@ fn schema_rejects_missing_tool() {
 
 #[test]
 fn schema_rejects_missing_inputs() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value.as_object_mut().unwrap().remove("inputs");
@@ -146,7 +135,7 @@ fn schema_rejects_missing_inputs() {
 
 #[test]
 fn schema_rejects_missing_ts() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value.as_object_mut().unwrap().remove("ts");
@@ -154,17 +143,8 @@ fn schema_rejects_missing_ts() {
 }
 
 #[test]
-fn schema_rejects_missing_prev() {
-    let rec = make_record(Outcome::RealChange, None);
-    let json = canonical_json(&rec);
-    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
-    value.as_object_mut().unwrap().remove("prev");
-    assert!(validate(&value).is_err(), "missing prev should fail");
-}
-
-#[test]
 fn schema_rejects_missing_outcome() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value.as_object_mut().unwrap().remove("outcome");
@@ -175,7 +155,7 @@ fn schema_rejects_missing_outcome() {
 
 #[test]
 fn schema_rejects_malformed_id_hash() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["id"] = serde_json::json!("not-a-blake3-hash");
@@ -184,7 +164,7 @@ fn schema_rejects_malformed_id_hash() {
 
 #[test]
 fn schema_rejects_short_id_hash() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["id"] = serde_json::json!("blake3:abcd");
@@ -193,7 +173,7 @@ fn schema_rejects_short_id_hash() {
 
 #[test]
 fn schema_rejects_malformed_binary_hash() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["binary_hash"] = serde_json::json!("sha256:abc123");
@@ -205,7 +185,7 @@ fn schema_rejects_malformed_binary_hash() {
 
 #[test]
 fn schema_rejects_malformed_output_hash() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["output_hash"] = serde_json::json!("blake3:ZZZZ");
@@ -217,7 +197,7 @@ fn schema_rejects_malformed_output_hash() {
 
 #[test]
 fn schema_rejects_malformed_input_hash() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["inputs"][0]["hash"] = serde_json::json!("md5:abc");
@@ -227,20 +207,11 @@ fn schema_rejects_malformed_input_hash() {
     );
 }
 
-#[test]
-fn schema_rejects_malformed_prev_hash() {
-    let rec = make_record(Outcome::RealChange, None);
-    let json = canonical_json(&rec);
-    let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
-    value["prev"] = serde_json::json!("blake3:tooshort");
-    assert!(validate(&value).is_err(), "malformed prev should fail");
-}
-
 // ── Schema rejects type violations ────────────────────────────────────
 
 #[test]
 fn schema_rejects_empty_tool() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["tool"] = serde_json::json!("");
@@ -249,7 +220,7 @@ fn schema_rejects_empty_tool() {
 
 #[test]
 fn schema_rejects_negative_exit_code() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["exit_code"] = serde_json::json!(-1);
@@ -258,7 +229,7 @@ fn schema_rejects_negative_exit_code() {
 
 #[test]
 fn schema_rejects_empty_inputs_array() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["inputs"] = serde_json::json!([]);
@@ -267,7 +238,7 @@ fn schema_rejects_empty_inputs_array() {
 
 #[test]
 fn schema_rejects_negative_bytes() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["inputs"][0]["bytes"] = serde_json::json!(-1);
@@ -276,7 +247,7 @@ fn schema_rejects_negative_bytes() {
 
 #[test]
 fn schema_rejects_additional_top_level_properties() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["extra_field"] = serde_json::json!("not allowed");
@@ -288,7 +259,7 @@ fn schema_rejects_additional_top_level_properties() {
 
 #[test]
 fn schema_rejects_bad_ts_format() {
-    let rec = make_record(Outcome::RealChange, None);
+    let rec = make_record(Outcome::RealChange);
     let json = canonical_json(&rec);
     let mut value: serde_json::Value = serde_json::from_str(&json).unwrap();
     value["ts"] = serde_json::json!("2026/01/15 12:00:00");

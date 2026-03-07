@@ -70,9 +70,6 @@ pub fn format_record_human(record: &WitnessRecord) -> String {
             i, input.path, input.bytes, input.hash
         ));
     }
-    if let Some(ref prev) = record.prev {
-        lines.push(format!("prev:     {prev}"));
-    }
     lines.join("\n")
 }
 
@@ -177,8 +174,7 @@ mod tests {
             output: "test output".to_string(),
             profile: crate::orchestrator::ProfileRunInfo::default(),
         };
-        let mut rec =
-            WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv", None);
+        let mut rec = WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv");
         rec.ts = ts.to_string();
         rec.tool = tool.to_string();
         rec.compute_id();
