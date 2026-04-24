@@ -21,7 +21,7 @@ Goal: install rvl on macOS in under 60 seconds via prebuilt binaries and a Homeb
    - `cargo test`
 2. Update `Cargo.toml` version.
 3. Commit with a release summary.
-4. `git push origin main` and keep `master` synced: `git push origin main:master`.
+4. `git push origin main`.
 5. CI builds release binaries for:
    - `x86_64-apple-darwin`
    - `aarch64-apple-darwin`
