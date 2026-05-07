@@ -916,6 +916,77 @@ Note: `columns_common: 4` reflects profile scoping — the original 8-column CSV
 
 ---
 
+## Audit Extensions
+
+These modes are opt-in audit surfaces. They must not change default RVL behavior, and they must preserve the core three outcomes (`REAL_CHANGE`, `NO_REAL_CHANGE`, `REFUSAL`).
+
+### Exhaustive numeric audit (`--exhaustive`)
+
+`--exhaustive` changes the REAL CHANGE output from "smallest numeric explanation" to "all changed numeric cells".
+
+Scope
+- Reuses existing CSV parsing, delimiter detection, alignment, profile scoping, `column_registry` header canonicalization, numeric parsing, tolerance, capsule, and witness semantics.
+- Compares only aligned rows and common/profile-scoped numeric columns.
+- Numeric cells with `abs(delta) <= tolerance` are not emitted as changes.
+- `E_NEED_KEY`, key refusals, CSV refusals, `E_MISSINGNESS`, `E_MIXED_TYPES`, and `E_NO_NUMERIC` still apply.
+- `E_DIFFUSE` does not apply in exhaustive mode; broad numeric changes are the point of the mode.
+
+Ordering
+- Emit changed numeric cells in the same deterministic contributor order: contribution descending, row ID ascending, column name ascending.
+- `metrics.total_change`, `metrics.max_abs_delta`, and `counts.numeric_cells_changed` retain their existing meanings.
+- Numeric coverage is `1.0` when all changed numeric cells are emitted.
+
+Output guardrail
+- Add `--max-audit-changes <n>` with a conservative default.
+- If the number of changed numeric cells exceeds the limit, REFUSE with `E_AUDIT_LIMIT`.
+- The refusal must include `changed_cells`, `max_audit_changes`, and a concrete rerun command with a higher limit.
+
+JSON output
+- Add `mode: "explain" | "exhaustive_numeric"` at top level.
+- In exhaustive numeric mode, `contributors` contains all emitted changed numeric cells, not the threshold prefix.
+- Add `audit: { "numeric_changes_emitted": <u64>, "field_changes_emitted": 0, "truncated": false }`.
+
+Human output
+- Keep the standard header.
+- Replace the explanation sentence with an audit sentence, e.g. `37 numeric cells changed above tolerance.`
+- Default output remains redacted unless `--explicit` is provided.
+
+### Exact field-change audit (`--audit-fields`)
+
+`--audit-fields` is a follow-up to `--exhaustive`. It detects exact changes in profile-scoped non-numeric columns without folding them into numeric contribution math.
+
+Scope
+- Valid only with `--exhaustive`.
+- Requires an active profile. Without `--profile` or `--profile-id`, REFUSE with `E_AUDIT_FIELDS_REQUIRES_PROFILE`.
+- Reuses alignment, profile scoping, and `column_registry` header canonicalization.
+- Compares common/profile-scoped columns that are not classified as numeric by the existing column typing pass.
+- Does not bypass `E_MIXED_TYPES` for mixed numeric/non-numeric columns; row-typed/cross-tab handling remains deferred.
+- Field comparison is exact byte equality of parsed CSV field values after record-width normalization. No trimming, case folding, punctuation stripping, fuzzy matching, or missing-token interpretation.
+- Key columns are never emitted as field changes.
+
+Outcome semantics
+- If any numeric or field changes are emitted, outcome is `REAL_CHANGE`.
+- If neither numeric nor field changes are emitted, outcome is `NO_REAL_CHANGE`.
+- Field changes do not affect `metrics.total_change`, `top_k_coverage`, numeric shares, or numeric contributor ordering.
+
+Output
+- Add `field_changes[]` in JSON, separate from `contributors`.
+- Each field change includes `row_id`, `column`, and redacted change metadata by default.
+- `old` and `new` string values are included only with `--explicit`.
+- Human output prints a bounded field-change section after numeric audit output.
+
+Output guardrail
+- `--max-audit-changes` applies to the combined number of numeric and field changes.
+- If the combined count exceeds the limit, REFUSE with `E_AUDIT_LIMIT`.
+
+Non-goals
+- No string similarity scoring.
+- No semantic text normalization.
+- No field-change coverage percentage.
+- No row-typed/cross-tab inference.
+
+---
+
 ## v1 Ideas (Only If v0 Is Loved)
 - parquet/JSON input (not for v0)
 - directory diffs
