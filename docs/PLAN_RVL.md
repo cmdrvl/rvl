@@ -718,6 +718,56 @@ When a profile is provided:
 
 Without a profile, behavior is identical to v0 (full numeric intersection).
 
+### Column registry-backed header canonicalization
+
+Profiles may include an optional `column_registry` field:
+
+```yaml
+column_registry: registries/annex_columns_v0
+key:
+  - loan_id_number
+include_columns:
+  - loan_id_number
+  - current_balance
+  - note_rate
+```
+
+When an active profile has `column_registry`, `rvl` canonicalizes dataset headers before key lookup, column intersection, profile scoping, numeric typing, counts, and contributor labeling.
+
+Registry resolution
+- `column_registry` is a filesystem directory path.
+- Absolute paths are used as-is.
+- Relative paths are resolved relative to the profile YAML file, not the process working directory.
+- For `--profile-id`, resolution is relative to the frozen profile file that satisfied the ID lookup.
+- Missing, unreadable, or malformed registries REFUSE with `E_PROFILE_REGISTRY`.
+
+Registry mapping contract
+- The directory must contain `registry.json`; it may contain additional `*.json` mapping files.
+- Mapping files are evaluated in filename-sorted order, excluding `registry.json` and `_build.json`.
+- Each mapping file is a JSON array of entries with `input`, `canonical_id`, `canonical_type`, and `rule_id`.
+- Only entries with `canonical_type == "column_name"` are used for header canonicalization.
+- First mapping wins for duplicate `input` values.
+- Matching is exact after existing RVL header normalization (ASCII trim, empty header placeholder assignment). No case folding, punctuation stripping, fuzzy matching, or substring matching.
+
+Header semantics
+- Existing RVL header normalization still applies first.
+- If a normalized header exactly matches a registry `input`, it is replaced with that entry's `canonical_id`.
+- If no mapping exists, the normalized header is kept unchanged.
+- Duplicate detection runs after canonicalization. If two raw headers resolve to the same canonical name, REFUSE with `E_HEADERS` rather than guessing which column to use.
+- Profile `key` and `include_columns` are interpreted against canonicalized header names. Profiles should use canonical column IDs for registry-backed columns; unmapped literal column names remain valid.
+- Human and JSON contributor labels use the resolved/canonical header names, not raw source aliases.
+
+Reproducibility
+- Capsule replay must include enough profile and registry material to replay without the original profile path, `~/.epistemic/profiles`, or the original registry path.
+- If the active profile has `column_registry`, the capsule must include a local copy of the registry files used for resolution and a local profile artifact whose `column_registry` points at that copied registry.
+- Witness params should record that a column registry was active and include a deterministic registry content hash so downstream tools can audit which alias map affected the run.
+
+Non-goals
+- No fuzzy header matching.
+- No automatic key discovery from the registry.
+- No remote registry fetching.
+- No registry-driven value canonicalization; this feature only resolves column headers.
+
 ### Equivalence settings
 
 rvl does **not** consume `equivalence.float_decimals`, `equivalence.trim_strings`, or `equivalence.order` from the profile. rvl has its own `--threshold` and `--tolerance` flags which are more precise controls for numeric comparison. The profile's equivalence settings are for simpler tools that lack their own precision controls.
@@ -786,6 +836,7 @@ When a profile is used, add to the `params` object:
 | `E_AMBIGUOUS_PROFILE` | Both `--profile` and `--profile-id` were provided | Provide exactly one profile selector |
 | `E_PROFILE_NOT_FOUND` | `--profile-id` could not be resolved from search path | Check `~/.epistemic/profiles/` or use `--profile <path>` |
 | `E_KEY_CONFLICT` | Both `--key` and a profile with a non-empty `key` were provided | Remove `--key` (profile provides the key) or use a profile without a key |
+| `E_PROFILE_REGISTRY` | Active profile references a missing, unreadable, or malformed `column_registry` | Fix the profile's `column_registry` path or registry files |
 
 > **Note:** `E_AMBIGUOUS_PROFILE` should be a domain refusal (JSON envelope with detail), not a clap parse error, so that `--json` mode always returns structured output. This corrects the pattern used in shape's v0 implementation (where clap's `conflicts_with` catches it at the argument level).
 
@@ -800,6 +851,9 @@ E_PROFILE_NOT_FOUND:
 
 E_KEY_CONFLICT:
   { "key_flag": "loan_id", "profile_key": ["loan_id"] }
+
+E_PROFILE_REGISTRY:
+  { "profile": "...", "column_registry": "...", "reason": "...", "file": "..." | null }
 ```
 
 ### JSON example (REAL CHANGE with profile)
@@ -847,11 +901,18 @@ Note: `columns_common: 4` reflects profile scoping — the original 8-column CSV
 - **Frozen profile:** `--profile frozen.yaml` → `profile_id` and `profile_sha256` populated
 - **Profile with empty key + --key:** `--key col` with `key: []` profile → works (--key takes effect)
 - **Profile with columns not in dataset:** extra columns in `include_columns` → silently ignored, no refusal
+- **Profile column registry:** profile with `column_registry`, canonical `key`/`include_columns`, and raw dataset alias headers → key lookup, column scoping, counts, and contributors use canonical header IDs
+- **Column registry path resolution:** relative `column_registry` resolves relative to the profile file for both `--profile <path>` and `--profile-id <id>`
+- **Column registry duplicate headers:** two raw headers mapping to the same canonical ID → REFUSAL `E_HEADERS`
+- **Column registry failure:** missing/malformed registry → REFUSAL `E_PROFILE_REGISTRY`
+- **Column registry capsule replay:** `--capsule-out` run with registry-backed profile replays successfully without original profile or registry paths
 
 ### Can defer
 
 - Composite keys from profile (`key: [col_a, col_b]`) — requires composite-key scan in orchestrator
 - `--lock` input verification (needs lock tool integration)
+- Remote registry resolution or registry discovery by ID
+- Registry aliases for arbitrary non-UTF-8 raw header bytes
 
 ---
 
