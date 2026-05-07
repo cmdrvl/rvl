@@ -2,7 +2,7 @@
 
 mod capsule;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fs;
 use std::io::Cursor;
@@ -33,7 +33,7 @@ use crate::diff::order::{CellId, RowId, TieBreaker, sort_contributors};
 use crate::diff::tolerance::ToleranceTracker;
 use crate::format::ident_human::render_identifier_human;
 use crate::format::ident_json::encode_identifier_json;
-use crate::normalize::headers::normalize_headers;
+use crate::normalize::headers::normalize_headers_with_aliases;
 use crate::numeric::columns::{
     ColumnIntersection, ColumnTypingError, Side as ColumnSide, detect_numeric_columns,
     intersect_headers,
@@ -54,7 +54,10 @@ use crate::output::json::{
     Alignment as JsonAlignment, Counts, Dialect, DialectSide, Files, JsonContext, JsonOutput,
     Metrics, Refusal as JsonRefusal,
 };
-use crate::profile::{ResolvedProfile, load_profile_from_path, resolve_profile_id};
+use crate::profile::{
+    ColumnRegistryRunInfo, ResolveError, ResolvedProfile, load_profile_from_path,
+    resolve_profile_id,
+};
 use crate::refusal::codes::RefusalCode;
 use crate::refusal::details::{
     DelimiterHint, DialectSuggestion, EncodingIssue, FileSide, HeadersIssue, NamedDelimiter,
@@ -73,6 +76,7 @@ pub struct ProfileRunInfo {
     pub used: bool,
     pub profile_id: Option<String>,
     pub profile_sha256: Option<String>,
+    pub column_registry: Option<ColumnRegistryRunInfo>,
     pub capsule_profile: Option<ResolvedProfile>,
 }
 
@@ -81,6 +85,7 @@ struct ActiveProfile {
     include_scope: Option<HashSet<Vec<u8>>>,
     key: Option<Vec<u8>>,
     key_labels: Vec<String>,
+    header_aliases: Option<HashMap<Vec<u8>, Vec<u8>>>,
     info: ProfileRunInfo,
 }
 
@@ -183,7 +188,13 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     }
     let key_bytes = cli_key.or_else(|| active_profile.key.clone());
 
-    let old = match parse_csv(args.old_path(), FileSide::Old, args.delimiter, rerun_paths) {
+    let old = match parse_csv(
+        args.old_path(),
+        FileSide::Old,
+        args.delimiter,
+        rerun_paths,
+        active_profile.header_aliases.as_ref(),
+    ) {
         Ok(parsed) => parsed,
         Err(refusal) => {
             return Ok(render_refusal(
@@ -197,7 +208,13 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         }
     };
 
-    let new = match parse_csv(args.new_path(), FileSide::New, args.delimiter, rerun_paths) {
+    let new = match parse_csv(
+        args.new_path(),
+        FileSide::New,
+        args.delimiter,
+        rerun_paths,
+        active_profile.header_aliases.as_ref(),
+    ) {
         Ok(parsed) => parsed,
         Err(refusal) => {
             return Ok(render_refusal(
@@ -247,25 +264,16 @@ fn resolve_active_profile(
 
     if let Some(profile_path) = args.profile.as_ref() {
         let selector = profile_path.to_string_lossy().to_string();
-        let resolved = load_profile_from_path(profile_path).map_err(|_| {
-            Box::new(RefusalPayload::with_default_next(
-                RefusalCode::ProfileNotFound,
-                RefusalKind::ProfileNotFound {
-                    profile_id: selector.clone(),
-                },
-                rerun_paths,
-            ))
-        })?;
+        let resolved = load_profile_from_path(profile_path)
+            .map_err(|err| Box::new(map_profile_resolve_error(err, selector, rerun_paths)))?;
         return Ok(active_profile_from_resolved(resolved));
     }
 
     if let Some(profile_id) = args.profile_id.as_ref() {
-        let resolved = resolve_profile_id(profile_id).map_err(|_| {
-            Box::new(RefusalPayload::with_default_next(
-                RefusalCode::ProfileNotFound,
-                RefusalKind::ProfileNotFound {
-                    profile_id: profile_id.clone(),
-                },
+        let resolved = resolve_profile_id(profile_id).map_err(|err| {
+            Box::new(map_profile_resolve_error(
+                err,
+                profile_id.clone(),
                 rerun_paths,
             ))
         })?;
@@ -275,18 +283,70 @@ fn resolve_active_profile(
     Ok(ActiveProfile::default())
 }
 
+fn map_profile_resolve_error(
+    err: ResolveError,
+    fallback_selector: String,
+    rerun_paths: RerunPaths<'_>,
+) -> RefusalPayload {
+    match err {
+        ResolveError::Registry {
+            selector,
+            column_registry,
+            reason,
+            file,
+            ..
+        } => RefusalPayload::with_default_next(
+            RefusalCode::ProfileRegistry,
+            RefusalKind::ProfileRegistry {
+                profile: selector,
+                column_registry,
+                reason,
+                file,
+            },
+            rerun_paths,
+        ),
+        ResolveError::NotFound { selector } | ResolveError::Invalid { selector, .. } => {
+            RefusalPayload::with_default_next(
+                RefusalCode::ProfileNotFound,
+                RefusalKind::ProfileNotFound {
+                    profile_id: if selector.is_empty() {
+                        fallback_selector
+                    } else {
+                        selector
+                    },
+                },
+                rerun_paths,
+            )
+        }
+    }
+}
+
 fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
     let include_scope = Some(profile.include_set());
     let key = profile.primary_key().map(|key| key.to_vec());
     let key_labels = profile.key_labels.clone();
+    let header_aliases = profile
+        .column_registry
+        .as_ref()
+        .map(|registry| registry.aliases.clone());
+    let column_registry = profile
+        .column_registry
+        .as_ref()
+        .map(|registry| ColumnRegistryRunInfo {
+            reference: registry.reference.clone(),
+            path: registry.resolved_path.to_string_lossy().to_string(),
+            hash: registry.hash.clone(),
+        });
     ActiveProfile {
         include_scope,
         key,
         key_labels,
+        header_aliases,
         info: ProfileRunInfo {
             used: true,
             profile_id: profile.profile_id.clone(),
             profile_sha256: profile.profile_sha256.clone(),
+            column_registry,
             capsule_profile: Some(profile),
         },
     }
@@ -870,6 +930,7 @@ fn parse_csv(
     file_side: FileSide,
     forced_delimiter: Option<u8>,
     rerun_paths: RerunPaths<'_>,
+    header_aliases: Option<&HashMap<Vec<u8>, Vec<u8>>>,
 ) -> Result<ParsedCsv, Box<RefusalPayload>> {
     let bytes = fs::read(path).map_err(|err| {
         Box::new(RefusalPayload::with_default_next(
@@ -956,16 +1017,17 @@ fn parse_csv(
                         skipped_sep = true;
                         continue;
                     }
-                    let normalized = normalize_headers(record.iter()).map_err(|err| {
-                        Box::new(RefusalPayload::with_default_next(
-                            RefusalCode::Headers,
-                            RefusalKind::Headers {
-                                file: file_side,
-                                issue: HeadersIssue::Duplicate { name: err.name },
-                            },
-                            rerun_paths,
-                        ))
-                    })?;
+                    let normalized = normalize_headers_with_aliases(record.iter(), header_aliases)
+                        .map_err(|err| {
+                            Box::new(RefusalPayload::with_default_next(
+                                RefusalCode::Headers,
+                                RefusalKind::Headers {
+                                    file: file_side,
+                                    issue: HeadersIssue::Duplicate { name: err.name },
+                                },
+                                rerun_paths,
+                            ))
+                        })?;
                     header = Some(normalized);
                     continue;
                 }
@@ -1498,6 +1560,7 @@ fn json_context(
         profile_used: profile.used,
         profile_id: profile.profile_id.clone(),
         profile_sha256: profile.profile_sha256.clone(),
+        profile_column_registry: profile.column_registry.clone(),
         capsule_profile: profile.capsule_profile.clone(),
         threshold: args.threshold,
         tolerance: args.tolerance,
@@ -1511,6 +1574,7 @@ fn profile_from_json_context(ctx: &JsonContext) -> ProfileRunInfo {
         used: ctx.profile_used,
         profile_id: ctx.profile_id.clone(),
         profile_sha256: ctx.profile_sha256.clone(),
+        column_registry: ctx.profile_column_registry.clone(),
         capsule_profile: ctx.capsule_profile.clone(),
     }
 }
@@ -1927,6 +1991,17 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         }),
         RefusalKind::ProfileNotFound { profile_id } => json!({
             "profile_id": profile_id,
+        }),
+        RefusalKind::ProfileRegistry {
+            profile,
+            column_registry,
+            reason,
+            file,
+        } => json!({
+            "profile": profile,
+            "column_registry": column_registry,
+            "reason": reason,
+            "file": file,
         }),
         RefusalKind::KeyConflict {
             key_flag,

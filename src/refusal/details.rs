@@ -104,6 +104,12 @@ pub enum RefusalKind {
     ProfileNotFound {
         profile_id: String,
     },
+    ProfileRegistry {
+        profile: String,
+        column_registry: String,
+        reason: String,
+        file: Option<String>,
+    },
     KeyConflict {
         key_flag: String,
         profile_key: Vec<String>,
@@ -251,6 +257,9 @@ impl RefusalKind {
                 format!(
                     "check ~/.epistemic/profiles/ for profile_id=\"{profile_id}\" or rerun with --profile <path>"
                 )
+            }
+            RefusalKind::ProfileRegistry { .. } => {
+                "fix the profile's column_registry path or registry files, then rerun".to_string()
             }
             RefusalKind::KeyConflict { .. } => {
                 "remove --key (profile already defines key) or use a profile without a key"

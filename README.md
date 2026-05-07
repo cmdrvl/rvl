@@ -273,6 +273,8 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--threshold <float>` | float | `0.95` | Coverage target (0 < x ≤ 1.0). The minimum fraction of total numeric change that the top contributors must explain. |
 | `--tolerance <float>` | float | `1e-9` | Per-cell noise floor (x ≥ 0). Absolute deltas ≤ this value are treated as zero. |
 | `--delimiter <delim>` | string | *(auto-detect)* | Force CSV delimiter for both files. See [Delimiter](#delimiter). |
+| `--profile <path>` | string | *(none)* | Use a profile YAML for key derivation and column scoping. |
+| `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.epistemic/profiles/*.yaml` or a direct path. |
 | `--capsule-out <dir>` | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`, and `profile.yaml` when a profile is active) to `<dir>/capsule-<id>/`. |
 | `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
 
@@ -322,6 +324,16 @@ Overrides both auto-detection and `sep=` directives for **both** files. Accepted
 | Single ASCII char | `,`, `\|`, `;` |
 
 Valid range: ASCII `0x01`–`0x7F`, excluding `"` (`0x22`), `\r` (`0x0D`), `\n` (`0x0A`). Invalid values are CLI argument errors (exit 2). Use `tab` or `0x09`, not `\t` (no escape sequences).
+
+---
+
+## Profiles
+
+Profiles can provide `include_columns` and a single-column `key`. When a profile is active, rvl compares only profile-scoped common numeric columns and derives the key from the profile unless `key: []` is used.
+
+Profiles may also define `column_registry: <dir>`. rvl loads that registry directory, applies exact `canonical_type: "column_name"` aliases to normalized CSV headers, and then performs key lookup, column scoping, counts, contributors, capsules, and witness recording using the canonical header IDs.
+
+Relative `column_registry` paths resolve relative to the profile YAML file. Missing or malformed registries refuse with `E_PROFILE_REGISTRY`; there is no fuzzy header matching or case/punctuation normalization.
 
 ---
 
@@ -382,7 +394,7 @@ cd ./capsules/capsule-<id>
 - contributor summary for REAL_CHANGE
 - replay command plus artifact hashes for integrity checks
 
-When `--profile` or `--profile-id` is active, capsules also include a local `profile.yaml` artifact and `replay.sh` uses it, so replay does not depend on the original working directory or `~/.epistemic/profiles`.
+When `--profile` or `--profile-id` is active, capsules also include a local `profile.yaml` artifact and `replay.sh` uses it, so replay does not depend on the original working directory or `~/.epistemic/profiles`. If that profile uses `column_registry`, the capsule also carries a local copy of the registry files and rewrites `profile.yaml` to point at that copy.
 
 For troubleshooting, compare `run.json` vs `replay.json` outcome/refusal code first; if they differ, the environment or binary changed.
 
@@ -447,6 +459,7 @@ Every refusal includes the error code, first concrete example, and a `Next:` rem
 | `E_KEY_MISMATCH` | Key sets differ between files (missing/extra keys) | Export comparable scopes or fix the join key |
 | `E_ROWCOUNT` | Row count mismatch (row-order mode) | Use `--key <column>` for a missing/extra-keys report |
 | `E_NEED_KEY` | Detected row reorder without `--key` | Use `--key <suggested>` (rvl prints candidates) |
+| `E_PROFILE_REGISTRY` | Profile `column_registry` is missing, unreadable, or malformed | Fix the profile's registry path or files |
 | `E_MIXED_TYPES` | Column has both numeric and non-numeric values | Normalize column values to numeric or exclude the column |
 | `E_NO_NUMERIC` | No numeric columns in common | Ensure both files share at least one numeric column |
 | `E_MISSINGNESS` | Numeric value vs. missing token in aligned cell | Fill missing values or exclude the column |

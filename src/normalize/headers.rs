@@ -22,11 +22,27 @@ pub fn normalize_headers<'a, I>(headers: I) -> Result<Vec<Vec<u8>>, DuplicateHea
 where
     I: IntoIterator<Item = &'a [u8]>,
 {
+    normalize_headers_with_aliases(headers, None)
+}
+
+/// Normalize headers, then apply exact registry aliases before duplicate detection.
+pub fn normalize_headers_with_aliases<'a, I>(
+    headers: I,
+    aliases: Option<&HashMap<Vec<u8>, Vec<u8>>>,
+) -> Result<Vec<Vec<u8>>, DuplicateHeader>
+where
+    I: IntoIterator<Item = &'a [u8]>,
+{
     let mut normalized = Vec::new();
     let mut seen: HashMap<Vec<u8>, usize> = HashMap::new();
 
     for (idx, header) in headers.into_iter().enumerate() {
-        let name = normalize_header_name(header, idx + 1);
+        let mut name = normalize_header_name(header, idx + 1);
+        if let Some(aliases) = aliases
+            && let Some(canonical) = aliases.get(&name)
+        {
+            name = canonical.clone();
+        }
         if let Some(first) = seen.get(&name).copied() {
             return Err(DuplicateHeader {
                 name,
@@ -86,5 +102,18 @@ mod tests {
         let headers = vec![b"Foo".as_slice(), b"foo".as_slice()];
         let normalized = normalize_headers(headers).expect("normalize headers");
         assert_eq!(normalized, vec![b"Foo".to_vec(), b"foo".to_vec()]);
+    }
+
+    #[test]
+    fn applies_aliases_before_duplicate_detection() {
+        let mut aliases = HashMap::new();
+        aliases.insert(b"Loan Number".to_vec(), b"loan_id_number".to_vec());
+        aliases.insert(b"Loan ID Number".to_vec(), b"loan_id_number".to_vec());
+
+        let headers = vec![b" Loan Number ".as_slice(), b"Loan ID Number".as_slice()];
+        let err = normalize_headers_with_aliases(headers, Some(&aliases)).expect_err("duplicate");
+        assert_eq!(err.name, b"loan_id_number".to_vec());
+        assert_eq!(err.first_index, 1);
+        assert_eq!(err.second_index, 2);
     }
 }

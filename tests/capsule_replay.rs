@@ -32,8 +32,27 @@ fn cleanup(dir: &Path) {
 
 fn write_file(dir: &Path, name: &str, content: &str) -> PathBuf {
     let path = dir.join(name);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).expect("test parent should be writable");
+    }
     std::fs::write(&path, content).expect("test file should be writable");
     path
+}
+
+fn write_column_registry(dir: &Path) {
+    write_file(
+        dir,
+        "registries/annex_columns_v0/registry.json",
+        r#"{"id":"annex-columns-v0","version":"1.0.0"}"#,
+    );
+    write_file(
+        dir,
+        "registries/annex_columns_v0/aliases.json",
+        r#"[
+  {"input":"Loan Number","canonical_id":"loan_id_number","canonical_type":"column_name","rule_id":"alias"},
+  {"input":"Current Balance","canonical_id":"current_balance","canonical_type":"column_name","rule_id":"alias"}
+]"#,
+    );
 }
 
 fn only_capsule_dir(capsule_root: &Path) -> PathBuf {
@@ -350,12 +369,13 @@ fn capsule_replay_script_is_self_contained_for_profile_id_runs() {
     let home = dir.join("home");
     let profiles_dir = home.join(".epistemic").join("profiles");
     std::fs::create_dir_all(&profiles_dir).unwrap();
-    write_file(&dir, "old.csv", "loan_id,balance\nA,100\n");
-    write_file(&dir, "new.csv", "loan_id,balance\nA,110\n");
+    write_column_registry(&profiles_dir);
+    write_file(&dir, "old.csv", "Loan Number,Current Balance\nA,100\n");
+    write_file(&dir, "new.csv", "Loan Number,Current Balance\nA,110\n");
     write_file(
         &profiles_dir,
         "loan_tape.yaml",
-        "profile_id: csv.loan_tape.core.v0\nprofile_sha256: sha256:abc123\ninclude_columns:\n  - loan_id\n  - balance\nkey:\n  - loan_id\n",
+        "profile_id: csv.loan_tape.core.v0\nprofile_sha256: sha256:abc123\ncolumn_registry: registries/annex_columns_v0\ninclude_columns:\n  - loan_id_number\n  - current_balance\nkey:\n  - loan_id_number\n",
     );
 
     let first = run_rvl_binary(
@@ -382,6 +402,21 @@ fn capsule_replay_script_is_self_contained_for_profile_id_runs() {
     .expect("manifest json");
     assert_eq!(manifest["artifacts"]["profile"]["path"], "profile.yaml");
     assert_eq!(manifest["args"]["profile_id"], "csv.loan_tape.core.v0");
+    assert_eq!(
+        manifest["artifacts"]["column_registry"][0]["path"],
+        "registries/column_registry/registry.json"
+    );
+    assert_eq!(
+        manifest["artifacts"]["column_registry"][1]["path"],
+        "registries/column_registry/aliases.json"
+    );
+    let local_profile = std::fs::read_to_string(capsule_dir.join("profile.yaml")).unwrap();
+    assert!(local_profile.contains("column_registry: registries/column_registry"));
+    assert!(
+        capsule_dir
+            .join("registries/column_registry/registry.json")
+            .exists()
+    );
 
     let replay_home = dir.join("empty-home");
     std::fs::create_dir_all(&replay_home).unwrap();

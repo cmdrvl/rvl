@@ -111,6 +111,20 @@ impl WitnessRecord {
                     .map(|value| serde_json::Value::String(value.clone()))
                     .unwrap_or(serde_json::Value::Null),
             );
+            if let Some(registry) = result.profile.column_registry.as_ref() {
+                params.insert(
+                    "column_registry".to_string(),
+                    serde_json::Value::String(registry.reference.clone()),
+                );
+                params.insert(
+                    "column_registry_active".to_string(),
+                    serde_json::Value::Bool(true),
+                );
+                params.insert(
+                    "column_registry_hash".to_string(),
+                    serde_json::Value::String(registry.hash.clone()),
+                );
+            }
         }
         params.insert("threshold".to_string(), serde_json::json!(args.threshold));
         params.insert("tolerance".to_string(), serde_json::json!(args.tolerance));
@@ -420,6 +434,7 @@ mod tests {
             used: true,
             profile_id: Some("csv.loan_tape.core.v0".to_string()),
             profile_sha256: Some("sha256:abc".to_string()),
+            column_registry: None,
             capsule_profile: None,
         };
         let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");

@@ -17,6 +17,7 @@ pub enum RefusalCode {
     Dialect,
     AmbiguousProfile,
     ProfileNotFound,
+    ProfileRegistry,
     KeyConflict,
     MixedTypes,
     NoNumeric,
@@ -28,7 +29,7 @@ pub enum RefusalCode {
 pub struct UnknownRefusalCode;
 
 impl RefusalCode {
-    pub const ALL: [RefusalCode; 18] = [
+    pub const ALL: [RefusalCode; 19] = [
         RefusalCode::Io,
         RefusalCode::Encoding,
         RefusalCode::CsvParse,
@@ -42,6 +43,7 @@ impl RefusalCode {
         RefusalCode::Dialect,
         RefusalCode::AmbiguousProfile,
         RefusalCode::ProfileNotFound,
+        RefusalCode::ProfileRegistry,
         RefusalCode::KeyConflict,
         RefusalCode::MixedTypes,
         RefusalCode::NoNumeric,
@@ -65,6 +67,7 @@ impl RefusalCode {
             RefusalCode::Dialect => "E_DIALECT",
             RefusalCode::AmbiguousProfile => "E_AMBIGUOUS_PROFILE",
             RefusalCode::ProfileNotFound => "E_PROFILE_NOT_FOUND",
+            RefusalCode::ProfileRegistry => "E_PROFILE_REGISTRY",
             RefusalCode::KeyConflict => "E_KEY_CONFLICT",
             RefusalCode::MixedTypes => "E_MIXED_TYPES",
             RefusalCode::NoNumeric => "E_NO_NUMERIC",
@@ -90,6 +93,7 @@ impl RefusalCode {
             RefusalCode::Dialect => "delimiter ambiguous or undetectable",
             RefusalCode::AmbiguousProfile => "ambiguous profile selectors",
             RefusalCode::ProfileNotFound => "profile could not be resolved",
+            RefusalCode::ProfileRegistry => "profile column registry could not be loaded",
             RefusalCode::KeyConflict => "key flag conflicts with profile key",
             RefusalCode::MixedTypes => "mixed numeric and non-numeric values",
             RefusalCode::NoNumeric => "no numeric columns in common",
@@ -131,6 +135,7 @@ impl FromStr for RefusalCode {
             "E_DIALECT" => Ok(RefusalCode::Dialect),
             "E_AMBIGUOUS_PROFILE" => Ok(RefusalCode::AmbiguousProfile),
             "E_PROFILE_NOT_FOUND" => Ok(RefusalCode::ProfileNotFound),
+            "E_PROFILE_REGISTRY" => Ok(RefusalCode::ProfileRegistry),
             "E_KEY_CONFLICT" => Ok(RefusalCode::KeyConflict),
             "E_MIXED_TYPES" => Ok(RefusalCode::MixedTypes),
             "E_NO_NUMERIC" => Ok(RefusalCode::NoNumeric),

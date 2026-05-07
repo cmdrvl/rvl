@@ -5,13 +5,14 @@ use serde::Serialize;
 
 use crate::cli::args::Args;
 use crate::cli::exit::Outcome;
-use crate::profile::render_profile_yaml;
+use crate::profile::render_profile_yaml_with_registry_override;
 use crate::witness::hash::hash_bytes;
 
 use super::PipelineResult;
 
 const CAPSULE_MANIFEST_VERSION: &str = "rvl.capsule.v0";
 const PROFILE_ARTIFACT_PATH: &str = "profile.yaml";
+const REGISTRY_ARTIFACT_DIR: &str = "registries/column_registry";
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct CapsuleRunSummary {
@@ -110,6 +111,8 @@ struct CapsuleArtifacts {
     replay: CapsuleArtifact,
     #[serde(skip_serializing_if = "Option::is_none")]
     profile: Option<CapsuleArtifact>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    column_registry: Option<Vec<CapsuleArtifact>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -138,11 +141,17 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
     let old_hash = format!("blake3:{}", hash_bytes(&old_bytes));
     let new_hash = format!("blake3:{}", hash_bytes(&new_bytes));
     let output_hash = format!("blake3:{}", hash_bytes(result.output.as_bytes()));
+    let capsule_registry = result
+        .profile
+        .capsule_profile
+        .as_ref()
+        .and_then(|profile| profile.column_registry.as_ref());
+    let registry_override = capsule_registry.map(|_| REGISTRY_ARTIFACT_DIR);
     let profile_bytes = result
         .profile
         .capsule_profile
         .as_ref()
-        .map(render_profile_yaml)
+        .map(|profile| render_profile_yaml_with_registry_override(profile, registry_override))
         .map(String::into_bytes);
 
     let args_manifest = CapsuleArgs {
@@ -204,6 +213,17 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
         hash: format!("blake3:{}", hash_bytes(bytes)),
         bytes: bytes.len() as u64,
     });
+    let registry_artifacts = capsule_registry.map(|registry| {
+        registry
+            .files
+            .iter()
+            .map(|file| CapsuleArtifact {
+                path: format!("{REGISTRY_ARTIFACT_DIR}/{}", file.relative_path),
+                hash: format!("blake3:{}", hash_bytes(&file.bytes)),
+                bytes: file.bytes.len() as u64,
+            })
+            .collect::<Vec<_>>()
+    });
 
     if fs::write(capsule_dir.join(&old_artifact.path), &old_bytes).is_err() {
         return;
@@ -245,6 +265,17 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
     {
         return;
     }
+    if let Some(registry) = capsule_registry {
+        let registry_dir = capsule_dir.join(REGISTRY_ARTIFACT_DIR);
+        if fs::create_dir_all(&registry_dir).is_err() {
+            return;
+        }
+        for file in &registry.files {
+            if fs::write(registry_dir.join(&file.relative_path), &file.bytes).is_err() {
+                return;
+            }
+        }
+    }
 
     let contributor_summary = summary
         .contributors
@@ -277,6 +308,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
             output: output_artifact,
             replay: replay_artifact,
             profile: profile_artifact,
+            column_registry: registry_artifacts,
         },
     };
 

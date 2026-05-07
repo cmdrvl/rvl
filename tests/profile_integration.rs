@@ -19,8 +19,30 @@ fn temp_dir() -> PathBuf {
 
 fn write_file(dir: &Path, name: &str, content: &str) -> PathBuf {
     let path = dir.join(name);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
     std::fs::write(&path, content).unwrap();
     path
+}
+
+fn write_column_registry(dir: &Path) {
+    write_file(
+        dir,
+        "registries/annex_columns_v0/registry.json",
+        r#"{"id":"annex-columns-v0","version":"1.0.0"}"#,
+    );
+    write_file(
+        dir,
+        "registries/annex_columns_v0/aliases.json",
+        r#"[
+  {"input":"Loan Number","canonical_id":"loan_id_number","canonical_type":"column_name","rule_id":"alias"},
+  {"input":"Loan ID Number","canonical_id":"loan_id_number","canonical_type":"column_name","rule_id":"alias"},
+  {"input":"Current Balance","canonical_id":"current_balance","canonical_type":"column_name","rule_id":"alias"},
+  {"input":"Note Rate","canonical_id":"note_rate","canonical_type":"column_name","rule_id":"alias"},
+  {"input":"Property Type","canonical_id":"property_type","canonical_type":"column_name","rule_id":"alias"}
+]"#,
+    );
 }
 
 fn run(args: &Args) -> orchestrator::PipelineResult {
@@ -94,6 +116,63 @@ fn profile_key_derivation_and_column_scoping_apply() {
 }
 
 #[test]
+fn profile_column_registry_canonicalizes_headers_before_key_scope_and_output() {
+    let dir = temp_dir();
+    write_column_registry(&dir);
+    let old = write_file(
+        &dir,
+        "old.csv",
+        "Loan Number,Current Balance,Note Rate,Unscoped Text\nA,100,5.0,Retail\nB,200,6.0,Office\n",
+    );
+    let new = write_file(
+        &dir,
+        "new.csv",
+        "Loan ID Number,Current Balance,Note Rate,Unscoped Text\nA,125,5.0,Retail\nB,200,6.5,Office\n",
+    );
+    let profile = write_file(
+        &dir,
+        "profile.yaml",
+        "column_registry: registries/annex_columns_v0\ninclude_columns: [loan_id_number, current_balance, note_rate]\nkey: [loan_id_number]\n",
+    );
+
+    let mut args = make_args(&old, &new);
+    args.profile = Some(profile);
+    let result = run(&args);
+    let json: serde_json::Value = serde_json::from_str(&result.output).unwrap();
+
+    assert_eq!(json["outcome"], "REAL_CHANGE");
+    assert_eq!(json["alignment"]["mode"], "key");
+    assert_eq!(json["alignment"]["key_column"], "u8:loan_id_number");
+    assert_eq!(json["counts"]["columns_old"], 2);
+    assert_eq!(json["counts"]["columns_new"], 2);
+    assert_eq!(json["counts"]["columns_common"], 2);
+    assert_eq!(json["counts"]["numeric_columns"], 2);
+    assert_eq!(json["contributors"][0]["column"], "u8:current_balance");
+
+    let witness = WitnessRecord::from_run(
+        &args,
+        &result,
+        b"Loan Number,Current Balance,Note Rate,Unscoped Text\nA,100,5.0,Retail\nB,200,6.0,Office\n",
+        b"Loan ID Number,Current Balance,Note Rate,Unscoped Text\nA,125,5.0,Retail\nB,200,6.5,Office\n",
+        "old.csv",
+        "new.csv",
+    );
+    assert_eq!(witness.params["column_registry_active"], true);
+    assert_eq!(
+        witness.params["column_registry"],
+        "registries/annex_columns_v0"
+    );
+    assert!(
+        witness.params["column_registry_hash"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("blake3:")
+    );
+
+    cleanup(&dir);
+}
+
+#[test]
 fn profile_with_columns_not_in_dataset_is_ignored() {
     let dir = temp_dir();
     let old = write_file(&dir, "old.csv", "loan_id,balance\nA,100\nB,200\n");
@@ -110,6 +189,126 @@ fn profile_with_columns_not_in_dataset_is_ignored() {
     assert_eq!(json["outcome"], "REAL_CHANGE");
     assert_eq!(json["counts"]["columns_common"], 1);
     assert_eq!(json["counts"]["numeric_columns"], 1);
+
+    cleanup(&dir);
+}
+
+#[test]
+fn profile_column_registry_duplicate_canonical_headers_refuse_as_headers() {
+    let dir = temp_dir();
+    write_column_registry(&dir);
+    let old = write_file(
+        &dir,
+        "old.csv",
+        "Loan Number,Loan ID Number,Current Balance\nA,A,100\n",
+    );
+    let new = write_file(&dir, "new.csv", "Loan Number,Current Balance\nA,100\n");
+    let profile = write_file(
+        &dir,
+        "profile.yaml",
+        "column_registry: registries/annex_columns_v0\ninclude_columns: [loan_id_number, current_balance]\nkey: [loan_id_number]\n",
+    );
+
+    let mut args = make_args(&old, &new);
+    args.profile = Some(profile);
+    let json = run_json(&args);
+
+    assert_eq!(json["outcome"], "REFUSAL");
+    assert_eq!(json["refusal"]["code"], "E_HEADERS");
+    assert_eq!(json["refusal"]["detail"]["file"], "old");
+    assert_eq!(json["refusal"]["detail"]["name"], "u8:loan_id_number");
+
+    cleanup(&dir);
+}
+
+#[test]
+fn missing_profile_column_registry_refuses_with_profile_registry() {
+    let dir = temp_dir();
+    let old = write_file(&dir, "old.csv", "Loan Number,Current Balance\nA,100\n");
+    let new = write_file(&dir, "new.csv", "Loan Number,Current Balance\nA,100\n");
+    let profile = write_file(
+        &dir,
+        "profile.yaml",
+        "column_registry: registries/missing\ninclude_columns: [loan_id_number, current_balance]\nkey: [loan_id_number]\n",
+    );
+
+    let mut args = make_args(&old, &new);
+    args.profile = Some(profile.clone());
+    let json = run_json(&args);
+
+    assert_eq!(json["outcome"], "REFUSAL");
+    assert_eq!(json["refusal"]["code"], "E_PROFILE_REGISTRY");
+    assert_eq!(
+        json["refusal"]["detail"]["profile"],
+        profile.to_string_lossy().to_string()
+    );
+    assert_eq!(
+        json["refusal"]["detail"]["column_registry"],
+        "registries/missing"
+    );
+    assert!(json["refusal"]["detail"]["file"].is_null());
+
+    cleanup(&dir);
+}
+
+#[test]
+fn malformed_profile_column_registry_mapping_refuses_with_file_detail() {
+    let dir = temp_dir();
+    write_file(
+        &dir,
+        "registries/bad/registry.json",
+        r#"{"id":"bad","version":"1.0.0"}"#,
+    );
+    write_file(&dir, "registries/bad/aliases.json", r#"{"not":"an array"}"#);
+    let old = write_file(&dir, "old.csv", "Loan Number,Current Balance\nA,100\n");
+    let new = write_file(&dir, "new.csv", "Loan Number,Current Balance\nA,100\n");
+    let profile = write_file(
+        &dir,
+        "profile.yaml",
+        "column_registry: registries/bad\ninclude_columns: [loan_id_number, current_balance]\nkey: [loan_id_number]\n",
+    );
+
+    let mut args = make_args(&old, &new);
+    args.profile = Some(profile);
+    let json = run_json(&args);
+
+    assert_eq!(json["outcome"], "REFUSAL");
+    assert_eq!(json["refusal"]["code"], "E_PROFILE_REGISTRY");
+    assert_eq!(json["refusal"]["detail"]["file"], "aliases.json");
+
+    cleanup(&dir);
+}
+
+#[test]
+fn non_column_registry_entries_are_ignored_for_header_resolution() {
+    let dir = temp_dir();
+    write_file(
+        &dir,
+        "registries/mixed/registry.json",
+        r#"{"id":"mixed","version":"1.0.0"}"#,
+    );
+    write_file(
+        &dir,
+        "registries/mixed/aliases.json",
+        r#"[
+  {"input":"Loan Number","canonical_id":"loan_id_number","canonical_type":"column_name","rule_id":"alias"},
+  {"input":"Current Balance","canonical_id":"current_balance","canonical_type":"value","rule_id":"not_column"}
+]"#,
+    );
+    let old = write_file(&dir, "old.csv", "Loan Number,Current Balance\nA,100\n");
+    let new = write_file(&dir, "new.csv", "Loan Number,Current Balance\nA,110\n");
+    let profile = write_file(
+        &dir,
+        "profile.yaml",
+        "column_registry: registries/mixed\ninclude_columns: [loan_id_number, current_balance]\nkey: [loan_id_number]\n",
+    );
+
+    let mut args = make_args(&old, &new);
+    args.profile = Some(profile);
+    let json = run_json(&args);
+
+    assert_eq!(json["outcome"], "REFUSAL");
+    assert_eq!(json["refusal"]["code"], "E_NO_NUMERIC");
 
     cleanup(&dir);
 }

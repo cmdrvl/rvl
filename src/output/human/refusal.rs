@@ -153,6 +153,20 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
         RefusalKind::ProfileNotFound { profile_id } => {
             format!("Example: profile \"{profile_id}\" was not found.")
         }
+        RefusalKind::ProfileRegistry {
+            profile,
+            column_registry,
+            reason,
+            file,
+        } => {
+            let file = file
+                .as_ref()
+                .map(|file| format!(" file \"{file}\""))
+                .unwrap_or_default();
+            format!(
+                "Example: profile \"{profile}\" column_registry \"{column_registry}\"{file} failed: {reason}."
+            )
+        }
         RefusalKind::KeyConflict {
             key_flag,
             profile_key,

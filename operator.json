@@ -90,6 +90,7 @@
     { "code": "E_DIALECT", "message": "Delimiter ambiguous or undetectable", "action": "retry_with_flag", "flag": "--delimiter" },
     { "code": "E_AMBIGUOUS_PROFILE", "message": "Both --profile and --profile-id were provided", "action": "adjust_input" },
     { "code": "E_PROFILE_NOT_FOUND", "message": "Profile could not be resolved from ID", "action": "escalate" },
+    { "code": "E_PROFILE_REGISTRY", "message": "Profile column registry could not be loaded", "action": "adjust_input" },
     { "code": "E_KEY_CONFLICT", "message": "--key flag conflicts with profile-defined key", "action": "adjust_input" },
     { "code": "E_MIXED_TYPES", "message": "Mixed numeric and non-numeric values in column", "action": "escalate" },
     { "code": "E_NO_NUMERIC", "message": "No numeric columns in common", "action": "escalate" },
