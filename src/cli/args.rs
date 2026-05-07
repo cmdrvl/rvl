@@ -55,6 +55,10 @@ pub struct Args {
     #[arg(long)]
     pub exhaustive: bool,
 
+    /// Emit exact changes in profile-scoped non-numeric fields during exhaustive audit.
+    #[arg(long)]
+    pub audit_fields: bool,
+
     /// Maximum changed cells to emit in audit modes.
     #[arg(
         long,
@@ -192,6 +196,7 @@ impl Args {
             tolerance,
             delimiter,
             exhaustive: false,
+            audit_fields: false,
             max_audit_changes: DEFAULT_MAX_AUDIT_CHANGES,
             profile: None,
             profile_id: None,

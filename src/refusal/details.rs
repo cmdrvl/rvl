@@ -137,6 +137,8 @@ pub enum RefusalKind {
         changed_cells: u64,
         max_audit_changes: u64,
     },
+    AuditFieldsRequiresExhaustive,
+    AuditFieldsRequiresProfile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -286,6 +288,12 @@ impl RefusalKind {
                     "rvl {} {} --exhaustive --max-audit-changes {}",
                     paths.old, paths.new, changed_cells
                 )
+            }
+            RefusalKind::AuditFieldsRequiresExhaustive => {
+                format!("rvl {} {} --exhaustive --audit-fields", paths.old, paths.new)
+            }
+            RefusalKind::AuditFieldsRequiresProfile => {
+                "rerun with --exhaustive --audit-fields and an explicit --profile <path> or --profile-id <id>".to_string()
             }
         }
     }

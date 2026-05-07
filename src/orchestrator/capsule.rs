@@ -93,6 +93,7 @@ struct CapsuleArgs {
     tolerance: f64,
     delimiter: Option<String>,
     exhaustive: bool,
+    audit_fields: bool,
     max_audit_changes: u64,
     json: bool,
     no_witness: bool,
@@ -169,6 +170,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
         tolerance: args.tolerance,
         delimiter: args.delimiter.map(|d| format!("0x{d:02x}")),
         exhaustive: args.exhaustive,
+        audit_fields: args.audit_fields,
         max_audit_changes: args.max_audit_changes,
         json: args.json,
         no_witness: args.no_witness,
@@ -355,6 +357,9 @@ fn build_replay_command(args: &Args, use_local_profile: bool) -> String {
         parts.push("--exhaustive".to_string());
         parts.push("--max-audit-changes".to_string());
         parts.push(args.max_audit_changes.to_string());
+    }
+    if args.audit_fields {
+        parts.push("--audit-fields".to_string());
     }
     if args.json {
         parts.push("--json".to_string());

@@ -168,6 +168,19 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                             "required": ["row_id", "column", "old", "new", "delta", "contribution", "share", "cumulative_share"]
                         }
                     },
+                    "field_changes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "row_id": { "type": "string" },
+                                "column": { "type": "string" },
+                                "old": { "type": "string" },
+                                "new": { "type": "string" }
+                            },
+                            "required": ["row_id", "column"]
+                        }
+                    },
                     "refusal": {
                         "type": ["object", "null"],
                         "properties": {

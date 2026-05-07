@@ -251,6 +251,12 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             format_count_u64(*changed_cells),
             format_count_u64(*max_audit_changes)
         ),
+        RefusalKind::AuditFieldsRequiresExhaustive => {
+            "Example: --audit-fields was provided without --exhaustive.".to_string()
+        }
+        RefusalKind::AuditFieldsRequiresProfile => {
+            "Example: --audit-fields requires profile-scoped columns.".to_string()
+        }
     }
 }
 

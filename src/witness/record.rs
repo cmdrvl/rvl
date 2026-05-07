@@ -88,6 +88,10 @@ impl WitnessRecord {
             "exhaustive".to_string(),
             serde_json::Value::Bool(args.exhaustive),
         );
+        params.insert(
+            "audit_fields".to_string(),
+            serde_json::Value::Bool(args.audit_fields),
+        );
         params.insert("json".to_string(), serde_json::Value::Bool(args.json));
         params.insert(
             "key".to_string(),
@@ -398,6 +402,7 @@ mod tests {
         assert_eq!(
             keys.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
             vec![
+                "audit_fields",
                 "delimiter",
                 "exhaustive",
                 "json",

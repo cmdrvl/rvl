@@ -17,6 +17,7 @@ fn run_case(old: &str, new: &str, key: Option<&str>, json: bool) -> String {
         tolerance: 1e-9,
         delimiter: None,
         exhaustive: false,
+        audit_fields: false,
         max_audit_changes: 10_000,
         profile: None,
         profile_id: None,

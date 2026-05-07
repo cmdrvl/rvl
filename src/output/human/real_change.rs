@@ -13,13 +13,22 @@ pub struct RealChangeContributor {
     pub share: f64,
 }
 
+#[derive(Debug, Clone)]
+pub struct RealChangeFieldChange {
+    pub label: String,
+    pub old: String,
+    pub new: String,
+}
+
 #[derive(Debug)]
 pub struct RealChangeBody<'a> {
     pub contributors: &'a [RealChangeContributor],
+    pub field_changes: &'a [RealChangeFieldChange],
     pub coverage: f64,
     pub threshold: f64,
     pub explicit: bool,
     pub audit_mode: bool,
+    pub audit_fields: bool,
 }
 
 pub fn render_real_change_body(ctx: &RealChangeBody<'_>) -> Vec<String> {
@@ -72,8 +81,35 @@ pub fn render_real_change_body(ctx: &RealChangeBody<'_>) -> Vec<String> {
         }
     }
     lines.push(String::new());
+    if ctx.audit_fields {
+        let count = ctx.field_changes.len();
+        let fields_word = if count == 1 { "field" } else { "fields" };
+        lines.push(format!("{count} non-numeric {fields_word} changed:"));
+        lines.push(String::new());
+        for (idx, change) in ctx.field_changes.iter().enumerate() {
+            if ctx.explicit {
+                lines.push(format!(
+                    "{}. {}  ({} -> {})",
+                    idx + 1,
+                    change.label,
+                    change.old,
+                    change.new
+                ));
+            } else {
+                lines.push(format!("{}. {} changed", idx + 1, change.label));
+            }
+        }
+        lines.push(String::new());
+    }
     if ctx.audit_mode {
-        lines.push("Every changed numeric cell above tolerance is listed.".to_string());
+        if ctx.audit_fields {
+            lines.push(
+                "Every changed numeric cell above tolerance and exact field change is listed."
+                    .to_string(),
+            );
+        } else {
+            lines.push("Every changed numeric cell above tolerance is listed.".to_string());
+        }
     } else {
         lines.push(
             "Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold)."
@@ -108,10 +144,12 @@ mod tests {
         }];
         let ctx = RealChangeBody {
             contributors: &contributors,
+            field_changes: &[],
             coverage: 0.952,
             threshold: 0.95,
             explicit: true,
             audit_mode: false,
+            audit_fields: false,
         };
         let lines = render_real_change_body(&ctx);
         assert_eq!(
@@ -136,10 +174,12 @@ mod tests {
         }];
         let ctx = RealChangeBody {
             contributors: &contributors,
+            field_changes: &[],
             coverage: 0.952,
             threshold: 0.95,
             explicit: false,
             audit_mode: false,
+            audit_fields: false,
         };
         let lines = render_real_change_body(&ctx);
         assert_eq!(lines[2], "1. NVDA.market_value  +95.2% of total change");
@@ -156,10 +196,12 @@ mod tests {
         }];
         let ctx = RealChangeBody {
             contributors: &contributors,
+            field_changes: &[],
             coverage: 1.0,
             threshold: 0.95,
             explicit: false,
             audit_mode: true,
+            audit_fields: false,
         };
         let lines = render_real_change_body(&ctx);
         assert_eq!(lines[0], "1 numeric cell changed above tolerance:");

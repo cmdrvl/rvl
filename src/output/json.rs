@@ -177,6 +177,42 @@ impl Contributor {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct FieldChange {
+    pub row_id: String,
+    pub column: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new: Option<String>,
+}
+
+impl FieldChange {
+    pub fn from_bytes(
+        row_id: &[u8],
+        column: &[u8],
+        old: &[u8],
+        new: &[u8],
+        explicit: bool,
+    ) -> Self {
+        if explicit {
+            Self {
+                row_id: encode_identifier_json(row_id),
+                column: encode_identifier_json(column),
+                old: Some(encode_identifier_json(old)),
+                new: Some(encode_identifier_json(new)),
+            }
+        } else {
+            Self {
+                row_id: encode_identifier_json(row_id),
+                column: encode_identifier_json(column),
+                old: None,
+                new: None,
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct Refusal {
     pub code: String,
     pub message: String,
@@ -209,6 +245,7 @@ pub struct JsonContext {
     pub tolerance: f64,
     pub counts: Counts,
     pub metrics: Metrics,
+    pub field_changes: Option<Vec<FieldChange>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -230,6 +267,8 @@ pub struct JsonOutput {
     pub audit: Option<Audit>,
     pub limits: Limits,
     pub contributors: Vec<Contributor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field_changes: Option<Vec<FieldChange>>,
     pub refusal: Option<Refusal>,
 }
 
@@ -259,6 +298,7 @@ impl JsonOutput {
             audit: ctx.audit,
             limits: Limits::default(),
             contributors,
+            field_changes: ctx.field_changes,
             refusal: None,
         }
     }
@@ -288,6 +328,7 @@ impl JsonOutput {
             audit: ctx.audit,
             limits: Limits::default(),
             contributors: Vec::new(),
+            field_changes: ctx.field_changes,
             refusal: None,
         }
     }
@@ -317,6 +358,7 @@ impl JsonOutput {
             audit: ctx.audit,
             limits: Limits::default(),
             contributors: Vec::new(),
+            field_changes: ctx.field_changes,
             refusal: Some(refusal),
         }
     }
@@ -384,6 +426,7 @@ mod tests {
                 max_abs_delta: Some(5.0),
                 top_k_coverage: Some(0.95),
             },
+            field_changes: None,
         }
     }
 

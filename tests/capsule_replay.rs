@@ -113,6 +113,7 @@ fn run_with_capsule(
         tolerance: 1e-9,
         delimiter: None,
         exhaustive: false,
+        audit_fields: false,
         max_audit_changes: 10_000,
         profile: None,
         profile_id: None,
@@ -167,6 +168,10 @@ fn replay_from_manifest(manifest: &Value, capsule_dir: &Path) -> Value {
         delimiter,
         exhaustive: args_block
             .get("exhaustive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        audit_fields: args_block
+            .get("audit_fields")
             .and_then(Value::as_bool)
             .unwrap_or(false),
         max_audit_changes: args_block

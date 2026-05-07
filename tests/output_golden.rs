@@ -60,10 +60,12 @@ fn golden_real_change_human_output() {
             delta: 5.0,
             share: 1.0,
         }],
+        field_changes: &[],
         coverage: 0.95,
         threshold: 0.95,
         explicit: true,
         audit_mode: false,
+        audit_fields: false,
     };
 
     let mut lines = vec![
@@ -267,6 +269,7 @@ fn golden_json_real_change_output() {
             max_abs_delta: Some(5.0),
             top_k_coverage: Some(1.0),
         },
+        field_changes: None,
     };
     let contributors = vec![rvl::output::json::Contributor::from_bytes(
         b"A", b"value", 1.0, 6.0, 5.0, 5.0, 1.0, 1.0, true,
@@ -358,6 +361,7 @@ fn golden_json_no_real_change_output() {
             max_abs_delta: Some(7e-10),
             top_k_coverage: None,
         },
+        field_changes: None,
     };
 
     let output = JsonOutput::no_real_change(ctx);
@@ -421,6 +425,7 @@ fn golden_json_refusal_output() {
         tolerance: 1e-9,
         counts: Counts::default(),
         metrics: Metrics::default(),
+        field_changes: None,
     };
 
     let refusal = Refusal::new(

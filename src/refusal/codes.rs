@@ -24,13 +24,15 @@ pub enum RefusalCode {
     Missingness,
     Diffuse,
     AuditLimit,
+    AuditFieldsRequiresExhaustive,
+    AuditFieldsRequiresProfile,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnknownRefusalCode;
 
 impl RefusalCode {
-    pub const ALL: [RefusalCode; 20] = [
+    pub const ALL: [RefusalCode; 22] = [
         RefusalCode::Io,
         RefusalCode::Encoding,
         RefusalCode::CsvParse,
@@ -51,6 +53,8 @@ impl RefusalCode {
         RefusalCode::Missingness,
         RefusalCode::Diffuse,
         RefusalCode::AuditLimit,
+        RefusalCode::AuditFieldsRequiresExhaustive,
+        RefusalCode::AuditFieldsRequiresProfile,
     ];
 
     #[inline]
@@ -76,6 +80,8 @@ impl RefusalCode {
             RefusalCode::Missingness => "E_MISSINGNESS",
             RefusalCode::Diffuse => "E_DIFFUSE",
             RefusalCode::AuditLimit => "E_AUDIT_LIMIT",
+            RefusalCode::AuditFieldsRequiresExhaustive => "E_AUDIT_FIELDS_REQUIRES_EXHAUSTIVE",
+            RefusalCode::AuditFieldsRequiresProfile => "E_AUDIT_FIELDS_REQUIRES_PROFILE",
         }
     }
 
@@ -103,6 +109,8 @@ impl RefusalCode {
             RefusalCode::Missingness => "numeric-vs-missing mismatch (refusal)",
             RefusalCode::Diffuse => "diffuse change below coverage threshold",
             RefusalCode::AuditLimit => "audit output limit exceeded",
+            RefusalCode::AuditFieldsRequiresExhaustive => "field audit requires exhaustive mode",
+            RefusalCode::AuditFieldsRequiresProfile => "field audit requires an active profile",
         }
     }
 }
@@ -146,6 +154,8 @@ impl FromStr for RefusalCode {
             "E_MISSINGNESS" => Ok(RefusalCode::Missingness),
             "E_DIFFUSE" => Ok(RefusalCode::Diffuse),
             "E_AUDIT_LIMIT" => Ok(RefusalCode::AuditLimit),
+            "E_AUDIT_FIELDS_REQUIRES_EXHAUSTIVE" => Ok(RefusalCode::AuditFieldsRequiresExhaustive),
+            "E_AUDIT_FIELDS_REQUIRES_PROFILE" => Ok(RefusalCode::AuditFieldsRequiresProfile),
             _ => Err(UnknownRefusalCode),
         }
     }

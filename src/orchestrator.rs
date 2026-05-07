@@ -47,12 +47,13 @@ use crate::output::human::header::{
 };
 use crate::output::human::no_real::{NoRealBody, render_no_real_body};
 use crate::output::human::real_change::{
-    RealChangeBody, RealChangeContributor, render_real_change_body,
+    RealChangeBody, RealChangeContributor, RealChangeFieldChange, render_real_change_body,
 };
 use crate::output::human::refusal::{RefusalBody, render_refusal_body};
 use crate::output::json::{
-    Alignment as JsonAlignment, Audit as JsonAudit, Counts, Dialect, DialectSide, Files,
-    JsonContext, JsonOutput, Metrics, OutputMode as JsonOutputMode, Refusal as JsonRefusal,
+    Alignment as JsonAlignment, Audit as JsonAudit, Counts, Dialect, DialectSide,
+    FieldChange as JsonFieldChange, Files, JsonContext, JsonOutput, Metrics,
+    OutputMode as JsonOutputMode, Refusal as JsonRefusal,
 };
 use crate::profile::{
     ColumnRegistryRunInfo, ResolveError, ResolvedProfile, load_profile_from_path,
@@ -150,6 +151,22 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         new: &new_path,
     };
 
+    if args.audit_fields && !args.exhaustive {
+        let refusal = RefusalPayload::with_default_next(
+            RefusalCode::AuditFieldsRequiresExhaustive,
+            RefusalKind::AuditFieldsRequiresExhaustive,
+            rerun_paths,
+        );
+        return Ok(render_refusal(
+            refusal,
+            args,
+            None,
+            None,
+            None,
+            &ProfileRunInfo::default(),
+        ));
+    }
+
     let active_profile = match resolve_active_profile(args, rerun_paths) {
         Ok(profile) => profile,
         Err(refusal) => {
@@ -163,6 +180,22 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
             ));
         }
     };
+
+    if args.audit_fields && !active_profile.info.used {
+        let refusal = RefusalPayload::with_default_next(
+            RefusalCode::AuditFieldsRequiresProfile,
+            RefusalKind::AuditFieldsRequiresProfile,
+            rerun_paths,
+        );
+        return Ok(render_refusal(
+            refusal,
+            args,
+            None,
+            None,
+            None,
+            &active_profile.info,
+        ));
+    }
 
     let cli_key = match args.key.as_deref() {
         Some(key) => Some(parse_key_identifier(key)?),
@@ -666,7 +699,13 @@ fn run_diff(
         }
     };
 
-    if numeric_columns.is_empty() {
+    let field_columns = if args.audit_fields {
+        non_numeric_columns(&intersection.common, &numeric_columns)
+    } else {
+        Vec::new()
+    };
+
+    if numeric_columns.is_empty() && !args.audit_fields {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::NoNumeric,
             RefusalKind::NoNumeric,
@@ -812,6 +851,13 @@ fn run_diff(
         }
     }
 
+    let mut field_audit = if args.audit_fields {
+        collect_field_changes(&alignment, &field_columns, args.max_audit_changes)
+    } else {
+        FieldChangeAudit::default()
+    };
+    let audit_changes = numeric_cells_changed.saturating_add(field_audit.changed);
+
     let mut top = accumulator.top.into_vec();
     sort_contributors(&mut top);
     let contributions: Vec<f64> = top.iter().map(|c| c.contribution).collect();
@@ -890,11 +936,11 @@ fn run_diff(
 
     let alignment_label = key_bytes.map(render_identifier_human);
 
-    if args.exhaustive && numeric_cells_changed > args.max_audit_changes {
+    if args.exhaustive && audit_changes > args.max_audit_changes {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::AuditLimit,
             RefusalKind::AuditLimit {
-                changed_cells: numeric_cells_changed,
+                changed_cells: audit_changes,
                 max_audit_changes: args.max_audit_changes,
             },
             rerun_paths,
@@ -914,7 +960,16 @@ fn run_diff(
     }
 
     if args.exhaustive {
-        let ctx = json_context(
+        sort_field_change_details(&mut field_audit.details);
+        let field_changes = if args.audit_fields {
+            Some(build_json_field_changes(
+                &field_audit.details,
+                args.explicit,
+            ))
+        } else {
+            None
+        };
+        let ctx = json_context_with_field_changes(
             args,
             alignment_mode,
             dialect_old,
@@ -922,8 +977,10 @@ fn run_diff(
             &active_profile.info,
             counts,
             metrics,
+            field_audit.changed,
+            field_changes,
         );
-        if accumulator.total_change == 0.0 {
+        if accumulator.total_change == 0.0 && field_audit.changed == 0 {
             return Ok(render_no_real_change(args, ctx, alignment_label.as_deref()));
         }
         sort_contribution_details(&mut exhaustive_details);
@@ -933,6 +990,7 @@ fn run_diff(
             &exhaustive_details,
             1.0,
             alignment_label.as_deref(),
+            &field_audit.details,
         ));
     }
 
@@ -989,6 +1047,7 @@ fn run_diff(
                 &details,
                 coverage,
                 alignment_label.as_deref(),
+                &[],
             ))
         }
     }
@@ -1478,6 +1537,7 @@ fn render_real_change(
     details: &[ContributionDetail],
     coverage: f64,
     alignment_label: Option<&str>,
+    field_details: &[FieldChangeDetail],
 ) -> PipelineResult {
     let run_profile = profile_from_json_context(&ctx);
     let total_change = ctx.metrics.total_change.unwrap_or(0.0);
@@ -1512,12 +1572,15 @@ fn render_real_change(
         ));
         lines.push(String::new());
         let contributors = build_human_contributors(details, total_change);
+        let field_changes = build_human_field_changes(field_details);
         let body = RealChangeBody {
             contributors: &contributors,
+            field_changes: &field_changes,
             coverage,
             threshold: args.threshold,
             explicit: args.explicit,
             audit_mode,
+            audit_fields: args.audit_fields,
         };
         lines.extend(render_real_change_body(&body));
         PipelineResult {
@@ -1616,12 +1679,37 @@ fn json_context(
     counts: Counts,
     metrics: Metrics,
 ) -> JsonContext {
+    json_context_with_field_changes(
+        args,
+        alignment,
+        dialect_old,
+        dialect_new,
+        profile,
+        counts,
+        metrics,
+        0,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn json_context_with_field_changes(
+    args: &Args,
+    alignment: JsonAlignment,
+    dialect_old: Option<DialectReceipt>,
+    dialect_new: Option<DialectReceipt>,
+    profile: &ProfileRunInfo,
+    counts: Counts,
+    metrics: Metrics,
+    field_changes_emitted: u64,
+    field_changes: Option<Vec<JsonFieldChange>>,
+) -> JsonContext {
     let audit = if args.exhaustive {
         counts
             .numeric_cells_changed
             .map(|numeric_changes_emitted| JsonAudit {
                 numeric_changes_emitted,
-                field_changes_emitted: 0,
+                field_changes_emitted,
                 truncated: false,
             })
     } else {
@@ -1654,6 +1742,7 @@ fn json_context(
         tolerance: args.tolerance,
         counts,
         metrics,
+        field_changes,
     }
 }
 
@@ -1732,6 +1821,32 @@ fn build_json_contributors(
         ));
     }
     contributors
+}
+
+fn build_json_field_changes(details: &[FieldChangeDetail], explicit: bool) -> Vec<JsonFieldChange> {
+    details
+        .iter()
+        .map(|detail| {
+            JsonFieldChange::from_bytes(
+                &row_id_bytes(&detail.id.row_id),
+                &detail.id.column,
+                &detail.old,
+                &detail.new,
+                explicit,
+            )
+        })
+        .collect()
+}
+
+fn build_human_field_changes(details: &[FieldChangeDetail]) -> Vec<RealChangeFieldChange> {
+    details
+        .iter()
+        .map(|detail| RealChangeFieldChange {
+            label: render_cell_label(&detail.id),
+            old: render_identifier_human(&detail.old),
+            new: render_identifier_human(&detail.new),
+        })
+        .collect()
 }
 
 fn build_capsule_contributor_summary(
@@ -1868,6 +1983,19 @@ struct ContributionDetail {
     contribution: f64,
 }
 
+#[derive(Clone, Default)]
+struct FieldChangeAudit {
+    changed: u64,
+    details: Vec<FieldChangeDetail>,
+}
+
+#[derive(Clone)]
+struct FieldChangeDetail {
+    id: CellId,
+    old: Vec<u8>,
+    new: Vec<u8>,
+}
+
 fn sort_contribution_details(details: &mut [ContributionDetail]) {
     details.sort_by(
         |left, right| match right.contribution.total_cmp(&left.contribution) {
@@ -1875,6 +2003,94 @@ fn sort_contribution_details(details: &mut [ContributionDetail]) {
             ord => ord,
         },
     );
+}
+
+fn sort_field_change_details(details: &mut [FieldChangeDetail]) {
+    details.sort_by(|left, right| left.id.cmp(&right.id));
+}
+
+fn non_numeric_columns(
+    common: &[crate::numeric::columns::CommonColumn],
+    numeric: &[crate::numeric::columns::CommonColumn],
+) -> Vec<crate::numeric::columns::CommonColumn> {
+    let numeric_names: HashSet<&[u8]> = numeric
+        .iter()
+        .map(|column| column.name.as_slice())
+        .collect();
+    common
+        .iter()
+        .filter(|column| !numeric_names.contains(column.name.as_slice()))
+        .cloned()
+        .collect()
+}
+
+fn collect_field_changes(
+    alignment: &AlignmentContext,
+    columns: &[crate::numeric::columns::CommonColumn],
+    max_details: u64,
+) -> FieldChangeAudit {
+    let mut audit = FieldChangeAudit::default();
+
+    match alignment {
+        AlignmentContext::Key { key_rows, .. } => {
+            for row in key_rows {
+                let row_id = RowId::key(row.key.clone());
+                for column in columns {
+                    let old_raw = row
+                        .old
+                        .fields
+                        .get(column.old_index)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(b"");
+                    let new_raw = row
+                        .new
+                        .fields
+                        .get(column.new_index)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(b"");
+                    if old_raw == new_raw {
+                        continue;
+                    }
+                    audit.changed = audit.changed.saturating_add(1);
+                    if audit.details.len() < max_details as usize {
+                        audit.details.push(FieldChangeDetail {
+                            id: CellId::new(row_id.clone(), column.name.clone()),
+                            old: old_raw.to_vec(),
+                            new: new_raw.to_vec(),
+                        });
+                    }
+                }
+            }
+        }
+        AlignmentContext::RowOrder { old_rows, new_rows } => {
+            for (idx, (old_row, new_row)) in old_rows.iter().zip(new_rows.iter()).enumerate() {
+                let row_id = RowId::row_index(idx + 1);
+                for column in columns {
+                    let old_raw = old_row
+                        .get(column.old_index)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(b"");
+                    let new_raw = new_row
+                        .get(column.new_index)
+                        .map(|v| v.as_slice())
+                        .unwrap_or(b"");
+                    if old_raw == new_raw {
+                        continue;
+                    }
+                    audit.changed = audit.changed.saturating_add(1);
+                    if audit.details.len() < max_details as usize {
+                        audit.details.push(FieldChangeDetail {
+                            id: CellId::new(row_id.clone(), column.name.clone()),
+                            old: old_raw.to_vec(),
+                            new: new_raw.to_vec(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    audit
 }
 
 fn collect_details(
@@ -2162,6 +2378,8 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
             "changed_cells": changed_cells,
             "max_audit_changes": max_audit_changes,
         }),
+        RefusalKind::AuditFieldsRequiresExhaustive => json!({}),
+        RefusalKind::AuditFieldsRequiresProfile => json!({}),
     }
 }
 

@@ -957,6 +957,7 @@ Human output
 
 Scope
 - Valid only with `--exhaustive`.
+- Without `--exhaustive`, REFUSE with `E_AUDIT_FIELDS_REQUIRES_EXHAUSTIVE` (or fail CLI validation deterministically).
 - Requires an active profile. Without `--profile` or `--profile-id`, REFUSE with `E_AUDIT_FIELDS_REQUIRES_PROFILE`.
 - Reuses alignment, profile scoping, and `column_registry` header canonicalization.
 - Compares common/profile-scoped columns that are not classified as numeric by the existing column typing pass.

@@ -274,6 +274,7 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--tolerance <float>` | float | `1e-9` | Per-cell noise floor (x ≥ 0). Absolute deltas ≤ this value are treated as zero. |
 | `--delimiter <delim>` | string | *(auto-detect)* | Force CSV delimiter for both files. See [Delimiter](#delimiter). |
 | `--exhaustive` | flag | `false` | Emit every changed numeric cell above tolerance instead of the smallest explanation prefix. |
+| `--audit-fields` | flag | `false` | With `--exhaustive` and an active profile, emit exact changes in profile-scoped non-numeric fields. |
 | `--max-audit-changes <n>` | integer | `10000` | Maximum changed cells to emit in audit modes before refusing with `E_AUDIT_LIMIT`. |
 | `--profile <path>` | string | *(none)* | Use a profile YAML for key derivation and column scoping. |
 | `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.epistemic/profiles/*.yaml` or a direct path. |
@@ -349,7 +350,15 @@ Use `--exhaustive` when you need an audit listing of every changed numeric cell 
 rvl old.csv new.csv --key id --exhaustive --json
 ```
 
-Exhaustive mode still uses the same parsing, alignment, profile scoping, tolerance, capsules, and witness semantics. It remains numeric-only, does not report text diffs, and refuses with `E_AUDIT_LIMIT` when changed cells exceed `--max-audit-changes`.
+Exhaustive mode still uses the same parsing, alignment, profile scoping, tolerance, capsules, and witness semantics. By itself it remains numeric-only and refuses with `E_AUDIT_LIMIT` when changed cells exceed `--max-audit-changes`.
+
+Add `--audit-fields` when you also need exact non-numeric field changes:
+
+```bash
+rvl old.csv new.csv --profile profile.yaml --exhaustive --audit-fields --json
+```
+
+Field audit is deliberately profile-scoped. It compares common non-numeric columns by exact parsed CSV bytes after header canonicalization; it does not trim, case-fold, fuzzy-match, or score text similarity. Field changes appear in `field_changes[]`, are redacted by default, include `old`/`new` only with `--explicit`, and count toward the same `--max-audit-changes` limit as numeric audit entries.
 
 ---
 
@@ -481,6 +490,8 @@ Every refusal includes the error code, first concrete example, and a `Next:` rem
 | `E_MISSINGNESS` | Numeric value vs. missing token in aligned cell | Fill missing values or exclude the column |
 | `E_DIFFUSE` | Top 25 contributors can't reach threshold | Use `--threshold 0.80` (or lower) to accept less coverage |
 | `E_AUDIT_LIMIT` | `--exhaustive` found more changed cells than `--max-audit-changes` | Rerun with a higher audit limit |
+| `E_AUDIT_FIELDS_REQUIRES_EXHAUSTIVE` | `--audit-fields` was used without `--exhaustive` | Add `--exhaustive` |
+| `E_AUDIT_FIELDS_REQUIRES_PROFILE` | `--audit-fields` was used without an active profile | Rerun with `--profile <path>` or `--profile-id <id>` |
 
 ---
 
