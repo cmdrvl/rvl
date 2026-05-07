@@ -112,6 +112,8 @@ fn run_with_capsule(
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
+        exhaustive: false,
+        max_audit_changes: 10_000,
         profile: None,
         profile_id: None,
         capsule_out: Some(capsule_root.to_path_buf()),
@@ -163,6 +165,14 @@ fn replay_from_manifest(manifest: &Value, capsule_dir: &Path) -> Value {
             .and_then(Value::as_f64)
             .expect("manifest.args.tolerance"),
         delimiter,
+        exhaustive: args_block
+            .get("exhaustive")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        max_audit_changes: args_block
+            .get("max_audit_changes")
+            .and_then(Value::as_u64)
+            .unwrap_or(10_000),
         profile: args_block
             .get("profile")
             .and_then(Value::as_str)

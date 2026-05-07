@@ -105,6 +105,7 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                 "properties": {
                     "version": { "type": "string", "const": "rvl.v0" },
                     "outcome": { "type": "string", "enum": ["REAL_CHANGE", "NO_REAL_CHANGE", "REFUSAL"] },
+                    "mode": { "type": "string", "enum": ["exhaustive_numeric"] },
                     "profile_id": { "type": ["string", "null"] },
                     "profile_sha256": { "type": ["string", "null"] },
                     "files": {
@@ -134,6 +135,15 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                     "tolerance": { "type": "number" },
                     "counts": { "type": "object" },
                     "metrics": { "type": "object" },
+                    "audit": {
+                        "type": "object",
+                        "properties": {
+                            "numeric_changes_emitted": { "type": "integer" },
+                            "field_changes_emitted": { "type": "integer" },
+                            "truncated": { "type": "boolean" }
+                        },
+                        "required": ["numeric_changes_emitted", "field_changes_emitted", "truncated"]
+                    },
                     "limits": {
                         "type": "object",
                         "properties": {

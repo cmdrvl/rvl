@@ -81,6 +81,8 @@ fn run_case(case: &Case, iterations: u64, warmup: u64) -> f64 {
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
+        exhaustive: false,
+        max_audit_changes: 10_000,
         profile: None,
         profile_id: None,
         capsule_out: None,

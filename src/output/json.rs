@@ -15,6 +15,12 @@ pub enum Outcome {
     Refusal,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutputMode {
+    ExhaustiveNumeric,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AlignmentMode {
@@ -93,6 +99,13 @@ pub struct Metrics {
     pub total_change: Option<f64>,
     pub max_abs_delta: Option<f64>,
     pub top_k_coverage: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Audit {
+    pub numeric_changes_emitted: u64,
+    pub field_changes_emitted: u64,
+    pub truncated: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -190,6 +203,8 @@ pub struct JsonContext {
     pub profile_sha256: Option<String>,
     pub profile_column_registry: Option<ColumnRegistryRunInfo>,
     pub capsule_profile: Option<ResolvedProfile>,
+    pub mode: Option<OutputMode>,
+    pub audit: Option<Audit>,
     pub threshold: f64,
     pub tolerance: f64,
     pub counts: Counts,
@@ -200,6 +215,8 @@ pub struct JsonContext {
 pub struct JsonOutput {
     pub version: &'static str,
     pub outcome: Outcome,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<OutputMode>,
     pub profile_id: Option<String>,
     pub profile_sha256: Option<String>,
     pub files: Files,
@@ -209,6 +226,8 @@ pub struct JsonOutput {
     pub tolerance: f64,
     pub counts: Counts,
     pub metrics: Metrics,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audit: Option<Audit>,
     pub limits: Limits,
     pub contributors: Vec<Contributor>,
     pub refusal: Option<Refusal>,
@@ -219,6 +238,7 @@ impl JsonOutput {
         Self {
             version: "rvl.v0",
             outcome: Outcome::RealChange,
+            mode: ctx.mode,
             profile_id: if ctx.profile_used {
                 ctx.profile_id.clone()
             } else {
@@ -236,6 +256,7 @@ impl JsonOutput {
             tolerance: ctx.tolerance,
             counts: ctx.counts,
             metrics: ctx.metrics,
+            audit: ctx.audit,
             limits: Limits::default(),
             contributors,
             refusal: None,
@@ -246,6 +267,7 @@ impl JsonOutput {
         Self {
             version: "rvl.v0",
             outcome: Outcome::NoRealChange,
+            mode: ctx.mode,
             profile_id: if ctx.profile_used {
                 ctx.profile_id.clone()
             } else {
@@ -263,6 +285,7 @@ impl JsonOutput {
             tolerance: ctx.tolerance,
             counts: ctx.counts,
             metrics: ctx.metrics,
+            audit: ctx.audit,
             limits: Limits::default(),
             contributors: Vec::new(),
             refusal: None,
@@ -273,6 +296,7 @@ impl JsonOutput {
         Self {
             version: "rvl.v0",
             outcome: Outcome::Refusal,
+            mode: ctx.mode,
             profile_id: if ctx.profile_used {
                 ctx.profile_id.clone()
             } else {
@@ -290,6 +314,7 @@ impl JsonOutput {
             tolerance: ctx.tolerance,
             counts: ctx.counts,
             metrics: ctx.metrics,
+            audit: ctx.audit,
             limits: Limits::default(),
             contributors: Vec::new(),
             refusal: Some(refusal),
@@ -337,6 +362,8 @@ mod tests {
             profile_sha256: None,
             profile_column_registry: None,
             capsule_profile: None,
+            mode: None,
+            audit: None,
             threshold: 0.95,
             tolerance: 1e-9,
             counts: Counts {

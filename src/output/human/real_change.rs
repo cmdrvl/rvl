@@ -19,19 +19,27 @@ pub struct RealChangeBody<'a> {
     pub coverage: f64,
     pub threshold: f64,
     pub explicit: bool,
+    pub audit_mode: bool,
 }
 
 pub fn render_real_change_body(ctx: &RealChangeBody<'_>) -> Vec<String> {
     let count = ctx.contributors.len();
     let cells_word = if count == 1 { "cell" } else { "cells" };
     let mut lines = Vec::with_capacity(count + 3);
-    lines.push(format!(
-        "{} {} explain {} of total numeric change (threshold {}):",
-        count,
-        cells_word,
-        format_percent_one_decimal(ctx.coverage),
-        format_percent_one_decimal(ctx.threshold)
-    ));
+    if ctx.audit_mode {
+        lines.push(format!(
+            "{} numeric {} changed above tolerance:",
+            count, cells_word
+        ));
+    } else {
+        lines.push(format!(
+            "{} {} explain {} of total numeric change (threshold {}):",
+            count,
+            cells_word,
+            format_percent_one_decimal(ctx.coverage),
+            format_percent_one_decimal(ctx.threshold)
+        ));
+    }
     lines.push(String::new());
     for (idx, contributor) in ctx.contributors.iter().enumerate() {
         if ctx.explicit {
@@ -64,10 +72,14 @@ pub fn render_real_change_body(ctx: &RealChangeBody<'_>) -> Vec<String> {
         }
     }
     lines.push(String::new());
-    lines.push(
-        "Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold)."
-            .to_string(),
-    );
+    if ctx.audit_mode {
+        lines.push("Every changed numeric cell above tolerance is listed.".to_string());
+    } else {
+        lines.push(
+            "Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold)."
+                .to_string(),
+        );
+    }
     lines
 }
 
@@ -99,6 +111,7 @@ mod tests {
             coverage: 0.952,
             threshold: 0.95,
             explicit: true,
+            audit_mode: false,
         };
         let lines = render_real_change_body(&ctx);
         assert_eq!(
@@ -126,9 +139,34 @@ mod tests {
             coverage: 0.952,
             threshold: 0.95,
             explicit: false,
+            audit_mode: false,
         };
         let lines = render_real_change_body(&ctx);
         assert_eq!(lines[2], "1. NVDA.market_value  +95.2% of total change");
+    }
+
+    #[test]
+    fn renders_audit_body_without_explanation_claim() {
+        let contributors = [RealChangeContributor {
+            label: "A.balance".to_string(),
+            old: 100.0,
+            new: 101.0,
+            delta: 1.0,
+            share: 1.0,
+        }];
+        let ctx = RealChangeBody {
+            contributors: &contributors,
+            coverage: 1.0,
+            threshold: 0.95,
+            explicit: false,
+            audit_mode: true,
+        };
+        let lines = render_real_change_body(&ctx);
+        assert_eq!(lines[0], "1 numeric cell changed above tolerance:");
+        assert_eq!(
+            lines[4],
+            "Every changed numeric cell above tolerance is listed."
+        );
     }
 
     #[test]

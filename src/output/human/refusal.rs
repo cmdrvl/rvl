@@ -243,6 +243,14 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             format_percent_one_decimal(*top_k_coverage),
             format_percent_one_decimal(*threshold)
         ),
+        RefusalKind::AuditLimit {
+            changed_cells,
+            max_audit_changes,
+        } => format!(
+            "Example: changed_cells={} max_audit_changes={}.",
+            format_count_u64(*changed_cells),
+            format_count_u64(*max_audit_changes)
+        ),
     }
 }
 

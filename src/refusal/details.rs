@@ -133,6 +133,10 @@ pub enum RefusalKind {
         top_k_coverage: f64,
         threshold: f64,
     },
+    AuditLimit {
+        changed_cells: u64,
+        max_audit_changes: u64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -276,6 +280,12 @@ impl RefusalKind {
             }
             RefusalKind::Diffuse { .. } => {
                 format!("rvl {} {} --threshold 0.80", paths.old, paths.new)
+            }
+            RefusalKind::AuditLimit { changed_cells, .. } => {
+                format!(
+                    "rvl {} {} --exhaustive --max-audit-changes {}",
+                    paths.old, paths.new, changed_cells
+                )
             }
         }
     }

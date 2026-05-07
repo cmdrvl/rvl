@@ -63,6 +63,7 @@ fn golden_real_change_human_output() {
         coverage: 0.95,
         threshold: 0.95,
         explicit: true,
+        audit_mode: false,
     };
 
     let mut lines = vec![
@@ -244,6 +245,8 @@ fn golden_json_real_change_output() {
         profile_sha256: None,
         profile_column_registry: None,
         capsule_profile: None,
+        mode: None,
+        audit: None,
         threshold: 0.95,
         tolerance: 1e-9,
         counts: Counts {
@@ -333,6 +336,8 @@ fn golden_json_no_real_change_output() {
         profile_sha256: None,
         profile_column_registry: None,
         capsule_profile: None,
+        mode: None,
+        audit: None,
         threshold: 0.95,
         tolerance: 1e-9,
         counts: Counts {
@@ -410,6 +415,8 @@ fn golden_json_refusal_output() {
         profile_sha256: None,
         profile_column_registry: None,
         capsule_profile: None,
+        mode: None,
+        audit: None,
         threshold: 0.95,
         tolerance: 1e-9,
         counts: Counts::default(),

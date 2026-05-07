@@ -273,6 +273,8 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--threshold <float>` | float | `0.95` | Coverage target (0 < x ≤ 1.0). The minimum fraction of total numeric change that the top contributors must explain. |
 | `--tolerance <float>` | float | `1e-9` | Per-cell noise floor (x ≥ 0). Absolute deltas ≤ this value are treated as zero. |
 | `--delimiter <delim>` | string | *(auto-detect)* | Force CSV delimiter for both files. See [Delimiter](#delimiter). |
+| `--exhaustive` | flag | `false` | Emit every changed numeric cell above tolerance instead of the smallest explanation prefix. |
+| `--max-audit-changes <n>` | integer | `10000` | Maximum changed cells to emit in audit modes before refusing with `E_AUDIT_LIMIT`. |
 | `--profile <path>` | string | *(none)* | Use a profile YAML for key derivation and column scoping. |
 | `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.epistemic/profiles/*.yaml` or a direct path. |
 | `--capsule-out <dir>` | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`, and `profile.yaml` when a profile is active) to `<dir>/capsule-<id>/`. |
@@ -334,6 +336,20 @@ Profiles can provide `include_columns` and a single-column `key`. When a profile
 Profiles may also define `column_registry: <dir>`. rvl loads that registry directory, applies exact `canonical_type: "column_name"` aliases to normalized CSV headers, and then performs key lookup, column scoping, counts, contributors, capsules, and witness recording using the canonical header IDs.
 
 Relative `column_registry` paths resolve relative to the profile YAML file. Missing or malformed registries refuse with `E_PROFILE_REGISTRY`; there is no fuzzy header matching or case/punctuation normalization.
+
+---
+
+## Exhaustive Audit
+
+By default, rvl prints the smallest numeric contributor prefix that reaches the coverage threshold and refuses with `E_DIFFUSE` when the top 25 contributors cannot explain enough change.
+
+Use `--exhaustive` when you need an audit listing of every changed numeric cell above tolerance:
+
+```bash
+rvl old.csv new.csv --key id --exhaustive --json
+```
+
+Exhaustive mode still uses the same parsing, alignment, profile scoping, tolerance, capsules, and witness semantics. It remains numeric-only, does not report text diffs, and refuses with `E_AUDIT_LIMIT` when changed cells exceed `--max-audit-changes`.
 
 ---
 
@@ -464,6 +480,7 @@ Every refusal includes the error code, first concrete example, and a `Next:` rem
 | `E_NO_NUMERIC` | No numeric columns in common | Ensure both files share at least one numeric column |
 | `E_MISSINGNESS` | Numeric value vs. missing token in aligned cell | Fill missing values or exclude the column |
 | `E_DIFFUSE` | Top 25 contributors can't reach threshold | Use `--threshold 0.80` (or lower) to accept less coverage |
+| `E_AUDIT_LIMIT` | `--exhaustive` found more changed cells than `--max-audit-changes` | Rerun with a higher audit limit |
 
 ---
 

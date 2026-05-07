@@ -51,8 +51,8 @@ use crate::output::human::real_change::{
 };
 use crate::output::human::refusal::{RefusalBody, render_refusal_body};
 use crate::output::json::{
-    Alignment as JsonAlignment, Counts, Dialect, DialectSide, Files, JsonContext, JsonOutput,
-    Metrics, Refusal as JsonRefusal,
+    Alignment as JsonAlignment, Audit as JsonAudit, Counts, Dialect, DialectSide, Files,
+    JsonContext, JsonOutput, Metrics, OutputMode as JsonOutputMode, Refusal as JsonRefusal,
 };
 use crate::profile::{
     ColumnRegistryRunInfo, ResolveError, ResolvedProfile, load_profile_from_path,
@@ -713,6 +713,7 @@ fn run_diff(
     let mut tie_breaker = TieBreaker::default();
     let mut tolerance = ToleranceTracker::new(args.tolerance);
     let mut numeric_cells_changed = 0u64;
+    let mut exhaustive_details = Vec::new();
 
     match &alignment {
         AlignmentContext::Key { key_rows, .. } => {
@@ -740,10 +741,19 @@ fn run_diff(
                         _ => continue,
                     };
                     let (delta, contribution) = tolerance.apply(old_val, new_val);
+                    let cell_id = CellId::new(row_id.clone(), column.name.clone());
                     if contribution > 0.0 {
                         numeric_cells_changed += 1;
+                        if args.exhaustive && numeric_cells_changed <= args.max_audit_changes {
+                            exhaustive_details.push(ContributionDetail {
+                                id: cell_id.clone(),
+                                old: old_val,
+                                new: new_val,
+                                delta,
+                                contribution,
+                            });
+                        }
                     }
-                    let cell_id = CellId::new(row_id.clone(), column.name.clone());
                     accumulator.observe(
                         cell_id,
                         old_val,
@@ -776,10 +786,19 @@ fn run_diff(
                         _ => continue,
                     };
                     let (delta, contribution) = tolerance.apply(old_val, new_val);
+                    let cell_id = CellId::new(row_id.clone(), column.name.clone());
                     if contribution > 0.0 {
                         numeric_cells_changed += 1;
+                        if args.exhaustive && numeric_cells_changed <= args.max_audit_changes {
+                            exhaustive_details.push(ContributionDetail {
+                                id: cell_id.clone(),
+                                old: old_val,
+                                new: new_val,
+                                delta,
+                                contribution,
+                            });
+                        }
                     }
-                    let cell_id = CellId::new(row_id.clone(), column.name.clone());
                     accumulator.observe(
                         cell_id,
                         old_val,
@@ -798,12 +817,14 @@ fn run_diff(
     let contributions: Vec<f64> = top.iter().map(|c| c.contribution).collect();
 
     let top_k_coverage = if accumulator.total_change > 0.0 {
-        Some(contributions.iter().copied().sum::<f64>() / accumulator.total_change)
+        if args.exhaustive && numeric_cells_changed <= args.max_audit_changes {
+            Some(1.0)
+        } else {
+            Some(contributions.iter().copied().sum::<f64>() / accumulator.total_change)
+        }
     } else {
         None
     };
-
-    let coverage = evaluate_coverage(&contributions, accumulator.total_change, args.threshold);
 
     let alignment_mode = match &alignment {
         AlignmentContext::Key { key, .. } => JsonAlignment::key(encode_identifier_json(key)),
@@ -868,6 +889,54 @@ fn run_diff(
     }
 
     let alignment_label = key_bytes.map(render_identifier_human);
+
+    if args.exhaustive && numeric_cells_changed > args.max_audit_changes {
+        let refusal = RefusalPayload::with_default_next(
+            RefusalCode::AuditLimit,
+            RefusalKind::AuditLimit {
+                changed_cells: numeric_cells_changed,
+                max_audit_changes: args.max_audit_changes,
+            },
+            rerun_paths,
+        );
+        let mut counts = counts.clone();
+        counts.numeric_cells_changed = None;
+        let context = RefusalContext {
+            key: key_bytes,
+            dialect_old,
+            dialect_new,
+            alignment: alignment_mode,
+            profile: active_profile.info.clone(),
+            counts,
+            metrics,
+        };
+        return Ok(render_refusal_with_context(refusal, args, context));
+    }
+
+    if args.exhaustive {
+        let ctx = json_context(
+            args,
+            alignment_mode,
+            dialect_old,
+            dialect_new,
+            &active_profile.info,
+            counts,
+            metrics,
+        );
+        if accumulator.total_change == 0.0 {
+            return Ok(render_no_real_change(args, ctx, alignment_label.as_deref()));
+        }
+        sort_contribution_details(&mut exhaustive_details);
+        return Ok(render_real_change(
+            args,
+            ctx,
+            &exhaustive_details,
+            1.0,
+            alignment_label.as_deref(),
+        ));
+    }
+
+    let coverage = evaluate_coverage(&contributions, accumulator.total_change, args.threshold);
 
     match coverage {
         CoverageDecision::NoChange => {
@@ -1412,6 +1481,7 @@ fn render_real_change(
 ) -> PipelineResult {
     let run_profile = profile_from_json_context(&ctx);
     let total_change = ctx.metrics.total_change.unwrap_or(0.0);
+    let audit_mode = ctx.mode == Some(JsonOutputMode::ExhaustiveNumeric);
     let contributor_summary = build_capsule_contributor_summary(details, total_change, coverage);
 
     let result = if args.json {
@@ -1447,6 +1517,7 @@ fn render_real_change(
             coverage,
             threshold: args.threshold,
             explicit: args.explicit,
+            audit_mode,
         };
         lines.extend(render_real_change_body(&body));
         PipelineResult {
@@ -1545,6 +1616,17 @@ fn json_context(
     counts: Counts,
     metrics: Metrics,
 ) -> JsonContext {
+    let audit = if args.exhaustive {
+        counts
+            .numeric_cells_changed
+            .map(|numeric_changes_emitted| JsonAudit {
+                numeric_changes_emitted,
+                field_changes_emitted: 0,
+                truncated: false,
+            })
+    } else {
+        None
+    };
     JsonContext {
         files: Files {
             old: args.old_path().to_string_lossy().to_string(),
@@ -1562,6 +1644,12 @@ fn json_context(
         profile_sha256: profile.profile_sha256.clone(),
         profile_column_registry: profile.column_registry.clone(),
         capsule_profile: profile.capsule_profile.clone(),
+        mode: if args.exhaustive {
+            Some(JsonOutputMode::ExhaustiveNumeric)
+        } else {
+            None
+        },
+        audit,
         threshold: args.threshold,
         tolerance: args.tolerance,
         counts,
@@ -1778,6 +1866,15 @@ struct ContributionDetail {
     new: f64,
     delta: f64,
     contribution: f64,
+}
+
+fn sort_contribution_details(details: &mut [ContributionDetail]) {
+    details.sort_by(
+        |left, right| match right.contribution.total_cmp(&left.contribution) {
+            std::cmp::Ordering::Equal => left.id.cmp(&right.id),
+            ord => ord,
+        },
+    );
 }
 
 fn collect_details(
@@ -2057,6 +2154,13 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         } => json!({
             "top_k_coverage": top_k_coverage,
             "threshold": threshold,
+        }),
+        RefusalKind::AuditLimit {
+            changed_cells,
+            max_audit_changes,
+        } => json!({
+            "changed_cells": changed_cells,
+            "max_audit_changes": max_audit_changes,
         }),
     }
 }

@@ -6,6 +6,7 @@ use super::delimiter::parse_delimiter_arg;
 
 const DEFAULT_THRESHOLD: f64 = 0.95;
 const DEFAULT_TOLERANCE: f64 = 1e-9;
+const DEFAULT_MAX_AUDIT_CHANGES: u64 = 10_000;
 
 /// CLI argument parsing & validation (bd-l7j).
 #[derive(Debug, Clone, Parser)]
@@ -49,6 +50,19 @@ pub struct Args {
     /// Force a CSV delimiter (comma/tab/semicolon/pipe/caret, 0xNN, or single ASCII byte).
     #[arg(long, value_name = "DELIM", value_parser = parse_delimiter)]
     pub delimiter: Option<u8>,
+
+    /// Emit every changed numeric cell above tolerance instead of the smallest explanation prefix.
+    #[arg(long)]
+    pub exhaustive: bool,
+
+    /// Maximum changed cells to emit in audit modes.
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = DEFAULT_MAX_AUDIT_CHANGES,
+        value_parser = parse_max_audit_changes
+    )]
+    pub max_audit_changes: u64,
 
     /// Use profile YAML at this path for key derivation and column scoping.
     #[arg(long, value_name = "PATH")]
@@ -177,6 +191,8 @@ impl Args {
             threshold,
             tolerance,
             delimiter,
+            exhaustive: false,
+            max_audit_changes: DEFAULT_MAX_AUDIT_CHANGES,
             profile: None,
             profile_id: None,
             capsule_out: None,
@@ -229,6 +245,16 @@ fn parse_finite(raw: &str, label: &str) -> Result<f64, String> {
 
 fn parse_delimiter(raw: &str) -> Result<u8, String> {
     parse_delimiter_arg(raw).map_err(|err| err.to_string())
+}
+
+fn parse_max_audit_changes(raw: &str) -> Result<u64, String> {
+    let value = raw
+        .parse::<u64>()
+        .map_err(|_| "max audit changes must be a positive integer".to_string())?;
+    if value == 0 {
+        return Err("max audit changes must be greater than zero".to_string());
+    }
+    Ok(value)
 }
 
 #[cfg(test)]

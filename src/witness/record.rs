@@ -84,6 +84,10 @@ impl WitnessRecord {
 
         let mut params = serde_json::Map::new();
         params.insert("delimiter".to_string(), delimiter_val);
+        params.insert(
+            "exhaustive".to_string(),
+            serde_json::Value::Bool(args.exhaustive),
+        );
         params.insert("json".to_string(), serde_json::Value::Bool(args.json));
         params.insert(
             "key".to_string(),
@@ -126,6 +130,10 @@ impl WitnessRecord {
                 );
             }
         }
+        params.insert(
+            "max_audit_changes".to_string(),
+            serde_json::json!(args.max_audit_changes),
+        );
         params.insert("threshold".to_string(), serde_json::json!(args.threshold));
         params.insert("tolerance".to_string(), serde_json::json!(args.tolerance));
         let params = serde_json::Value::Object(params);
@@ -389,7 +397,15 @@ mod tests {
         let keys: Vec<&String> = params.keys().collect();
         assert_eq!(
             keys.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
-            vec!["delimiter", "json", "key", "threshold", "tolerance"],
+            vec![
+                "delimiter",
+                "exhaustive",
+                "json",
+                "key",
+                "max_audit_changes",
+                "threshold",
+                "tolerance"
+            ],
             "params keys must be alphabetically sorted"
         );
     }

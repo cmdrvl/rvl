@@ -23,13 +23,14 @@ pub enum RefusalCode {
     NoNumeric,
     Missingness,
     Diffuse,
+    AuditLimit,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnknownRefusalCode;
 
 impl RefusalCode {
-    pub const ALL: [RefusalCode; 19] = [
+    pub const ALL: [RefusalCode; 20] = [
         RefusalCode::Io,
         RefusalCode::Encoding,
         RefusalCode::CsvParse,
@@ -49,6 +50,7 @@ impl RefusalCode {
         RefusalCode::NoNumeric,
         RefusalCode::Missingness,
         RefusalCode::Diffuse,
+        RefusalCode::AuditLimit,
     ];
 
     #[inline]
@@ -73,6 +75,7 @@ impl RefusalCode {
             RefusalCode::NoNumeric => "E_NO_NUMERIC",
             RefusalCode::Missingness => "E_MISSINGNESS",
             RefusalCode::Diffuse => "E_DIFFUSE",
+            RefusalCode::AuditLimit => "E_AUDIT_LIMIT",
         }
     }
 
@@ -99,6 +102,7 @@ impl RefusalCode {
             RefusalCode::NoNumeric => "no numeric columns in common",
             RefusalCode::Missingness => "numeric-vs-missing mismatch (refusal)",
             RefusalCode::Diffuse => "diffuse change below coverage threshold",
+            RefusalCode::AuditLimit => "audit output limit exceeded",
         }
     }
 }
@@ -141,6 +145,7 @@ impl FromStr for RefusalCode {
             "E_NO_NUMERIC" => Ok(RefusalCode::NoNumeric),
             "E_MISSINGNESS" => Ok(RefusalCode::Missingness),
             "E_DIFFUSE" => Ok(RefusalCode::Diffuse),
+            "E_AUDIT_LIMIT" => Ok(RefusalCode::AuditLimit),
             _ => Err(UnknownRefusalCode),
         }
     }

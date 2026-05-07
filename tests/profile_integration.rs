@@ -62,6 +62,8 @@ fn make_args(old: &Path, new: &Path) -> Args {
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
+        exhaustive: false,
+        max_audit_changes: 10_000,
         profile: None,
         profile_id: None,
         capsule_out: None,
