@@ -13,7 +13,7 @@ const DEFAULT_MAX_AUDIT_CHANGES: u64 = 10_000;
 #[command(
     name = "rvl",
     about = "Reveal the smallest set of numeric changes that explain what actually changed.",
-    override_usage = "rvl <old.csv> <new.csv> [OPTIONS]\n       rvl witness <query|last|count> [OPTIONS]",
+    override_usage = "rvl <old.csv> <new.csv> [OPTIONS]\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor <health|capabilities|robot-docs> [OPTIONS]",
     subcommand_negates_reqs = true
 )]
 pub struct Args {
@@ -115,6 +115,35 @@ pub enum RvlCommand {
         #[command(subcommand)]
         action: WitnessAction,
     },
+    /// Inspect rvl's read-only diagnostic surface.
+    Doctor(DoctorArgs),
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct DoctorArgs {
+    /// Emit one-call machine triage for headless agents.
+    #[arg(long = "robot-triage")]
+    pub robot_triage: bool,
+
+    #[command(subcommand)]
+    pub action: Option<DoctorAction>,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum DoctorAction {
+    /// Print a cheap one-line health summary.
+    Health,
+    /// Print the machine-readable doctor capability contract.
+    Capabilities(DoctorCapabilitiesArgs),
+    /// Print paste-ready operating notes for agents.
+    RobotDocs,
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct DoctorCapabilitiesArgs {
+    /// Emit JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, Subcommand)]

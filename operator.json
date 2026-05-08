@@ -1,7 +1,7 @@
 {
   "schema_version": "operator.v0",
   "name": "rvl",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Numeric change explainer — finds the smallest set of cell-level changes that account for the difference between two CSV files",
   "repository": "https://github.com/cmdrvl/rvl",
   "license": "MIT",
@@ -11,7 +11,9 @@
     "binary": "rvl",
     "usage": [
       "rvl <old.csv> <new.csv> [OPTIONS]",
-      "rvl witness <query|last|count> [OPTIONS]"
+      "rvl witness <query|last|count> [OPTIONS]",
+      "rvl doctor <health|capabilities|robot-docs> [OPTIONS]",
+      "rvl doctor --robot-triage"
     ],
     "output_mode": "report",
     "output_schema": "rvl.v0",
@@ -69,6 +71,37 @@
           "EPISTEMIC_WITNESS",
           "~/.epistemic/witness.jsonl"
         ]
+      }
+    },
+    {
+      "name": "doctor",
+      "description": "Read-only diagnostic commands for headless agents",
+      "status": "available",
+      "actions": [
+        {
+          "name": "health",
+          "usage": "rvl doctor health"
+        },
+        {
+          "name": "capabilities",
+          "usage": "rvl doctor capabilities --json"
+        },
+        {
+          "name": "robot-docs",
+          "usage": "rvl doctor robot-docs"
+        },
+        {
+          "name": "robot-triage",
+          "usage": "rvl doctor --robot-triage"
+        }
+      ],
+      "current_runtime_behavior": {
+        "read_only": true,
+        "fix_mode": "not_available",
+        "network": "not_used",
+        "success_exit_code": 0,
+        "findings_exit_code": 1,
+        "usage_error_exit_code": 2
       }
     }
   ],

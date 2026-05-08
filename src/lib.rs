@@ -4,6 +4,7 @@ pub mod alignment;
 pub mod cli;
 pub mod csv;
 pub mod diff;
+pub mod doctor;
 pub mod format;
 pub mod normalize;
 pub mod numeric;
@@ -14,7 +15,7 @@ pub mod refusal;
 pub mod repro;
 pub mod witness;
 
-const OPERATOR_JSON: &str = include_str!("../operator.json");
+pub(crate) const OPERATOR_JSON: &str = include_str!("../operator.json");
 
 /// Run the rvl pipeline. Returns exit code (0, 1, or 2).
 pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
@@ -25,8 +26,12 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     let args = match cli::args::Args::parse() {
         Ok(args) => args,
         Err(err) => {
+            let code = match err.kind() {
+                clap::error::ErrorKind::DisplayHelp | clap::error::ErrorKind::DisplayVersion => 0,
+                _ => 2,
+            };
             err.print()?;
-            return Ok(2);
+            return Ok(code);
         }
     };
 
@@ -43,7 +48,7 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     }
 
     if let Some(ref cmd) = args.command {
-        return run_witness(cmd);
+        return run_command(cmd);
     }
 
     if args.old.is_none() || args.new.is_none() {
@@ -54,6 +59,13 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     }
 
     run_comparison(args)
+}
+
+fn run_command(cmd: &cli::args::RvlCommand) -> Result<u8, Box<dyn std::error::Error>> {
+    match cmd {
+        cli::args::RvlCommand::Witness { action } => run_witness(action),
+        cli::args::RvlCommand::Doctor(args) => doctor::run(args),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -232,10 +244,8 @@ fn run_comparison(args: cli::args::Args) -> Result<u8, Box<dyn std::error::Error
 
 /// Run witness subcommand (query/last/count).
 /// Exit codes: 0 = success, 1 = no record for `last`, 2 = error.
-fn run_witness(cmd: &cli::args::RvlCommand) -> Result<u8, Box<dyn std::error::Error>> {
+fn run_witness(action: &cli::args::WitnessAction) -> Result<u8, Box<dyn std::error::Error>> {
     use std::io::{self, Write};
-
-    let cli::args::RvlCommand::Witness { action } = cmd;
 
     let reader = witness::reader::LedgerReader::open()?;
 

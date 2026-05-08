@@ -32,3 +32,6 @@ target
 
 # ntm runtime state
 .ntm/
+
+# doctor runtime artifacts
+.doctor/
