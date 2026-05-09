@@ -18,6 +18,7 @@ fn help_routes_exit_success() {
         &["--help"][..],
         &["witness", "--help"][..],
         &["doctor", "--help"][..],
+        &["doctor", "health", "--help"][..],
         &["doctor", "capabilities", "--help"][..],
     ] {
         let output = run(args);
@@ -39,6 +40,21 @@ fn doctor_health_is_read_only_and_successful() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("rvl doctor healthy"));
     assert!(output.stderr.is_empty(), "stderr should remain empty");
+}
+
+#[test]
+fn doctor_health_json_is_read_only_and_successful() {
+    let output = run(&["doctor", "health", "--json"]);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stderr.is_empty(), "stderr should remain empty");
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("health should be JSON");
+
+    assert_eq!(value["schema_version"], "rvl.doctor.v1");
+    assert_eq!(value["tool"], "rvl");
+    assert_eq!(value["summary"]["status"], "healthy");
+    assert_eq!(value["read_only"], true);
 }
 
 #[test]
@@ -66,6 +82,7 @@ fn doctor_capabilities_json_declares_read_only_contract() {
         .expect("commands should be an array");
     for expected in [
         "rvl doctor health",
+        "rvl doctor health --json",
         "rvl doctor capabilities --json",
         "rvl doctor robot-docs",
         "rvl doctor --robot-triage",
@@ -110,6 +127,7 @@ fn doctor_robot_docs_names_agent_surface() {
     assert!(output.stderr.is_empty(), "stderr should remain empty");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("rvl doctor health"));
+    assert!(stdout.contains("rvl doctor health --json"));
     assert!(stdout.contains("rvl doctor capabilities --json"));
     assert!(stdout.contains("no doctor --fix surface exists yet"));
 }

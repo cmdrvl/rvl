@@ -132,11 +132,18 @@ pub struct DoctorArgs {
 #[derive(Debug, Clone, Subcommand)]
 pub enum DoctorAction {
     /// Print a cheap one-line health summary.
-    Health,
+    Health(DoctorHealthArgs),
     /// Print the machine-readable doctor capability contract.
     Capabilities(DoctorCapabilitiesArgs),
     /// Print paste-ready operating notes for agents.
     RobotDocs,
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct DoctorHealthArgs {
+    /// Emit JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
