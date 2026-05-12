@@ -1,5 +1,9 @@
 # rvl
 
+![rvl: numeric change explainer. A painterly dashboard comparing two snapshots of a loan portfolio joined on loan_id, with a ranked-by-magnitude table highlighting the top three changes (LN-4117 payoff in red, LN-2208 rate-reset in amber, LN-3091 small balance change in cyan) and seven more rows below. An aggregate row reports 3,201 loans compared, 187 changes, 12 material, 175 minor, 0 type drift. A WHAT RVL DOES NOT DO panel explicitly names shape (use first) and canon (use first). Two side-by-side physical printouts on the desk show the same comparison with the relevant cells highlighted and handwritten operator-questions in the margins (payoff confirmed? rate reset, in covenant?).](docs/images/rvl.webp)
+
+> *Two files. Fifty thousand cells. Something changed. Here's what.*
+
 <div align="center">
 
 [![CI](https://github.com/cmdrvl/rvl/actions/workflows/ci.yml/badge.svg)](https://github.com/cmdrvl/rvl/actions/workflows/ci.yml)
@@ -668,3 +672,7 @@ cargo fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+---
+
+*`rvl` is part of the open-source toolchain from the [CMD+RVL](https://cmdrvl.com) lineage and AI enablement practice. MIT-licensed. Contributions welcome from any practice or stack.*
