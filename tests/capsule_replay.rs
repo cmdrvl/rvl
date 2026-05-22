@@ -409,6 +409,14 @@ fn capsule_replay_script_is_self_contained_for_profile_id_runs() {
     );
     assert_eq!(first.status.code(), Some(1));
     let first_json: Value = serde_json::from_slice(&first.stdout).expect("first output json");
+    assert!(
+        home.join(".cmdrvl/config/profile/profiles/loan_tape.yaml")
+            .is_file(),
+        "profile-id lookup should copy legacy profiles into the canonical profile config directory"
+    );
+    let migration = std::fs::read_to_string(home.join(".cmdrvl/migrations/applied.jsonl"))
+        .expect("profile migration record should exist");
+    assert!(migration.contains("\"path_class\":\"profile_profiles\""));
 
     let capsule_dir = only_capsule_dir(&capsule_root);
     let manifest: Value = serde_json::from_str(

@@ -72,7 +72,7 @@ pub struct Args {
     #[arg(long, value_name = "PATH")]
     pub profile: Option<PathBuf>,
 
-    /// Resolve profile by ID from ~/.epistemic/profiles/*.yaml (or from a direct path).
+    /// Resolve profile by ID from ~/.cmdrvl/config/profile/profiles/*.yaml (or from a direct path).
     #[arg(long = "profile-id", value_name = "ID")]
     pub profile_id: Option<String>,
 

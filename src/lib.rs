@@ -10,6 +10,7 @@ pub mod normalize;
 pub mod numeric;
 pub mod orchestrator;
 pub mod output;
+pub(crate) mod paths;
 pub mod profile;
 pub mod refusal;
 pub mod repro;

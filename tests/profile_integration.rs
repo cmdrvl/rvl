@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use rvl::cli::args::Args;
@@ -372,17 +373,27 @@ fn profile_id_not_found_refuses_with_profile_not_found() {
     let dir = temp_dir();
     let old = write_file(&dir, "old.csv", "id,value\nA,1\n");
     let new = write_file(&dir, "new.csv", "id,value\nA,1\n");
-
-    let mut args = make_args(&old, &new);
-    args.profile_id = Some(format!(
+    let home = dir.join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let wanted = format!(
         "csv.never.exists.{}.v0",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
-    ));
-    let wanted = args.profile_id.clone().unwrap();
-    let json = run_json(&args);
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_rvl"))
+        .arg(old)
+        .arg(new)
+        .arg("--json")
+        .arg("--no-witness")
+        .arg("--profile-id")
+        .arg(&wanted)
+        .env("HOME", &home)
+        .output()
+        .expect("rvl should run");
+    let json: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("json output should parse");
 
     assert_eq!(json["outcome"], "REFUSAL");
     assert_eq!(json["refusal"]["code"], "E_PROFILE_NOT_FOUND");

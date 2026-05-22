@@ -281,7 +281,7 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--audit-fields` | flag | `false` | With `--exhaustive` and an active profile, emit exact changes in profile-scoped non-numeric fields. |
 | `--max-audit-changes <n>` | integer | `10000` | Maximum changed cells to emit in audit modes before refusing with `E_AUDIT_LIMIT`. |
 | `--profile <path>` | string | *(none)* | Use a profile YAML for key derivation and column scoping. |
-| `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.epistemic/profiles/*.yaml` or a direct path. |
+| `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.cmdrvl/config/profile/profiles/*.yaml`; legacy `~/.epistemic/profiles` is copied on first default use. |
 | `--capsule-out <dir>` | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`, and `profile.yaml` when a profile is active) to `<dir>/capsule-<id>/`. |
 | `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
 
@@ -423,7 +423,7 @@ cd ./capsules/capsule-<id>
 - contributor summary for REAL_CHANGE
 - replay command plus artifact hashes for integrity checks
 
-When `--profile` or `--profile-id` is active, capsules also include a local `profile.yaml` artifact and `replay.sh` uses it, so replay does not depend on the original working directory or `~/.epistemic/profiles`. If that profile uses `column_registry`, the capsule also carries a local copy of the registry files and rewrites `profile.yaml` to point at that copy.
+When `--profile` or `--profile-id` is active, capsules also include a local `profile.yaml` artifact and `replay.sh` uses it, so replay does not depend on the original working directory or `~/.cmdrvl/config/profile/profiles`. If that profile uses `column_registry`, the capsule also carries a local copy of the registry files and rewrites `profile.yaml` to point at that copy.
 
 For troubleshooting, compare `run.json` vs `replay.json` outcome/refusal code first; if they differ, the environment or binary changed.
 

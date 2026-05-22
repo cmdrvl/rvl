@@ -2,7 +2,6 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::PathBuf;
 
-use crate::witness::ledger::resolve_ledger_path;
 use crate::witness::record::WitnessRecord;
 
 pub struct LedgerReader {
@@ -12,7 +11,7 @@ pub struct LedgerReader {
 impl LedgerReader {
     /// Open the ledger at the default/env-configured path.
     pub fn open() -> io::Result<Self> {
-        let path = resolve_ledger_path()?;
+        let path = crate::paths::witness_ledger_path_for_query()?;
         Ok(Self { path })
     }
 

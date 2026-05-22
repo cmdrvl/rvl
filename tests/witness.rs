@@ -10,19 +10,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-fn rvl_binary() -> PathBuf {
-    // Use the test binary's directory to find the compiled rvl binary.
-    let mut path = std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    path.push("rvl");
-    path
-}
-
 fn temp_dir() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id: u64 = std::time::SystemTime::now()
@@ -52,7 +39,7 @@ fn normal_run_creates_witness_record() {
     let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,3\n");
     let ledger = dir.join("witness.jsonl");
 
-    let output = Command::new(rvl_binary())
+    let output = Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("EPISTEMIC_WITNESS", ledger.to_str().unwrap())
@@ -84,7 +71,7 @@ fn no_witness_flag_suppresses_recording() {
     let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,3\n");
     let ledger = dir.join("witness.jsonl");
 
-    let output = Command::new(rvl_binary())
+    let output = Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .arg("--no-witness")
@@ -113,9 +100,13 @@ fn empty_epistemic_witness_falls_back_to_home_default() {
     std::fs::create_dir_all(&home).unwrap();
     let old = write_csv(&dir, "old.csv", "id,value\nA,1\nB,2\n");
     let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,3\n");
-    let ledger = home.join(".epistemic").join("witness.jsonl");
+    let ledger = home
+        .join(".cmdrvl")
+        .join("state")
+        .join("witness")
+        .join("witness.jsonl");
 
-    let output = Command::new(rvl_binary())
+    let output = Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("HOME", &home)
@@ -144,6 +135,57 @@ fn empty_epistemic_witness_falls_back_to_home_default() {
 }
 
 #[test]
+fn default_witness_path_copies_legacy_ledger_once() {
+    let dir = temp_dir();
+    let home = dir.join("home");
+    let legacy = home.join(".epistemic").join("witness.jsonl");
+    std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    std::fs::write(
+        &legacy,
+        r#"{"id":"id-1","tool":"rvl","version":"0.1.0","binary_hash":"b1","inputs":[],"params":{},"outcome":"NO_REAL_CHANGE","exit_code":0,"output_hash":"o1","ts":"2026-02-01T00:00:00Z"}"#.to_string()
+            + "\n",
+    )
+    .unwrap();
+    let old = write_csv(&dir, "old.csv", "id,value\nA,1\nB,2\n");
+    let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,3\n");
+    let canonical = home
+        .join(".cmdrvl")
+        .join("state")
+        .join("witness")
+        .join("witness.jsonl");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_rvl"))
+        .arg(old.to_str().unwrap())
+        .arg(new.to_str().unwrap())
+        .env("HOME", &home)
+        .env("EPISTEMIC_WITNESS", "")
+        .output()
+        .expect("failed to run rvl");
+
+    assert!(
+        output.status.success() || output.status.code() == Some(1),
+        "rvl should exit 0 or 1, got {:?}",
+        output.status.code()
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stderr).trim().is_empty(),
+        "legacy witness migration should be quiet: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let content = std::fs::read_to_string(&canonical).unwrap();
+    assert!(content.contains("\"id\":\"id-1\""));
+    assert_eq!(content.lines().count(), 2);
+    let migration = std::fs::read_to_string(home.join(".cmdrvl/migrations/applied.jsonl")).unwrap();
+    assert!(migration.contains("\"path_class\":\"witness_ledger\""));
+    let notices =
+        std::fs::read_to_string(home.join(".cmdrvl/notices/deprecated-paths.jsonl")).unwrap();
+    assert!(notices.contains("\"path_class\":\"witness_ledger\""));
+
+    cleanup(&dir);
+}
+
+#[test]
 fn consecutive_runs_append_receipts() {
     let dir = temp_dir();
     let old = write_csv(&dir, "old.csv", "id,value\nA,1\nB,2\n");
@@ -151,7 +193,7 @@ fn consecutive_runs_append_receipts() {
     let ledger = dir.join("witness.jsonl");
 
     // Run 1.
-    let output1 = Command::new(rvl_binary())
+    let output1 = Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("EPISTEMIC_WITNESS", ledger.to_str().unwrap())
@@ -164,7 +206,7 @@ fn consecutive_runs_append_receipts() {
     );
 
     // Run 2.
-    let output2 = Command::new(rvl_binary())
+    let output2 = Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("EPISTEMIC_WITNESS", ledger.to_str().unwrap())
@@ -197,7 +239,7 @@ fn witness_record_id_is_verifiable_from_ledger() {
     let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,3\n");
     let ledger = dir.join("witness.jsonl");
 
-    Command::new(rvl_binary())
+    Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("EPISTEMIC_WITNESS", ledger.to_str().unwrap())
@@ -230,7 +272,7 @@ fn witness_failure_does_not_affect_exit_code() {
     let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,3\n");
 
     // Point EPISTEMIC_WITNESS to an impossible path.
-    let output = Command::new(rvl_binary())
+    let output = Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("EPISTEMIC_WITNESS", "/dev/null/impossible/witness.jsonl")
@@ -261,7 +303,7 @@ fn witness_records_have_correct_input_paths() {
     let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,3\n");
     let ledger = dir.join("witness.jsonl");
 
-    Command::new(rvl_binary())
+    Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("EPISTEMIC_WITNESS", ledger.to_str().unwrap())
@@ -287,7 +329,7 @@ fn witness_records_capture_file_sizes() {
     let new = write_csv(&dir, "new.csv", new_content);
     let ledger = dir.join("witness.jsonl");
 
-    Command::new(rvl_binary())
+    Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("EPISTEMIC_WITNESS", ledger.to_str().unwrap())
@@ -312,7 +354,7 @@ fn no_real_change_produces_exit_zero_with_witness() {
     let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,2\n");
     let ledger = dir.join("witness.jsonl");
 
-    let output = Command::new(rvl_binary())
+    let output = Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("EPISTEMIC_WITNESS", ledger.to_str().unwrap())
@@ -340,7 +382,7 @@ fn real_change_produces_exit_one_with_witness() {
     let new = write_csv(&dir, "new.csv", "id,value\nA,1\nB,999\n");
     let ledger = dir.join("witness.jsonl");
 
-    let output = Command::new(rvl_binary())
+    let output = Command::new(env!("CARGO_BIN_EXE_rvl"))
         .arg(old.to_str().unwrap())
         .arg(new.to_str().unwrap())
         .env("EPISTEMIC_WITNESS", ledger.to_str().unwrap())

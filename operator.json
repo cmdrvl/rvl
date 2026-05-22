@@ -34,7 +34,7 @@
     { "name": "audit_fields", "flag": "--audit-fields", "type": "flag", "description": "With --exhaustive and an active profile, emit exact changes in profile-scoped non-numeric fields" },
     { "name": "max_audit_changes", "flag": "--max-audit-changes", "type": "integer", "default": 10000, "description": "Maximum changed cells to emit in audit modes" },
     { "name": "profile", "flag": "--profile", "type": "file_path", "description": "Use profile YAML at this path for key derivation and column scoping" },
-    { "name": "profile_id", "flag": "--profile-id", "type": "string", "description": "Resolve profile by ID from ~/.epistemic/profiles/*.yaml (or direct path)" },
+    { "name": "profile_id", "flag": "--profile-id", "type": "string", "description": "Resolve profile by ID from ~/.cmdrvl/config/profile/profiles/*.yaml; legacy ~/.epistemic/profiles is copied on first default use" },
     { "name": "capsule_out", "flag": "--capsule-out", "type": "directory_path", "description": "Write deterministic repro capsule artifacts to this directory (default: disabled)" },
     { "name": "json", "flag": "--json", "type": "flag", "description": "Emit JSON output (single object)" },
     { "name": "no_witness", "flag": "--no-witness", "type": "flag", "description": "Suppress witness ledger recording" },
@@ -69,7 +69,8 @@
         "error_exit_code": 2,
         "ledger_path_resolution": [
           "EPISTEMIC_WITNESS",
-          "~/.epistemic/witness.jsonl"
+          "~/.cmdrvl/state/witness/witness.jsonl",
+          "legacy ~/.epistemic/witness.jsonl is copied on first default use"
         ]
       }
     },

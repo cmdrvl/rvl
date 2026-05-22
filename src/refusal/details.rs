@@ -261,7 +261,7 @@ impl RefusalKind {
             }
             RefusalKind::ProfileNotFound { profile_id } => {
                 format!(
-                    "check ~/.epistemic/profiles/ for profile_id=\"{profile_id}\" or rerun with --profile <path>"
+                    "check ~/.cmdrvl/config/profile/profiles/ for profile_id=\"{profile_id}\" or rerun with --profile <path>"
                 )
             }
             RefusalKind::ProfileRegistry { .. } => {

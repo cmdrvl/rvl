@@ -4,27 +4,6 @@ use std::path::PathBuf;
 
 use crate::witness::record::{WitnessRecord, canonical_json};
 
-/// Resolve the ledger path.
-///
-/// Priority:
-/// 1. `EPISTEMIC_WITNESS` env var (if set, use as file path)
-/// 2. Default: `~/.epistemic/witness.jsonl`
-pub(crate) fn resolve_ledger_path() -> io::Result<PathBuf> {
-    if let Ok(env_path) = std::env::var("EPISTEMIC_WITNESS")
-        && !env_path.trim().is_empty()
-    {
-        Ok(PathBuf::from(env_path))
-    } else {
-        let home = home_dir().ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::NotFound,
-                "could not determine home directory",
-            )
-        })?;
-        Ok(home.join(".epistemic").join("witness.jsonl"))
-    }
-}
-
 pub struct LedgerWriter {
     path: PathBuf,
 }
@@ -32,7 +11,7 @@ pub struct LedgerWriter {
 impl LedgerWriter {
     /// Resolve the ledger path and return a writer.
     pub fn open() -> io::Result<Self> {
-        let path = resolve_ledger_path()?;
+        let path = crate::paths::witness_ledger_path_for_append()?;
         Ok(Self { path })
     }
 
@@ -69,14 +48,6 @@ pub fn try_append(record: &WitnessRecord) {
     if let Err(e) = result {
         eprintln!("rvl: witness: {e}");
     }
-}
-
-/// Cross-platform home directory resolution.
-fn home_dir() -> Option<PathBuf> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
-        .map(PathBuf::from)
 }
 
 #[cfg(test)]

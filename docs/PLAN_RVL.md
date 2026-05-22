@@ -694,7 +694,7 @@ These flags and behaviors are deferred until the `profile` tool exists and is st
 ### Flags (epistemic spine extensions)
 
 - `--profile <path>`: scope numeric column selection to this profile's `include_columns` and derive key from the profile's `key` field. Accepts a direct file path to a draft or frozen profile YAML.
-- `--profile-id <id>`: profile ID (resolved from `~/.epistemic/profiles/` search path). Mutually exclusive with `--profile`.
+- `--profile-id <id>`: profile ID resolved from `~/.cmdrvl/config/profile/profiles/`; legacy `~/.epistemic/profiles/` is copied on first default use. Mutually exclusive with `--profile`.
 
 Both flags are optional. When neither is provided, behavior is identical to v0 (full numeric intersection, `--key` required for key mode).
 
@@ -758,7 +758,7 @@ Header semantics
 - Human and JSON contributor labels use the resolved/canonical header names, not raw source aliases.
 
 Reproducibility
-- Capsule replay must include enough profile and registry material to replay without the original profile path, `~/.epistemic/profiles`, or the original registry path.
+- Capsule replay must include enough profile and registry material to replay without the original profile path, `~/.cmdrvl/config/profile/profiles`, or the original registry path.
 - If the active profile has `column_registry`, the capsule must include a local copy of the registry files used for resolution and a local profile artifact whose `column_registry` points at that copied registry.
 - Witness params should record that a column registry was active and include a deterministic registry content hash so downstream tools can audit which alias map affected the run.
 
@@ -777,7 +777,7 @@ rvl does **not** consume `equivalence.float_decimals`, `equivalence.trim_strings
 Resolution follows the same protocol as the `profile` tool's resolver:
 
 1. If the argument is a file path that exists on disk — read it directly.
-2. Otherwise — scan `~/.epistemic/profiles/*.yaml` for a frozen profile whose `profile_id` field equals the argument.
+2. Otherwise — scan `~/.cmdrvl/config/profile/profiles/*.yaml` for a frozen profile whose `profile_id` field equals the argument. On first default use, copy legacy `~/.epistemic/profiles` into that canonical directory and record migration/deprecation metadata under `~/.cmdrvl/`.
 
 Resolution failures are `E_PROFILE_NOT_FOUND` (see Refusal Codes below).
 
@@ -834,7 +834,7 @@ When a profile is used, add to the `params` object:
 | Code | Trigger | Next step |
 |------|---------|-----------|
 | `E_AMBIGUOUS_PROFILE` | Both `--profile` and `--profile-id` were provided | Provide exactly one profile selector |
-| `E_PROFILE_NOT_FOUND` | `--profile-id` could not be resolved from search path | Check `~/.epistemic/profiles/` or use `--profile <path>` |
+| `E_PROFILE_NOT_FOUND` | `--profile-id` could not be resolved from search path | Check `~/.cmdrvl/config/profile/profiles/` or use `--profile <path>` |
 | `E_KEY_CONFLICT` | Both `--key` and a profile with a non-empty `key` were provided | Remove `--key` (profile provides the key) or use a profile without a key |
 | `E_PROFILE_REGISTRY` | Active profile references a missing, unreadable, or malformed `column_registry` | Fix the profile's `column_registry` path or registry files |
 
