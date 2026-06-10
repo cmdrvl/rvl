@@ -93,6 +93,7 @@ fn run_case(case: &Case, iterations: u64, warmup: u64) -> f64 {
         describe: false,
         schema: false,
         version: false,
+        robot_triage: false,
         command: None,
     };
 

@@ -331,7 +331,9 @@ jobs:
           current_os = None
           for target, (os_block, arch_block) in targets.items():
               asset = f"rvl-{version}-{target}.tar.gz"
-              sha = sums.get(asset, "MISSING")
+              if asset not in sums:
+                  raise SystemExit(f"missing checksum for {asset} in SHA256SUMS")
+              sha = sums[asset]
               if os_block != current_os:
                   if current_os is not None:
                       blocks.append("  end")
@@ -342,6 +344,7 @@ jobs:
               blocks.append(f'      sha256 "{sha}"')
               blocks.append(f"    end")
           blocks.append("  end")
+          blocks_text = "".join(chr(10) + l for l in blocks).removeprefix(chr(10))
 
           formula = f'''# typed: false
           # frozen_string_literal: true
@@ -349,9 +352,8 @@ jobs:
           class Rvl < Formula
             desc "Reveal the smallest set of numeric changes that explain what actually changed"
             homepage "https://github.com/cmdrvl/rvl"
-            version "{bare}"
             license "MIT"
-          {"".join(chr(10) + l for l in blocks)}
+          {blocks_text}
 
             def install
               bin.install "rvl"

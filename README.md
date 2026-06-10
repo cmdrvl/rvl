@@ -398,7 +398,22 @@ fi
 - **Exit codes** — `0`/`1`/`2` map directly to pass/fail/error branching
 - **`--json`** — structured output an agent can parse without regex
 - **Refusals have next steps** — an agent can read `.refusal.code` and decide whether to retry with different flags or escalate
-- **`shape --describe`** — prints the tool's `operator.json` contract so an agent can discover invocation, flags, and exit codes without reading docs
+- **`rvl --robot-triage`** — one-call read-only health, capabilities, and recommended next command for headless agents
+- **`rvl capabilities --json`** — prints the machine-readable capability contract, side effects, exit codes, and agent surfaces
+- **`rvl robot-docs guide`** — prints paste-ready operating notes without reading input files or writing witness records
+- **`rvl --describe`** — prints the tool's `operator.json` contract so an agent can discover invocation, flags, and exit codes without reading docs
+
+### Agent discovery commands
+
+These commands are read-only. They do not parse CSVs, write witness ledgers, create capsules, or touch the network.
+
+```bash
+rvl --robot-triage
+rvl capabilities --json
+rvl robot-docs guide
+rvl doctor health --json
+rvl doctor --fix  # exits 2 with safe read-only alternatives
+```
 
 ### Capsule replay workflow (agent swarms)
 

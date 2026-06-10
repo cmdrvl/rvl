@@ -1,0 +1,4 @@
+{"surface":"rvl --robot-triage","kind":"mega_command","output":"rvl.doctor.v1 JSON","mutates":false,"validated_by":"audit/regression_tests/R-001__root_robot_triage_json.sh"}
+{"surface":"rvl capabilities --json","kind":"capability_contract","output":"rvl.doctor.capabilities.v1 JSON","mutates":false,"validated_by":"audit/regression_tests/R-002__root_capabilities_json.sh"}
+{"surface":"rvl robot-docs guide","kind":"agent_guide","output":"markdown","mutates":false,"validated_by":"audit/regression_tests/R-003__root_robot_docs_guide.sh"}
+{"surface":"rvl doctor --fix","kind":"safe_refusal","output":"stderr refusal","mutates":false,"validated_by":"audit/regression_tests/R-004__doctor_fix_safe_refusal.sh"}

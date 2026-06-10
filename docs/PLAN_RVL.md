@@ -43,6 +43,9 @@ It explains *why the numbers changed*.
 ## CLI (v0)
 ```bash
 rvl <old.csv> <new.csv> [--key <column>] [--threshold <float>] [--tolerance <float>] [--delimiter <delim>] [--json]
+rvl --robot-triage
+rvl capabilities --json
+rvl robot-docs guide
 ```
 
 If alignment or a deterministic verdict is impossible: **refuse loudly** with a single reason + the first actionable detail.
@@ -57,6 +60,7 @@ Flags (keep minimal)
   - note: the value is interpreted literally (no escape sequences); use `tab` / `0x09`, not `\t`
   - invalid values are treated as CLI argument errors (exit 2)
 - `--json`: machine output (stable schema; no human formatting)
+- `--robot-triage`: read-only one-call diagnostic report for headless agents; does not require CSV paths
 
 Exit codes (diff-like)
 - `0`: NO REAL CHANGE
@@ -66,6 +70,13 @@ Exit codes (diff-like)
 Streams
 - Human mode: REAL CHANGE / NO REAL CHANGE go to stdout; REFUSAL goes to stderr.
 - `--json` mode: emit exactly one JSON object on stdout for all domain outcomes (REAL CHANGE / NO REAL CHANGE / REFUSAL); stderr is reserved for process-level failures only (e.g., CLI parse errors, panics).
+
+Agent discovery surfaces
+- `rvl --robot-triage`: emits `rvl.doctor.v1` JSON with health, findings, capabilities, and a recommended next command.
+- `rvl capabilities --json`: emits `rvl.doctor.capabilities.v1` JSON with command contracts, side effects, exit codes, env vars, and data paths.
+- `rvl robot-docs guide`: emits paste-ready markdown operating notes for agents.
+- `rvl doctor --fix`: repair mode is intentionally unavailable; exit 2, stdout empty, stderr names the read-only alternatives above.
+- All discovery surfaces are read-only: they must not parse input CSVs, write witness ledgers, create capsules, create `.doctor/` artifacts, or use the network.
 
 ---
 

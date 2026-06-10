@@ -39,6 +39,12 @@ rvl has two output modes:
 
 Follow the exact headers, wording, and schema in `docs/PLAN_RVL.md` — no extra banners or ad-hoc text.
 
+### Agent Discovery Surfaces
+
+- Keep `rvl --robot-triage`, `rvl capabilities --json`, and `rvl robot-docs guide` read-only.
+- These surfaces must not parse CSVs, write witness ledgers, create capsules, touch the network, or change comparison behavior.
+- `rvl doctor --fix` is intentionally unavailable; it must exit 2, emit only stderr, and point agents to the read-only alternatives.
+
 ---
 
 ## CSV Parsing Notes

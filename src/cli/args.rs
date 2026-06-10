@@ -13,7 +13,7 @@ const DEFAULT_MAX_AUDIT_CHANGES: u64 = 10_000;
 #[command(
     name = "rvl",
     about = "Reveal the smallest set of numeric changes that explain what actually changed.",
-    override_usage = "rvl <old.csv> <new.csv> [OPTIONS]\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor <health|capabilities|robot-docs> [OPTIONS]",
+    override_usage = "rvl <old.csv> <new.csv> [OPTIONS]\n       rvl --robot-triage\n       rvl capabilities --json\n       rvl robot-docs guide\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor <health|capabilities|robot-docs> [OPTIONS]",
     subcommand_negates_reqs = true
 )]
 pub struct Args {
@@ -104,6 +104,10 @@ pub struct Args {
     #[arg(long)]
     pub version: bool,
 
+    /// Emit one-call machine triage for headless agents.
+    #[arg(long = "robot-triage")]
+    pub robot_triage: bool,
+
     #[command(subcommand)]
     pub command: Option<RvlCommand>,
 }
@@ -115,8 +119,28 @@ pub enum RvlCommand {
         #[command(subcommand)]
         action: WitnessAction,
     },
+    /// Print the machine-readable rvl capability contract.
+    Capabilities(TopLevelCapabilitiesArgs),
+    /// Print paste-ready operating notes for agents.
+    RobotDocs {
+        #[command(subcommand)]
+        action: Option<RobotDocsAction>,
+    },
     /// Inspect rvl's read-only diagnostic surface.
     Doctor(DoctorArgs),
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct TopLevelCapabilitiesArgs {
+    /// Emit JSON output.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+pub enum RobotDocsAction {
+    /// Print the agent operating guide.
+    Guide,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -124,6 +148,10 @@ pub struct DoctorArgs {
     /// Emit one-call machine triage for headless agents.
     #[arg(long = "robot-triage")]
     pub robot_triage: bool,
+
+    /// Refuse safely; repair mode is not available in this release.
+    #[arg(long, hide = true)]
+    pub fix: bool,
 
     #[command(subcommand)]
     pub action: Option<DoctorAction>,
@@ -243,6 +271,7 @@ impl Args {
             describe: false,
             schema: false,
             version: false,
+            robot_triage: false,
             command: None,
         }
     }

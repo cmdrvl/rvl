@@ -124,6 +124,7 @@ fn run_with_capsule(
         explicit: false,
         schema: false,
         version: false,
+        robot_triage: false,
         command: None,
     };
 
@@ -196,6 +197,7 @@ fn replay_from_manifest(manifest: &Value, capsule_dir: &Path) -> Value {
         explicit: false,
         schema: false,
         version: false,
+        robot_triage: false,
         command: None,
     };
 

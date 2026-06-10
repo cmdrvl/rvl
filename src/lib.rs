@@ -48,13 +48,17 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
         return handle_display_mode(DisplayMode::Schema);
     }
 
+    if args.robot_triage {
+        return doctor::emit_robot_triage();
+    }
+
     if let Some(ref cmd) = args.command {
-        return run_command(cmd);
+        return run_command(cmd, args.json);
     }
 
     if args.old.is_none() || args.new.is_none() {
         eprintln!(
-            "error: the following required arguments were not provided:\n  <OLD_CSV>\n  <NEW_CSV>\n\nUsage: rvl <OLD_CSV> <NEW_CSV> [OPTIONS]\n       rvl witness <query|last|count> [OPTIONS]\n\nFor more information, try '--help'."
+            "error: the following required arguments were not provided:\n  <OLD_CSV>\n  <NEW_CSV>\n\nUsage: rvl <OLD_CSV> <NEW_CSV> [OPTIONS]\n       rvl --robot-triage\n       rvl capabilities --json\n       rvl robot-docs guide\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor <health|capabilities|robot-docs> [OPTIONS]\n\nFor more information, try '--help'."
         );
         return Ok(2);
     }
@@ -62,10 +66,17 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     run_comparison(args)
 }
 
-fn run_command(cmd: &cli::args::RvlCommand) -> Result<u8, Box<dyn std::error::Error>> {
+fn run_command(
+    cmd: &cli::args::RvlCommand,
+    json_output: bool,
+) -> Result<u8, Box<dyn std::error::Error>> {
     match cmd {
         cli::args::RvlCommand::Witness { action } => run_witness(action),
-        cli::args::RvlCommand::Doctor(args) => doctor::run(args),
+        cli::args::RvlCommand::Capabilities(args) => {
+            doctor::emit_capabilities(args.json || json_output)
+        }
+        cli::args::RvlCommand::RobotDocs { action } => doctor::emit_robot_docs(action.as_ref()),
+        cli::args::RvlCommand::Doctor(args) => doctor::run(args, json_output),
     }
 }
 

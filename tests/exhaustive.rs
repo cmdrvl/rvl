@@ -68,6 +68,7 @@ fn make_args(old: &Path, new: &Path) -> Args {
         explicit: false,
         schema: false,
         version: false,
+        robot_triage: false,
         command: None,
     }
 }

@@ -1,21 +1,29 @@
 use std::path::Path;
 
 use serde::Serialize;
+use serde_json::json;
 
-use crate::cli::args::{DoctorAction, DoctorArgs};
+use crate::cli::args::{DoctorAction, DoctorArgs, RobotDocsAction};
 
 const DOCTOR_SCHEMA_VERSION: &str = "rvl.doctor.v1";
 const DOCTOR_CONTRACT_VERSION: &str = "cmdrvl.read_only_doctor.v1";
 
-pub fn run(args: &DoctorArgs) -> Result<u8, Box<dyn std::error::Error>> {
+pub fn run(args: &DoctorArgs, json_output: bool) -> Result<u8, Box<dyn std::error::Error>> {
+    if args.fix {
+        return fix_unavailable();
+    }
+
     if args.robot_triage {
-        return robot_triage();
+        return emit_robot_triage();
     }
 
     match &args.action {
-        Some(DoctorAction::Health(health_args)) => health(health_args.json),
-        Some(DoctorAction::Capabilities(capabilities_args)) => capabilities(capabilities_args.json),
-        Some(DoctorAction::RobotDocs) => robot_docs(),
+        Some(DoctorAction::Health(health_args)) => health(health_args.json || json_output),
+        Some(DoctorAction::Capabilities(capabilities_args)) => {
+            emit_capabilities(capabilities_args.json || json_output)
+        }
+        Some(DoctorAction::RobotDocs) => emit_robot_docs(None),
+        None if json_output => emit_robot_triage(),
         None => human_triage(),
     }
 }
@@ -50,37 +58,46 @@ fn human_triage() -> Result<u8, Box<dyn std::error::Error>> {
         }
     }
     println!();
-    println!("Next: rvl doctor capabilities --json");
+    println!("Next: rvl capabilities --json");
     Ok(report.exit_code)
 }
 
-fn capabilities(json: bool) -> Result<u8, Box<dyn std::error::Error>> {
+pub fn emit_capabilities(json: bool) -> Result<u8, Box<dyn std::error::Error>> {
     let payload = build_capabilities();
     if json {
         println!("{}", serde_json::to_string_pretty(&payload)?);
     } else {
-        println!("rvl doctor capabilities");
+        println!("rvl capabilities");
         println!("schema_version: {}", payload.schema_version);
         println!("contract_version: {}", payload.contract_version);
         println!("read_only: {}", payload.read_only);
-        println!("json: rvl doctor capabilities --json");
+        println!("json: rvl capabilities --json");
     }
     Ok(0)
 }
 
-fn robot_docs() -> Result<u8, Box<dyn std::error::Error>> {
-    println!("# rvl doctor robot-docs");
+pub fn emit_robot_docs(action: Option<&RobotDocsAction>) -> Result<u8, Box<dyn std::error::Error>> {
+    match action {
+        Some(RobotDocsAction::Guide) | None => {}
+    }
+
+    println!("# rvl robot-docs guide");
     println!();
     println!(
-        "rvl doctor is read-only in this release. It never repairs files, deletes files, runs network probes, or changes CSV comparison behavior."
+        "rvl's agent discovery surface is read-only. The discovery commands never repair files, delete files, run network probes, write witness ledgers, create capsules, or change CSV comparison behavior."
     );
     println!();
     println!("Commands:");
+    println!("- rvl --robot-triage");
+    println!("- rvl capabilities --json");
+    println!("- rvl robot-docs guide");
+    println!("- rvl --json <old.csv> <new.csv>");
     println!("- rvl doctor health");
     println!("- rvl doctor health --json");
     println!("- rvl doctor capabilities --json");
     println!("- rvl doctor robot-docs");
     println!("- rvl doctor --robot-triage");
+    println!("- rvl doctor --fix");
     println!();
     println!("Exit codes:");
     println!("- 0: healthy");
@@ -88,15 +105,30 @@ fn robot_docs() -> Result<u8, Box<dyn std::error::Error>> {
     println!("- 2: command-line usage error from clap");
     println!();
     println!(
-        "Repair policy: no doctor --fix surface exists yet. File follow-up work with detector, backup, inverse, fixture, and undo coverage before adding one."
+        "Repair policy: rvl doctor --fix is unavailable and exits 2 without stdout. Use rvl --robot-triage or rvl capabilities --json for read-only diagnostics."
     );
     Ok(0)
 }
 
-fn robot_triage() -> Result<u8, Box<dyn std::error::Error>> {
+pub fn emit_robot_triage() -> Result<u8, Box<dyn std::error::Error>> {
     let report = build_report();
     println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(report.exit_code)
+}
+
+fn fix_unavailable() -> Result<u8, Box<dyn std::error::Error>> {
+    use std::io::Write;
+
+    let mut stderr = std::io::stderr();
+    writeln!(
+        stderr,
+        "rvl doctor --fix is unavailable: diagnostics are read-only in this release."
+    )?;
+    writeln!(stderr, "Try --robot-triage: rvl --robot-triage")?;
+    writeln!(stderr, "Try capabilities --json: rvl capabilities --json")?;
+    writeln!(stderr, "Try robot-docs guide: rvl robot-docs guide")?;
+    stderr.flush()?;
+    Ok(2)
 }
 
 fn build_report() -> DoctorReport {
@@ -128,7 +160,7 @@ fn build_report() -> DoctorReport {
             next_step: match check.id {
                 "source-gitignore-doctor" => "add .doctor/ to .gitignore",
                 "operator-manifest" => "rebuild rvl with a valid operator.json",
-                _ => "inspect rvl doctor capabilities --json",
+                _ => "inspect rvl capabilities --json",
             },
         })
         .collect();
@@ -160,11 +192,11 @@ fn build_report() -> DoctorReport {
         checks,
         actions_planned: Vec::new(),
         recommended_command: if status == "healthy" {
-            "rvl doctor health"
+            "rvl capabilities --json"
         } else {
-            "rvl doctor --robot-triage"
+            "rvl --robot-triage"
         },
-        capabilities_url: "command:rvl doctor capabilities --json",
+        capabilities_url: "command:rvl capabilities --json",
         capabilities,
         exit_code,
     }
@@ -220,7 +252,121 @@ fn build_capabilities() -> DoctorCapabilities {
         contract_version: DOCTOR_CONTRACT_VERSION,
         read_only: true,
         online_default: false,
+        fix_mode: FixModeCapability {
+            available: false,
+            command: "rvl doctor --fix",
+            behavior: "exits 2, emits only stderr, and names read-only alternatives",
+        },
+        agent_surfaces: json!({
+            "global_json": {
+                "command": "rvl --json <old.csv> <new.csv>",
+                "output": "rvl.v0 JSON compare report",
+                "stdout": "single JSON object",
+                "stderr": "process-level failures only"
+            },
+            "robot_triage": {
+                "command": "rvl --robot-triage",
+                "output": "rvl.doctor.v1 JSON diagnostic report",
+                "mutates": false
+            },
+            "capabilities": {
+                "command": "rvl capabilities --json",
+                "output": "rvl.doctor.capabilities.v1 JSON capability contract",
+                "mutates": false
+            },
+            "robot_docs": {
+                "command": "rvl robot-docs guide",
+                "output": "agent-oriented markdown guide",
+                "mutates": false
+            },
+            "doctor_namespace": {
+                "commands": [
+                    "rvl doctor health",
+                    "rvl doctor health --json",
+                    "rvl doctor capabilities --json",
+                    "rvl doctor robot-docs",
+                    "rvl doctor --robot-triage",
+                    "rvl doctor --fix"
+                ],
+                "status": "available"
+            }
+        }),
+        rvl_capabilities: json!({
+            "formats": ["csv"],
+            "profile_aware": true,
+            "numeric_explanation": true,
+            "exhaustive_numeric_audit": true,
+            "profile_scoped_field_audit": true,
+            "schema_describe": true,
+            "operator_describe": true,
+            "witness_query": true,
+            "repro_capsules": true,
+            "streaming": false
+        }),
+        side_effects: json!({
+            "rvl --robot-triage": {
+                "reads_stdin": false,
+                "reads_input_files": false,
+                "parses_csv": false,
+                "writes_witness_ledger": false,
+                "writes_capsules": false,
+                "writes_doctor_artifacts": false,
+                "changes_cwd": false,
+                "uses_network": false
+            },
+            "rvl capabilities --json": {
+                "reads_stdin": false,
+                "reads_input_files": false,
+                "parses_csv": false,
+                "writes_witness_ledger": false,
+                "writes_capsules": false,
+                "writes_doctor_artifacts": false,
+                "changes_cwd": false,
+                "uses_network": false
+            },
+            "rvl robot-docs guide": {
+                "reads_stdin": false,
+                "reads_input_files": false,
+                "parses_csv": false,
+                "writes_witness_ledger": false,
+                "writes_capsules": false,
+                "writes_doctor_artifacts": false,
+                "changes_cwd": false,
+                "uses_network": false
+            },
+            "rvl doctor --fix": {
+                "reads_stdin": false,
+                "reads_input_files": false,
+                "parses_csv": false,
+                "writes_witness_ledger": false,
+                "writes_capsules": false,
+                "writes_doctor_artifacts": false,
+                "changes_cwd": false,
+                "uses_network": false,
+                "available": false
+            }
+        }),
         commands: vec![
+            CommandCapability {
+                command: "rvl --robot-triage",
+                output: "json",
+                mutates: false,
+            },
+            CommandCapability {
+                command: "rvl capabilities --json",
+                output: "json",
+                mutates: false,
+            },
+            CommandCapability {
+                command: "rvl robot-docs guide",
+                output: "markdown",
+                mutates: false,
+            },
+            CommandCapability {
+                command: "rvl --json <old.csv> <new.csv>",
+                output: "rvl.v0 json",
+                mutates: true,
+            },
             CommandCapability {
                 command: "rvl doctor health",
                 output: "one-line text",
@@ -244,6 +390,11 @@ fn build_capabilities() -> DoctorCapabilities {
             CommandCapability {
                 command: "rvl doctor --robot-triage",
                 output: "json",
+                mutates: false,
+            },
+            CommandCapability {
+                command: "rvl doctor --fix",
+                output: "stderr refusal",
                 mutates: false,
             },
         ],
@@ -365,12 +516,23 @@ struct DoctorCapabilities {
     contract_version: &'static str,
     read_only: bool,
     online_default: bool,
+    fix_mode: FixModeCapability,
+    agent_surfaces: serde_json::Value,
+    rvl_capabilities: serde_json::Value,
+    side_effects: serde_json::Value,
     commands: Vec<CommandCapability>,
     detectors: Vec<DetectorCapability>,
     fixers: Vec<String>,
     exit_codes: Vec<ExitCodeCapability>,
     env_vars: Vec<EnvVarCapability>,
     data_paths: Vec<DataPathCapability>,
+}
+
+#[derive(Debug, Serialize)]
+struct FixModeCapability {
+    available: bool,
+    command: &'static str,
+    behavior: &'static str,
 }
 
 #[derive(Debug, Serialize)]

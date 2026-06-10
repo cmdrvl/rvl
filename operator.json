@@ -1,7 +1,7 @@
 {
   "schema_version": "operator.v0",
   "name": "rvl",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Numeric change explainer — finds the smallest set of cell-level changes that account for the difference between two CSV files",
   "repository": "https://github.com/cmdrvl/rvl",
   "license": "MIT",
@@ -11,6 +11,9 @@
     "binary": "rvl",
     "usage": [
       "rvl <old.csv> <new.csv> [OPTIONS]",
+      "rvl --robot-triage",
+      "rvl capabilities --json",
+      "rvl robot-docs guide",
       "rvl witness <query|last|count> [OPTIONS]",
       "rvl doctor <health|capabilities|robot-docs> [OPTIONS]",
       "rvl doctor --robot-triage"
@@ -21,8 +24,8 @@
   },
 
   "arguments": [
-    { "name": "old", "type": "file_path", "required": true, "position": 0, "description": "Old CSV file" },
-    { "name": "new", "type": "file_path", "required": true, "position": 1, "description": "New CSV file" }
+    { "name": "old", "type": "file_path", "required": true, "position": 0, "description": "Old CSV file (required for compare mode)" },
+    { "name": "new", "type": "file_path", "required": true, "position": 1, "description": "New CSV file (required for compare mode)" }
   ],
 
   "options": [
@@ -41,10 +44,37 @@
     { "name": "explicit", "flag": "--explicit", "type": "flag", "description": "Show raw data values in output (default: redacted for zero-retention safety)" },
     { "name": "describe", "flag": "--describe", "type": "flag", "description": "Print compiled operator.json and exit 0 without positional args" },
     { "name": "schema", "flag": "--schema", "type": "flag", "description": "Print JSON Schema for rvl.v0 output format and exit 0" },
-    { "name": "version", "flag": "--version", "type": "flag", "description": "Print version and exit 0" }
+    { "name": "version", "flag": "--version", "type": "flag", "description": "Print version and exit 0" },
+    { "name": "robot_triage", "flag": "--robot-triage", "type": "flag", "description": "Emit one-call machine triage for headless agents without positional args" }
   ],
 
   "subcommands": [
+    {
+      "name": "capabilities",
+      "description": "Top-level machine-readable capability contract for headless agents",
+      "status": "available",
+      "usage": "rvl capabilities --json",
+      "current_runtime_behavior": {
+        "read_only": true,
+        "network": "not_used",
+        "success_exit_code": 0,
+        "writes_witness": false,
+        "writes_capsules": false
+      }
+    },
+    {
+      "name": "robot-docs",
+      "description": "Top-level paste-ready operating notes for agents",
+      "status": "available",
+      "usage": "rvl robot-docs guide",
+      "current_runtime_behavior": {
+        "read_only": true,
+        "network": "not_used",
+        "success_exit_code": 0,
+        "writes_witness": false,
+        "writes_capsules": false
+      }
+    },
     {
       "name": "witness",
       "description": "Witness ledger query commands",
@@ -98,6 +128,10 @@
         {
           "name": "robot-triage",
           "usage": "rvl doctor --robot-triage"
+        },
+        {
+          "name": "fix",
+          "usage": "rvl doctor --fix"
         }
       ],
       "current_runtime_behavior": {
@@ -106,7 +140,9 @@
         "network": "not_used",
         "success_exit_code": 0,
         "findings_exit_code": 1,
-        "usage_error_exit_code": 2
+        "usage_error_exit_code": 2,
+        "writes_witness": false,
+        "writes_capsules": false
       }
     }
   ],
@@ -150,6 +186,13 @@
       "ambient_recording": "enabled_by_default",
       "query_subcommands": "available",
       "no_witness_flag": "suppresses_recording"
+    },
+    "agent_surfaces": {
+      "global_json": "rvl --json <old.csv> <new.csv>",
+      "robot_triage": "rvl --robot-triage",
+      "capabilities": "rvl capabilities --json",
+      "robot_docs": "rvl robot-docs guide",
+      "doctor_fix": "rvl doctor --fix"
     }
   },
 
