@@ -75,6 +75,15 @@ fn top_level_capabilities_json_declares_agent_surfaces() {
         value["side_effects"]["rvl capabilities --json"]["uses_network"],
         false
     );
+    assert_eq!(value["composition"]["role"], "numeric_change_explainer");
+    assert_eq!(
+        value["composition"]["canonical_chains"][0]["upstream_tools"][0],
+        "shape"
+    );
+    assert_eq!(
+        value["composition"]["canonical_chains"][0]["commands"][3],
+        "assess shape.json rvl.json <other-artifacts> --policy <policy.yaml> --json > decision.json"
+    );
 }
 
 #[test]
@@ -87,6 +96,12 @@ fn top_level_robot_docs_guide_names_agent_surface() {
     assert!(stdout.contains("rvl --robot-triage"));
     assert!(stdout.contains("rvl capabilities --json"));
     assert!(stdout.contains("rvl robot-docs guide"));
+    assert!(
+        stdout.contains(
+            "Pair `rvl <old.csv> <new.csv> --key <column> --json` with a preceding `shape`"
+        )
+    );
+    assert!(stdout.contains("Treat shape REFUSAL or INCOMPATIBLE as a stop condition"));
     assert!(stdout.contains("rvl doctor --fix is unavailable"));
 }
 
@@ -205,6 +220,9 @@ fn doctor_robot_docs_names_agent_surface() {
     assert!(stdout.contains("rvl doctor health"));
     assert!(stdout.contains("rvl doctor health --json"));
     assert!(stdout.contains("rvl doctor capabilities --json"));
+    assert!(
+        stdout.contains("Feed rvl reports with shape/verify/benchmark artifacts into `assess`")
+    );
     assert!(stdout.contains("rvl doctor --fix is unavailable"));
 }
 

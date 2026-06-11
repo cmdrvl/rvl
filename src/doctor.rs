@@ -104,6 +104,17 @@ pub fn emit_robot_docs(action: Option<&RobotDocsAction>) -> Result<u8, Box<dyn s
     println!("- 1: findings present");
     println!("- 2: command-line usage error from clap");
     println!();
+    println!("Composition:");
+    println!(
+        "- Pair `rvl <old.csv> <new.csv> --key <column> --json` with a preceding `shape` compatibility report."
+    );
+    println!(
+        "- Treat shape REFUSAL or INCOMPATIBLE as a stop condition before numeric explanation."
+    );
+    println!(
+        "- Feed rvl reports with shape/verify/benchmark artifacts into `assess`, or seal them with `pack`."
+    );
+    println!();
     println!(
         "Repair policy: rvl doctor --fix is unavailable and exits 2 without stdout. Use rvl --robot-triage or rvl capabilities --json for read-only diagnostics."
     );
@@ -302,6 +313,51 @@ fn build_capabilities() -> DoctorCapabilities {
             "witness_query": true,
             "repro_capsules": true,
             "streaming": false
+        }),
+        composition: json!({
+            "family": {
+                "name": "cmdrvl-spine",
+                "siblings": ["shape", "verify", "benchmark", "assess", "pack"],
+                "capabilities": {
+                    "shape": "shape capabilities --json",
+                    "rvl": "rvl capabilities --json",
+                    "assess": "assess capabilities --json",
+                    "pack": "pack capabilities --json"
+                }
+            },
+            "role": "numeric_change_explainer",
+            "position": "after_shape_before_assess",
+            "accepts": [
+                {
+                    "kind": "csv_pair",
+                    "description": "The same CSV pair, key, and profile choices that passed a preceding shape gate."
+                }
+            ],
+            "produces": [
+                {
+                    "kind": "rvl_report",
+                    "schema": "rvl.v0",
+                    "command": "rvl <old.csv> <new.csv> --key <column> --json"
+                }
+            ],
+            "canonical_chains": [
+                {
+                    "name": "shape_then_rvl_then_assess",
+                    "commands": [
+                        "shape <old.csv> <new.csv> --key <column> --json > shape.json",
+                        "jq -e '.outcome == \"COMPATIBLE\"' shape.json >/dev/null",
+                        "rvl <old.csv> <new.csv> --key <column> --json > rvl.json",
+                        "assess shape.json rvl.json <other-artifacts> --policy <policy.yaml> --json > decision.json"
+                    ],
+                    "upstream_tools": ["shape"],
+                    "downstream_tools": ["assess", "pack"]
+                }
+            ],
+            "agent_rules": [
+                "Prefer shape before rvl when the task compares two tabular datasets.",
+                "Keep key, profile, delimiter, and tolerance assumptions explicit across shape and rvl.",
+                "Use rvl output as evidence for assess; rvl does not make policy decisions."
+            ]
         }),
         side_effects: json!({
             "rvl --robot-triage": {
@@ -519,6 +575,7 @@ struct DoctorCapabilities {
     fix_mode: FixModeCapability,
     agent_surfaces: serde_json::Value,
     rvl_capabilities: serde_json::Value,
+    composition: serde_json::Value,
     side_effects: serde_json::Value,
     commands: Vec<CommandCapability>,
     detectors: Vec<DetectorCapability>,
