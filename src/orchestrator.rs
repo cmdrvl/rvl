@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use crate::alignment::key_discovery::{KeyRow, discover_key_candidates};
 use crate::alignment::key_join::{
-    KeyAlignedRow, KeyJoinError, OwnedRecord, build_key_map, join_key_maps,
+    KeyAlignedRow, KeyJoinError, KeyValue, OwnedRecord, build_key_map, join_key_maps,
 };
 use crate::alignment::key_parse::parse_key_identifier;
 use crate::alignment::shuffle::detect_shuffle;
@@ -33,6 +33,7 @@ use crate::diff::order::{CellId, RowId, TieBreaker, sort_contributors};
 use crate::diff::tolerance::ToleranceTracker;
 use crate::format::ident_human::render_identifier_human;
 use crate::format::ident_json::encode_identifier_json;
+use crate::format::key::{encode_key_components_json, encode_key_label_json, render_key_human};
 use crate::normalize::headers::normalize_headers_with_aliases;
 use crate::numeric::columns::{
     ColumnIntersection, ColumnTypingError, Side as ColumnSide, detect_numeric_columns,
@@ -84,7 +85,7 @@ pub struct ProfileRunInfo {
 #[derive(Clone, Debug, Default)]
 struct ActiveProfile {
     include_scope: Option<HashSet<Vec<u8>>>,
-    key: Option<Vec<u8>>,
+    key: Option<Vec<Vec<u8>>>,
     key_labels: Vec<String>,
     header_aliases: Option<HashMap<Vec<u8>, Vec<u8>>>,
     info: ProfileRunInfo,
@@ -103,7 +104,7 @@ struct RefusalPayload {
 }
 
 struct RefusalContext<'a> {
-    key: Option<&'a [u8]>,
+    key: Option<&'a [Vec<u8>]>,
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
     alignment: JsonAlignment,
@@ -125,7 +126,7 @@ struct RunContext<'a> {
 struct RowRef {
     old_record: u64,
     new_record: u64,
-    key: Option<Vec<u8>>,
+    key: Option<KeyValue>,
 }
 
 impl RowRef {
@@ -198,7 +199,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     }
 
     let cli_key = match args.key.as_deref() {
-        Some(key) => Some(parse_key_identifier(key)?),
+        Some(key) => Some(vec![parse_key_identifier(key)?]),
         None => None,
     };
     if cli_key.is_some() && active_profile.key.is_some() {
@@ -219,7 +220,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
             &active_profile.info,
         ));
     }
-    let key_bytes = cli_key.or_else(|| active_profile.key.clone());
+    let key_columns = cli_key.or_else(|| active_profile.key.clone());
 
     let old = match parse_csv(
         args.old_path(),
@@ -233,7 +234,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
             return Ok(render_refusal(
                 *refusal,
                 args,
-                key_bytes.as_deref(),
+                key_columns.as_deref(),
                 None,
                 None,
                 &active_profile.info,
@@ -253,7 +254,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
             return Ok(render_refusal(
                 *refusal,
                 args,
-                key_bytes.as_deref(),
+                key_columns.as_deref(),
                 Some(dialect_receipt(&old)),
                 None,
                 &active_profile.info,
@@ -271,8 +272,8 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         active_profile: &active_profile,
     };
 
-    if let Some(key) = key_bytes.as_deref() {
-        run_key_mode(key, old, new, context)
+    if let Some(keys) = key_columns.as_deref() {
+        run_key_mode(keys, old, new, context)
     } else {
         run_row_order(old, new, context)
     }
@@ -356,7 +357,7 @@ fn map_profile_resolve_error(
 
 fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
     let include_scope = Some(profile.include_set());
-    let key = profile.primary_key().map(|key| key.to_vec());
+    let key = (!profile.key_columns.is_empty()).then(|| profile.key_columns.clone());
     let key_labels = profile.key_labels.clone();
     let header_aliases = profile
         .column_registry
@@ -386,7 +387,7 @@ fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
 }
 
 fn run_key_mode(
-    key: &[u8],
+    key_columns: &[Vec<u8>],
     old: ParsedCsv,
     new: ParsedCsv,
     context: RunContext<'_>,
@@ -397,20 +398,20 @@ fn run_key_mode(
     let rerun_paths = context.rerun_paths;
     let active_profile = context.active_profile;
 
-    let old_key_index = match find_key_index(&old.headers, key) {
-        Some(index) => index,
-        None => {
+    let old_key_indices = match find_key_indices(&old.headers, key_columns) {
+        Ok(indices) => indices,
+        Err(missing_key) => {
             let refusal = RefusalPayload::with_default_next(
                 RefusalCode::NoKey,
                 RefusalKind::NoKey {
-                    key_column: key.to_vec(),
+                    key_column: missing_key.to_vec(),
                 },
                 rerun_paths,
             );
             return Ok(render_refusal(
                 refusal,
                 args,
-                Some(key),
+                Some(key_columns),
                 dialect_old,
                 dialect_new,
                 &active_profile.info,
@@ -418,20 +419,20 @@ fn run_key_mode(
         }
     };
 
-    let new_key_index = match find_key_index(&new.headers, key) {
-        Some(index) => index,
-        None => {
+    let new_key_indices = match find_key_indices(&new.headers, key_columns) {
+        Ok(indices) => indices,
+        Err(missing_key) => {
             let refusal = RefusalPayload::with_default_next(
                 RefusalCode::NoKey,
                 RefusalKind::NoKey {
-                    key_column: key.to_vec(),
+                    key_column: missing_key.to_vec(),
                 },
                 rerun_paths,
             );
             return Ok(render_refusal(
                 refusal,
                 args,
-                Some(key),
+                Some(key_columns),
                 dialect_old,
                 dialect_new,
                 &active_profile.info,
@@ -447,15 +448,15 @@ fn run_key_mode(
             .into_iter()
             .enumerate()
             .map(|(idx, record)| ((idx + 1) as u64, record)),
-        old_key_index,
+        &old_key_indices,
     ) {
         Ok(map) => map,
         Err(err) => {
-            let refusal = map_key_join_error(err, FileSide::Old, key, rerun_paths);
+            let refusal = map_key_join_error(err, FileSide::Old, key_columns, rerun_paths);
             return Ok(render_refusal(
                 refusal,
                 args,
-                Some(key),
+                Some(key_columns),
                 dialect_old,
                 dialect_new,
                 &active_profile.info,
@@ -468,15 +469,15 @@ fn run_key_mode(
             .into_iter()
             .enumerate()
             .map(|(idx, record)| ((idx + 1) as u64, record)),
-        new_key_index,
+        &new_key_indices,
     ) {
         Ok(map) => map,
         Err(err) => {
-            let refusal = map_key_join_error(err, FileSide::New, key, rerun_paths);
+            let refusal = map_key_join_error(err, FileSide::New, key_columns, rerun_paths);
             return Ok(render_refusal(
                 refusal,
                 args,
-                Some(key),
+                Some(key_columns),
                 dialect_old,
                 dialect_new,
                 &active_profile.info,
@@ -487,11 +488,11 @@ fn run_key_mode(
     let aligned = match join_key_maps(old_map, new_map) {
         Ok(rows) => rows,
         Err(err) => {
-            let refusal = map_key_join_error(err, FileSide::New, key, rerun_paths);
+            let refusal = map_key_join_error(err, FileSide::New, key_columns, rerun_paths);
             return Ok(render_refusal(
                 refusal,
                 args,
-                Some(key),
+                Some(key_columns),
                 dialect_old,
                 dialect_new,
                 &active_profile.info,
@@ -501,7 +502,7 @@ fn run_key_mode(
 
     run_diff(
         AlignmentContext::Key {
-            key: key.to_vec(),
+            key_columns: key_columns.to_vec(),
             rows_old,
             rows_new,
             key_rows: aligned,
@@ -545,7 +546,7 @@ fn run_row_order(
             rerun_paths,
         );
         let intersection = scope_intersection(
-            intersect_headers(&old.headers, &new.headers, None),
+            intersect_headers(&old.headers, &new.headers, &[]),
             active_profile.include_scope.as_ref(),
         );
         let counts = Counts {
@@ -554,12 +555,12 @@ fn run_row_order(
             rows_aligned: None,
             columns_old: Some(count_columns(
                 &old.headers,
-                None,
+                &[],
                 active_profile.include_scope.as_ref(),
             )),
             columns_new: Some(count_columns(
                 &new.headers,
-                None,
+                &[],
                 active_profile.include_scope.as_ref(),
             )),
             columns_common: Some(intersection.common.len() as u64),
@@ -592,7 +593,7 @@ fn run_row_order(
 
 enum AlignmentContext {
     Key {
-        key: Vec<u8>,
+        key_columns: Vec<Vec<u8>>,
         rows_old: u64,
         rows_new: u64,
         key_rows: Vec<KeyAlignedRow>,
@@ -615,13 +616,14 @@ fn run_diff(
     let rerun_paths = context.rerun_paths;
     let active_profile = context.active_profile;
 
-    let key_bytes = match &alignment {
-        AlignmentContext::Key { key, .. } => Some(key.as_slice()),
+    let alignment_key_columns = match &alignment {
+        AlignmentContext::Key { key_columns, .. } => Some(key_columns.as_slice()),
         AlignmentContext::RowOrder { .. } => None,
     };
+    let excluded_key_columns = alignment_key_columns.unwrap_or(&[]);
 
     let intersection = scope_intersection(
-        intersect_headers(&old_headers, &new_headers, key_bytes),
+        intersect_headers(&old_headers, &new_headers, excluded_key_columns),
         active_profile.include_scope.as_ref(),
     );
 
@@ -659,7 +661,7 @@ fn run_diff(
                     return Ok(render_refusal(
                         refusal,
                         args,
-                        key_bytes,
+                        alignment_key_columns,
                         dialect_old,
                         dialect_new,
                         &active_profile.info,
@@ -689,7 +691,7 @@ fn run_diff(
                     return Ok(render_refusal(
                         refusal,
                         args,
-                        key_bytes,
+                        alignment_key_columns,
                         dialect_old,
                         dialect_new,
                         &active_profile.info,
@@ -712,7 +714,7 @@ fn run_diff(
             rerun_paths,
         );
         let alignment_mode = match &alignment {
-            AlignmentContext::Key { key, .. } => JsonAlignment::key(encode_identifier_json(key)),
+            AlignmentContext::Key { key_columns, .. } => JsonAlignment::key(key_columns),
             AlignmentContext::RowOrder { .. } => JsonAlignment::row_order(),
         };
         let counts = Counts {
@@ -721,12 +723,12 @@ fn run_diff(
             rows_aligned: Some(rows_aligned),
             columns_old: Some(count_columns(
                 &old_headers,
-                key_bytes,
+                excluded_key_columns,
                 active_profile.include_scope.as_ref(),
             )),
             columns_new: Some(count_columns(
                 &new_headers,
-                key_bytes,
+                excluded_key_columns,
                 active_profile.include_scope.as_ref(),
             )),
             columns_common: Some(intersection.common.len() as u64),
@@ -737,7 +739,7 @@ fn run_diff(
             numeric_cells_changed: Some(0),
         };
         let context = RefusalContext {
-            key: key_bytes,
+            key: alignment_key_columns,
             dialect_old,
             dialect_new,
             alignment: alignment_mode,
@@ -873,7 +875,7 @@ fn run_diff(
     };
 
     let alignment_mode = match &alignment {
-        AlignmentContext::Key { key, .. } => JsonAlignment::key(encode_identifier_json(key)),
+        AlignmentContext::Key { key_columns, .. } => JsonAlignment::key(key_columns),
         AlignmentContext::RowOrder { .. } => JsonAlignment::row_order(),
     };
 
@@ -883,12 +885,12 @@ fn run_diff(
         rows_aligned: Some(rows_aligned),
         columns_old: Some(count_columns(
             &old_headers,
-            key_bytes,
+            excluded_key_columns,
             active_profile.include_scope.as_ref(),
         )),
         columns_new: Some(count_columns(
             &new_headers,
-            key_bytes,
+            excluded_key_columns,
             active_profile.include_scope.as_ref(),
         )),
         columns_common: Some(intersection.common.len() as u64),
@@ -922,7 +924,7 @@ fn run_diff(
             counts.numeric_cells_changed = None;
             metrics = Metrics::default();
             let context = RefusalContext {
-                key: key_bytes,
+                key: alignment_key_columns,
                 dialect_old,
                 dialect_new,
                 alignment: alignment_mode,
@@ -934,7 +936,7 @@ fn run_diff(
         }
     }
 
-    let alignment_label = key_bytes.map(render_identifier_human);
+    let alignment_label = alignment_key_columns.map(render_key_human);
 
     if args.exhaustive && audit_changes > args.max_audit_changes {
         let refusal = RefusalPayload::with_default_next(
@@ -948,7 +950,7 @@ fn run_diff(
         let mut counts = counts.clone();
         counts.numeric_cells_changed = None;
         let context = RefusalContext {
-            key: key_bytes,
+            key: alignment_key_columns,
             dialect_old,
             dialect_new,
             alignment: alignment_mode,
@@ -1019,7 +1021,7 @@ fn run_diff(
                 rerun_paths,
             );
             let context = RefusalContext {
-                key: key_bytes,
+                key: alignment_key_columns,
                 dialect_old,
                 dialect_new,
                 alignment: alignment_mode,
@@ -1281,26 +1283,46 @@ fn delimiter_hint(delimiter: u8) -> DelimiterHint {
     }
 }
 
-fn find_key_index(headers: &[Vec<u8>], key: &[u8]) -> Option<usize> {
-    headers.iter().position(|name| name.as_slice() == key)
+fn find_key_indices<'a>(
+    headers: &[Vec<u8>],
+    key_columns: &'a [Vec<u8>],
+) -> Result<Vec<usize>, &'a [u8]> {
+    key_columns
+        .iter()
+        .map(|key| {
+            headers
+                .iter()
+                .position(|name| name.as_slice() == key.as_slice())
+                .ok_or(key.as_slice())
+        })
+        .collect()
 }
 
 fn map_key_join_error(
     err: KeyJoinError,
     file: FileSide,
-    key: &[u8],
+    key_columns: &[Vec<u8>],
     paths: RerunPaths<'_>,
 ) -> RefusalPayload {
     match err {
-        KeyJoinError::EmptyKey { record_number } => RefusalPayload::with_default_next(
-            RefusalCode::KeyEmpty,
-            RefusalKind::KeyEmpty {
-                file,
-                record: record_number,
-                key_column: key.to_vec(),
-            },
-            paths,
-        ),
+        KeyJoinError::EmptyKey {
+            record_number,
+            component_index,
+        } => {
+            let key_column = key_columns
+                .get(component_index)
+                .cloned()
+                .unwrap_or_default();
+            RefusalPayload::with_default_next(
+                RefusalCode::KeyEmpty,
+                RefusalKind::KeyEmpty {
+                    file,
+                    record: record_number,
+                    key_column,
+                },
+                paths,
+            )
+        }
         KeyJoinError::DuplicateKey {
             key: key_value,
             second_record,
@@ -1388,13 +1410,13 @@ fn map_column_error(err: ColumnTypingError<RowRef>, paths: RerunPaths<'_>) -> Re
 fn render_refusal(
     refusal: RefusalPayload,
     args: &Args,
-    key: Option<&[u8]>,
+    key: Option<&[Vec<u8>]>,
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
     profile: &ProfileRunInfo,
 ) -> PipelineResult {
     let alignment_mode = match key {
-        Some(key) => JsonAlignment::key(encode_identifier_json(key)),
+        Some(key) => JsonAlignment::key(key),
         None => JsonAlignment::row_order(),
     };
 
@@ -1443,7 +1465,7 @@ fn render_refusal_with_context(
         let mut lines = Vec::new();
         lines.push(format!("RVL ERROR ({})", refusal.code));
         lines.push(String::new());
-        let alignment_label = context.key.map(render_identifier_human);
+        let alignment_label = context.key.map(render_key_human);
         let header = RefusalHeader {
             old_name: &old_display,
             new_name: &new_display,
@@ -1808,8 +1830,10 @@ fn build_json_contributors(
             0.0
         };
         cumulative += share;
-        contributors.push(crate::output::json::Contributor::from_bytes(
-            &row_id_bytes(&detail.id.row_id),
+        let (row_id, row_key) = encode_row_id_json(&detail.id.row_id);
+        contributors.push(crate::output::json::Contributor::new(
+            row_id,
+            row_key,
             &detail.id.column,
             detail.old,
             detail.new,
@@ -1827,8 +1851,10 @@ fn build_json_field_changes(details: &[FieldChangeDetail], explicit: bool) -> Ve
     details
         .iter()
         .map(|detail| {
-            JsonFieldChange::from_bytes(
-                &row_id_bytes(&detail.id.row_id),
+            let (row_id, row_key) = encode_row_id_json(&detail.id.row_id);
+            JsonFieldChange::new(
+                row_id,
+                row_key,
                 &detail.id.column,
                 &detail.old,
                 &detail.new,
@@ -1862,8 +1888,10 @@ fn build_capsule_contributor_summary(
             } else {
                 0.0
             };
+            let (row_id, row_key) = encode_row_id_json(&detail.id.row_id);
             CapsuleContributor {
-                row_id: encode_identifier_json(&row_id_bytes(&detail.id.row_id)),
+                row_id,
+                row_key,
                 column: encode_identifier_json(&detail.id.column),
                 delta: detail.delta,
                 contribution: detail.contribution,
@@ -1879,17 +1907,20 @@ fn build_capsule_contributor_summary(
     }
 }
 
-fn row_id_bytes(row_id: &RowId) -> Vec<u8> {
+fn encode_row_id_json(row_id: &RowId) -> (String, Option<Vec<String>>) {
     match row_id {
-        RowId::RowIndex(index) => index.to_string().into_bytes(),
-        RowId::Key(bytes) => bytes.clone(),
+        RowId::RowIndex(index) => (encode_identifier_json(index.to_string().as_bytes()), None),
+        RowId::Key(components) => (
+            encode_key_label_json(components),
+            Some(encode_key_components_json(components)),
+        ),
     }
 }
 
 fn render_cell_label(cell_id: &CellId) -> String {
     let row_label = match &cell_id.row_id {
         RowId::RowIndex(index) => index.to_string(),
-        RowId::Key(bytes) => render_identifier_human(bytes),
+        RowId::Key(components) => render_key_human(components),
     };
     let column = render_identifier_human(&cell_id.column);
     format!("{row_label}.{column}")
@@ -1928,7 +1959,7 @@ fn scope_intersection(
 
 fn count_columns(
     headers: &[Vec<u8>],
-    key: Option<&[u8]>,
+    key_columns: &[Vec<u8>],
     include_scope: Option<&HashSet<Vec<u8>>>,
 ) -> u64 {
     headers
@@ -1939,10 +1970,9 @@ fn count_columns(
             {
                 return false;
             }
-            if let Some(key) = key {
-                return name.as_slice() != key;
-            }
-            true
+            !key_columns
+                .iter()
+                .any(|key| name.as_slice() == key.as_slice())
         })
         .count() as u64
 }
@@ -2255,7 +2285,8 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         } => json!({
             "file": file.as_str(),
             "record": record,
-            "key": encode_identifier_json(key_value),
+            "key": encode_key_label_json(key_value),
+            "key_values": encode_key_components_json(key_value),
         }),
         RefusalKind::KeyMismatch {
             missing_in_new,
@@ -2265,8 +2296,10 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         } => json!({
             "missing_in_new": missing_in_new,
             "extra_in_new": extra_in_new,
-            "missing_samples": missing_samples.iter().map(|k| encode_identifier_json(k)).collect::<Vec<_>>(),
-            "extra_samples": extra_samples.iter().map(|k| encode_identifier_json(k)).collect::<Vec<_>>(),
+            "missing_samples": missing_samples.iter().map(|key| encode_key_label_json(key)).collect::<Vec<_>>(),
+            "extra_samples": extra_samples.iter().map(|key| encode_key_label_json(key)).collect::<Vec<_>>(),
+            "missing_key_samples": missing_samples.iter().map(|key| encode_key_components_json(key)).collect::<Vec<_>>(),
+            "extra_key_samples": extra_samples.iter().map(|key| encode_key_components_json(key)).collect::<Vec<_>>(),
         }),
         RefusalKind::RowCount {
             rows_old,
@@ -2339,7 +2372,8 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
                 obj["record"] = json!(record);
             }
             if let Some(key) = key_value {
-                obj["key"] = json!(encode_identifier_json(key));
+                obj["key"] = json!(encode_key_label_json(key));
+                obj["key_values"] = json!(encode_key_components_json(key));
             }
             obj
         }
@@ -2360,7 +2394,8 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
                 obj["record"] = json!(record);
             }
             if let Some(key) = key_value {
-                obj["key"] = json!(encode_identifier_json(key));
+                obj["key"] = json!(encode_key_label_json(key));
+                obj["key_values"] = json!(encode_key_components_json(key));
             }
             obj
         }

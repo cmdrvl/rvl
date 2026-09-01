@@ -30,18 +30,24 @@ fn default_next_for_no_key_uses_encoded_identifier() {
 #[test]
 fn key_empty_is_detected() {
     let records = vec![(1, record(&[b"", b"1"]))];
-    let err = build_key_map(records, 0).expect_err("empty key");
-    assert_eq!(err, KeyJoinError::EmptyKey { record_number: 1 });
+    let err = build_key_map(records, &[0]).expect_err("empty key");
+    assert_eq!(
+        err,
+        KeyJoinError::EmptyKey {
+            record_number: 1,
+            component_index: 0,
+        }
+    );
 }
 
 #[test]
 fn key_duplicates_are_detected() {
     let records = vec![(1, record(&[b"A"])), (2, record(&[b"A"]))];
-    let err = build_key_map(records, 0).expect_err("duplicate key");
+    let err = build_key_map(records, &[0]).expect_err("duplicate key");
     assert_eq!(
         err,
         KeyJoinError::DuplicateKey {
-            key: b"A".to_vec(),
+            key: vec![b"A".to_vec()].into(),
             first_record: 1,
             second_record: 2,
         }
@@ -50,16 +56,18 @@ fn key_duplicates_are_detected() {
 
 #[test]
 fn key_set_mismatch_reports_samples() {
-    let old = build_key_map(vec![(1, record(&[b"A"])), (2, record(&[b"B"]))], 0).expect("old map");
-    let new = build_key_map(vec![(1, record(&[b"A"])), (2, record(&[b"C"]))], 0).expect("new map");
+    let old =
+        build_key_map(vec![(1, record(&[b"A"])), (2, record(&[b"B"]))], &[0]).expect("old map");
+    let new =
+        build_key_map(vec![(1, record(&[b"A"])), (2, record(&[b"C"]))], &[0]).expect("new map");
     let err = join_key_maps(old, new).expect_err("mismatch");
     assert_eq!(
         err,
         KeyJoinError::KeySetMismatch {
             missing_count: 1,
             extra_count: 1,
-            missing_samples: vec![b"B".to_vec()],
-            extra_samples: vec![b"C".to_vec()],
+            missing_samples: vec![vec![b"B".to_vec()].into()],
+            extra_samples: vec![vec![b"C".to_vec()].into()],
         }
     );
 }

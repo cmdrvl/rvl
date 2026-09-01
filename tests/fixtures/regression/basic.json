@@ -9,7 +9,8 @@
   },
   "alignment": {
     "mode": "row_order",
-    "key_column": null
+    "key_column": null,
+    "key_columns": []
   },
   "dialect": {
     "old": {

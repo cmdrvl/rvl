@@ -144,9 +144,13 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                         "type": "object",
                         "properties": {
                             "mode": { "type": "string", "enum": ["key", "row_order"] },
-                            "key_column": { "type": ["string", "null"] }
+                            "key_column": { "type": ["string", "null"] },
+                            "key_columns": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            }
                         },
-                        "required": ["mode"]
+                        "required": ["mode", "key_column", "key_columns"]
                     },
                     "dialect": {
                         "type": "object",
@@ -181,6 +185,11 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                             "type": "object",
                             "properties": {
                                 "row_id": { "type": "string" },
+                                "row_key": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": { "type": "string" }
+                                },
                                 "column": { "type": "string" },
                                 "old": { "type": "number" },
                                 "new": { "type": "number" },
@@ -189,7 +198,7 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                                 "share": { "type": "number" },
                                 "cumulative_share": { "type": "number" }
                             },
-                            "required": ["row_id", "column", "old", "new", "delta", "contribution", "share", "cumulative_share"]
+                            "required": ["row_id", "column", "share", "cumulative_share"]
                         }
                     },
                     "field_changes": {
@@ -198,6 +207,11 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                             "type": "object",
                             "properties": {
                                 "row_id": { "type": "string" },
+                                "row_key": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": { "type": "string" }
+                                },
                                 "column": { "type": "string" },
                                 "old": { "type": "string" },
                                 "new": { "type": "string" }

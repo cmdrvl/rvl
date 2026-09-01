@@ -45,10 +45,6 @@ impl ResolvedProfile {
     pub fn include_set(&self) -> HashSet<Vec<u8>> {
         self.include_columns.iter().cloned().collect()
     }
-
-    pub fn primary_key(&self) -> Option<&[u8]> {
-        self.key_columns.first().map(|value| value.as_slice())
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -601,7 +597,7 @@ key: [loan_id]
 
         let profile = load_profile_from_path(&path).expect("profile should load");
         assert_eq!(profile.include_columns.len(), 2);
-        assert_eq!(profile.primary_key(), Some(b"loan_id".as_slice()));
+        assert_eq!(profile.key_columns, vec![b"loan_id".to_vec()]);
         assert!(profile.profile_id.is_none());
         assert!(profile.profile_sha256.is_none());
 

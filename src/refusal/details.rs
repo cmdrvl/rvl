@@ -5,6 +5,7 @@
 //! raw bytes and should be rendered using the identifier formatters at output
 //! time.
 
+use crate::alignment::key_join::KeyValue;
 use crate::format::ident_json::encode_identifier_json;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,13 +77,13 @@ pub enum RefusalKind {
     KeyDup {
         file: FileSide,
         record: u64,
-        key_value: Vec<u8>,
+        key_value: KeyValue,
     },
     KeyMismatch {
         missing_in_new: usize,
         extra_in_new: usize,
-        missing_samples: Vec<Vec<u8>>,
-        extra_samples: Vec<Vec<u8>>,
+        missing_samples: Vec<KeyValue>,
+        extra_samples: Vec<KeyValue>,
     },
     RowCount {
         rows_old: u64,
@@ -119,7 +120,7 @@ pub enum RefusalKind {
         record: Option<u64>,
         column: Vec<u8>,
         value: Vec<u8>,
-        key_value: Option<Vec<u8>>,
+        key_value: Option<KeyValue>,
     },
     NoNumeric,
     Missingness {
@@ -127,7 +128,7 @@ pub enum RefusalKind {
         record: Option<u64>,
         column: Vec<u8>,
         value: Vec<u8>,
-        key_value: Option<Vec<u8>>,
+        key_value: Option<KeyValue>,
     },
     Diffuse {
         top_k_coverage: f64,

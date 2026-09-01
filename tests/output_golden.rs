@@ -192,7 +192,7 @@ fn golden_refusal_human_output() {
         RefusalKind::KeyDup {
             file: FileSide::Old,
             record: 184,
-            key_value: b"A123".to_vec(),
+            key_value: vec![b"A123".to_vec()].into(),
         },
         RerunPaths {
             old: "old.csv",
@@ -237,7 +237,7 @@ fn golden_json_real_change_output() {
             old: "old.csv".to_string(),
             new: "new.csv".to_string(),
         },
-        alignment: JsonAlignment::key("u8:id".to_string()),
+        alignment: JsonAlignment::key(&[b"id".to_vec()]),
         dialect: Dialect {
             old: Some(DialectSide::new(b',', b'"', None)),
             new: Some(DialectSide::new(b',', b'"', None)),
@@ -271,8 +271,17 @@ fn golden_json_real_change_output() {
         },
         field_changes: None,
     };
-    let contributors = vec![rvl::output::json::Contributor::from_bytes(
-        b"A", b"value", 1.0, 6.0, 5.0, 5.0, 1.0, 1.0, true,
+    let contributors = vec![rvl::output::json::Contributor::new(
+        "u8:A".to_string(),
+        Some(vec!["u8:A".to_string()]),
+        b"value",
+        1.0,
+        6.0,
+        5.0,
+        5.0,
+        1.0,
+        1.0,
+        true,
     )];
     let output = JsonOutput::real_change(ctx, contributors);
     let value = serde_json::to_value(output).expect("json");
@@ -283,7 +292,7 @@ fn golden_json_real_change_output() {
         "profile_id": null,
         "profile_sha256": null,
         "files": { "old": "old.csv", "new": "new.csv" },
-        "alignment": { "mode": "key", "key_column": "u8:id" },
+        "alignment": { "mode": "key", "key_column": "u8:id", "key_columns": ["u8:id"] },
         "dialect": {
             "old": { "delimiter": ",", "quote": "\"", "escape": null },
             "new": { "delimiter": ",", "quote": "\"", "escape": null }
@@ -307,6 +316,7 @@ fn golden_json_real_change_output() {
         "limits": { "max_contributors": 25 },
         "contributors": [{
             "row_id": "u8:A",
+            "row_key": ["u8:A"],
             "column": "u8:value",
             "old": 1.0,
             "new": 6.0,
@@ -373,7 +383,7 @@ fn golden_json_no_real_change_output() {
         "profile_id": null,
         "profile_sha256": null,
         "files": { "old": "old.csv", "new": "new.csv" },
-        "alignment": { "mode": "row_order", "key_column": null },
+        "alignment": { "mode": "row_order", "key_column": null, "key_columns": [] },
         "dialect": {
             "old": { "delimiter": ",", "quote": "\"", "escape": null },
             "new": { "delimiter": ",", "quote": "\"", "escape": null }
@@ -409,7 +419,7 @@ fn golden_json_refusal_output() {
             old: "old.csv".to_string(),
             new: "new.csv".to_string(),
         },
-        alignment: JsonAlignment::key("u8:id".to_string()),
+        alignment: JsonAlignment::key(&[b"id".to_vec()]),
         dialect: Dialect {
             old: Some(DialectSide::new(b',', b'"', None)),
             new: Some(DialectSide::new(b',', b'"', None)),
@@ -447,7 +457,7 @@ fn golden_json_refusal_output() {
         "profile_id": null,
         "profile_sha256": null,
         "files": { "old": "old.csv", "new": "new.csv" },
-        "alignment": { "mode": "key", "key_column": "u8:id" },
+        "alignment": { "mode": "key", "key_column": "u8:id", "key_columns": ["u8:id"] },
         "dialect": {
             "old": { "delimiter": ",", "quote": "\"", "escape": null },
             "new": { "delimiter": ",", "quote": "\"", "escape": null }

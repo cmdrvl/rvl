@@ -1,6 +1,8 @@
 // Human REFUSAL output formatting (bd-bk0)
 
+use crate::alignment::key_join::KeyValue;
 use crate::format::ident_human::render_identifier_human;
+use crate::format::key::render_key_human;
 use crate::format::numbers::{format_int_with_commas, format_percent_one_decimal};
 use crate::refusal::codes::RefusalCode;
 use crate::refusal::details::{EncodingIssue, FileSide, HeadersIssue, RefusalDetail, RefusalKind};
@@ -86,7 +88,7 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             key_value,
         } => {
             let file = file_label(*file, old_name, new_name);
-            let value = render_identifier_human(key_value);
+            let value = render_key_human(key_value);
             format!(
                 "Example: {file} data record {} duplicates key \"{value}\".",
                 format_count_u64(*record)
@@ -100,8 +102,8 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
         } => {
             let missing = format_count_u64(*missing_in_new as u64);
             let extra = format_count_u64(*extra_in_new as u64);
-            let missing_samples = render_samples(missing_samples);
-            let extra_samples = render_samples(extra_samples);
+            let missing_samples = render_key_samples(missing_samples);
+            let extra_samples = render_key_samples(extra_samples);
             let mut line = format!("Example: missing_in_new={missing} extra_in_new={extra}.");
             if !missing_samples.is_empty() {
                 line.push_str(&format!(" missing samples: [{missing_samples}]."));
@@ -188,7 +190,7 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             let column = render_identifier_human(column);
             let value = render_identifier_human(value);
             if let Some(key) = key_value {
-                let key = render_identifier_human(key);
+                let key = render_key_human(key);
                 format!(
                     "Example: key \"{key}\" column \"{column}\" has non-numeric value \"{value}\"."
                 )
@@ -217,7 +219,7 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             let column = render_identifier_human(column);
             let value = render_identifier_human(value);
             if let Some(key) = key_value {
-                let key = render_identifier_human(key);
+                let key = render_key_human(key);
                 format!(
                     "Example: key \"{key}\" column \"{column}\" has numeric value \"{value}\" while the other side is missing."
                 )
@@ -283,6 +285,14 @@ fn render_samples(samples: &[Vec<u8>]) -> String {
         .join(", ")
 }
 
+fn render_key_samples(samples: &[KeyValue]) -> String {
+    samples
+        .iter()
+        .map(|key| render_key_human(key))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 fn render_delimiters(delimiters: &[u8]) -> String {
     delimiters
         .iter()
@@ -316,7 +326,7 @@ mod tests {
             RefusalKind::KeyDup {
                 file: FileSide::Old,
                 record: 184,
-                key_value: b"A123".to_vec(),
+                key_value: vec![b"A123".to_vec()].into(),
             },
             RerunPaths {
                 old: "old.csv",

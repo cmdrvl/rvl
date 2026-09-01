@@ -68,7 +68,7 @@ fn real_change_columns_keep_key_then_ranked_contributors_then_context() {
     let selection = select_columns(
         ReproOutcome::RealChange,
         ColumnSelectionInput {
-            key_column: Some(&key),
+            key_columns: std::slice::from_ref(&key),
             numeric_columns: &numeric,
             contributor_columns: &contributors,
             refusal_columns: &[],
@@ -100,7 +100,7 @@ fn no_real_change_columns_apply_guardrail_limit() {
     let selection = select_columns(
         ReproOutcome::NoRealChange,
         ColumnSelectionInput {
-            key_column: None,
+            key_columns: &[],
             numeric_columns: &numeric,
             contributor_columns: &[],
             refusal_columns: &[],
@@ -169,7 +169,7 @@ fn no_real_change_columns_honor_hard_max_guardrail() {
     let selection = select_columns(
         ReproOutcome::NoRealChange,
         ColumnSelectionInput {
-            key_column: None,
+            key_columns: &[],
             numeric_columns: &numeric_columns,
             contributor_columns: &[],
             refusal_columns: &[],

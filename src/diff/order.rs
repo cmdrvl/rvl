@@ -1,12 +1,14 @@
 use std::cmp::Ordering;
 
+use crate::alignment::key_join::KeyValue;
+
 use super::heap::Contributor;
 
 /// Row identifier used for deterministic ordering.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RowId {
     RowIndex(usize),
-    Key(Vec<u8>),
+    Key(KeyValue),
 }
 
 impl RowId {
@@ -14,8 +16,8 @@ impl RowId {
         Self::RowIndex(index)
     }
 
-    pub fn key(bytes: Vec<u8>) -> Self {
-        Self::Key(bytes)
+    pub fn key(components: KeyValue) -> Self {
+        Self::Key(components)
     }
 }
 
@@ -23,7 +25,7 @@ impl Ord for RowId {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (RowId::RowIndex(left), RowId::RowIndex(right)) => left.cmp(right),
-            (RowId::Key(left), RowId::Key(right)) => left.cmp(right),
+            (RowId::Key(left), RowId::Key(right)) => left.as_ref().cmp(right.as_ref()),
             (RowId::RowIndex(_), RowId::Key(_)) => Ordering::Less,
             (RowId::Key(_), RowId::RowIndex(_)) => Ordering::Greater,
         }

@@ -57,6 +57,8 @@ pub(super) struct CapsuleContributorSummary {
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct CapsuleContributor {
     pub row_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub row_key: Option<Vec<String>>,
     pub column: String,
     pub delta: f64,
     pub contribution: f64,

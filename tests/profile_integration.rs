@@ -121,6 +121,150 @@ fn profile_key_derivation_and_column_scoping_apply() {
 }
 
 #[test]
+fn profile_composite_key_aligns_reordered_rows_and_excludes_every_key_column() {
+    let dir = temp_dir();
+    let old = write_file(
+        &dir,
+        "old.csv",
+        "unit_id,building,amount\nA,East,100\nA,West,200\n",
+    );
+    let new = write_file(
+        &dir,
+        "new.csv",
+        "unit_id,building,amount\nA,West,250\nA,East,100\n",
+    );
+    let profile = write_file(
+        &dir,
+        "profile.yaml",
+        "include_columns: [unit_id, building, amount]\nkey: [unit_id, building]\n",
+    );
+
+    let mut args = make_args(&old, &new);
+    args.profile = Some(profile);
+    let json = run_json(&args);
+
+    assert_eq!(json["outcome"], "REAL_CHANGE");
+    assert_eq!(json["alignment"]["key_column"], "u8:unit_id + u8:building");
+    assert_eq!(
+        json["alignment"]["key_columns"],
+        serde_json::json!(["u8:unit_id", "u8:building"])
+    );
+    assert_eq!(json["counts"]["columns_common"], 1);
+    assert_eq!(json["counts"]["numeric_columns"], 1);
+    assert_eq!(json["contributors"][0]["row_id"], "u8:A + u8:West");
+    assert_eq!(
+        json["contributors"][0]["row_key"],
+        serde_json::json!(["u8:A", "u8:West"])
+    );
+    assert_eq!(json["contributors"][0]["column"], "u8:amount");
+
+    let schema_output = Command::new(env!("CARGO_BIN_EXE_rvl"))
+        .arg("--schema")
+        .output()
+        .expect("schema command should run");
+    assert!(schema_output.status.success());
+    let schema: serde_json::Value =
+        serde_json::from_slice(&schema_output.stdout).expect("schema should be JSON");
+    let validator = jsonschema::validator_for(&schema).expect("schema should compile");
+    let errors: Vec<String> = validator
+        .iter_errors(&json)
+        .map(|error| error.to_string())
+        .collect();
+    assert!(
+        errors.is_empty(),
+        "composite-key output must validate against --schema: {errors:?}"
+    );
+
+    cleanup(&dir);
+}
+
+#[test]
+fn profile_composite_key_refusals_identify_components_and_tuple_values() {
+    let dir = temp_dir();
+    let old = write_file(
+        &dir,
+        "old.csv",
+        "unit_id,building,amount\nA,East,100\nA,East,200\n",
+    );
+    let new = write_file(
+        &dir,
+        "new.csv",
+        "unit_id,building,amount\nA,East,100\nA,West,200\n",
+    );
+    let profile = write_file(
+        &dir,
+        "profile.yaml",
+        "include_columns: [unit_id, building, amount]\nkey: [unit_id, building]\n",
+    );
+
+    let mut args = make_args(&old, &new);
+    args.profile = Some(profile.clone());
+    let duplicate = run_json(&args);
+    assert_eq!(duplicate["refusal"]["code"], "E_KEY_DUP");
+    assert_eq!(duplicate["refusal"]["detail"]["key"], "u8:A + u8:East");
+    assert_eq!(
+        duplicate["refusal"]["detail"]["key_values"],
+        serde_json::json!(["u8:A", "u8:East"])
+    );
+
+    let empty_old = write_file(&dir, "empty_old.csv", "unit_id,building,amount\nA,,100\n");
+    let empty_new = write_file(
+        &dir,
+        "empty_new.csv",
+        "unit_id,building,amount\nA,East,100\n",
+    );
+    args.old = Some(empty_old);
+    args.new = Some(empty_new);
+    let empty = run_json(&args);
+    assert_eq!(empty["refusal"]["code"], "E_KEY_EMPTY");
+    assert_eq!(empty["refusal"]["detail"]["column"], "u8:building");
+
+    let mismatch_old = write_file(
+        &dir,
+        "mismatch_old.csv",
+        "unit_id,building,amount\nA,East,100\n",
+    );
+    let mismatch_new = write_file(
+        &dir,
+        "mismatch_new.csv",
+        "unit_id,building,amount\nA,West,100\n",
+    );
+    args.old = Some(mismatch_old);
+    args.new = Some(mismatch_new);
+    let mismatch = run_json(&args);
+    assert_eq!(mismatch["refusal"]["code"], "E_KEY_MISMATCH");
+    assert_eq!(
+        mismatch["refusal"]["detail"]["missing_key_samples"],
+        serde_json::json!([["u8:A", "u8:East"]])
+    );
+    assert_eq!(
+        mismatch["refusal"]["detail"]["extra_key_samples"],
+        serde_json::json!([["u8:A", "u8:West"]])
+    );
+
+    let missingness_old = write_file(
+        &dir,
+        "missingness_old.csv",
+        "unit_id,building,amount\nA,East,100\n",
+    );
+    let missingness_new = write_file(
+        &dir,
+        "missingness_new.csv",
+        "unit_id,building,amount\nA,East,\n",
+    );
+    args.old = Some(missingness_old);
+    args.new = Some(missingness_new);
+    let missingness = run_json(&args);
+    assert_eq!(missingness["refusal"]["code"], "E_MISSINGNESS");
+    assert_eq!(
+        missingness["refusal"]["detail"]["key_values"],
+        serde_json::json!(["u8:A", "u8:East"])
+    );
+
+    cleanup(&dir);
+}
+
+#[test]
 fn profile_column_registry_canonicalizes_headers_before_key_scope_and_output() {
     let dir = temp_dir();
     write_column_registry(&dir);

@@ -336,7 +336,14 @@ Valid range: ASCII `0x01`–`0x7F`, excluding `"` (`0x22`), `\r` (`0x0D`), `\n` 
 
 ## Profiles
 
-Profiles can provide `include_columns` and a single-column `key`. When a profile is active, rvl compares only profile-scoped common numeric columns and derives the key from the profile unless `key: []` is used.
+Profiles can provide `include_columns` and an ordered `key` list. A one-element list behaves like `--key`; a multi-element list is a composite key, and rvl aligns rows by the complete tuple. When a profile is active, rvl compares only profile-scoped common numeric columns, excludes every key component from analysis, and derives the key from the profile unless `key: []` is used.
+
+```yaml
+include_columns: [unit_id, building, amount]
+key: [unit_id, building]
+```
+
+Composite components are kept separate internally, so arbitrary byte values cannot collide. In JSON, `alignment.key_columns` and per-row `row_key` arrays are the authoritative machine-readable identity.
 
 Profiles may also define `column_registry: <dir>`. rvl loads that registry directory, applies exact `canonical_type: "column_name"` aliases to normalized CSV headers, and then performs key lookup, column scoping, counts, contributors, capsules, and witness recording using the canonical header IDs.
 
@@ -608,7 +615,8 @@ A single JSON object on stdout. If the process fails before domain evaluation (e
   },
   "alignment": {
     "mode": "key",                      // "key" | "row_order"
-    "key_column": "u8:id"              // encoded identifier, or null
+    "key_column": "u8:id",             // encoded display label, or null
+    "key_columns": ["u8:id"]            // authoritative ordered key components
   },
   "dialect": {
     "old": { "delimiter": ",", "quote": "\"", "escape": null },
@@ -640,6 +648,7 @@ A single JSON object on stdout. If the process fails before domain evaluation (e
   "contributors": [                     // empty unless REAL_CHANGE
     {
       "row_id": "u8:NVDA",
+      "row_key": ["u8:NVDA"],           // present in key mode; composite values remain separate
       "column": "u8:market_value",
       "old": 123.0,
       "new": 1842223.0,

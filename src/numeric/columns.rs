@@ -17,7 +17,7 @@ pub struct CommonColumn {
     pub new_index: usize,
 }
 
-/// Header intersection results (excluding the key column, if provided).
+/// Header intersection results (excluding all key columns, if provided).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnIntersection {
     pub common: Vec<CommonColumn>,
@@ -84,12 +84,12 @@ impl FieldAccess for &[Vec<u8>] {
 pub fn intersect_headers(
     old_headers: &[Vec<u8>],
     new_headers: &[Vec<u8>],
-    key: Option<&[u8]>,
+    key_columns: &[Vec<u8>],
 ) -> ColumnIntersection {
-    let key = key.unwrap_or(b"");
+    let key_columns: HashSet<&[u8]> = key_columns.iter().map(|column| column.as_slice()).collect();
     let mut new_index: HashMap<&[u8], usize> = HashMap::new();
     for (idx, name) in new_headers.iter().enumerate() {
-        if name.as_slice() == key {
+        if key_columns.contains(name.as_slice()) {
             continue;
         }
         new_index.insert(name.as_slice(), idx);
@@ -100,7 +100,7 @@ pub fn intersect_headers(
     let mut old_seen: HashSet<&[u8]> = HashSet::new();
 
     for (idx, name) in old_headers.iter().enumerate() {
-        if name.as_slice() == key {
+        if key_columns.contains(name.as_slice()) {
             continue;
         }
         old_seen.insert(name.as_slice());
@@ -117,7 +117,7 @@ pub fn intersect_headers(
 
     let mut new_only = Vec::new();
     for name in new_headers {
-        if name.as_slice() == key {
+        if key_columns.contains(name.as_slice()) {
             continue;
         }
         if !old_seen.contains(name.as_slice()) {
@@ -301,7 +301,7 @@ mod tests {
     fn intersect_headers_excludes_key() {
         let old = vec![b"id".to_vec(), b"a".to_vec(), b"b".to_vec()];
         let new = vec![b"a".to_vec(), b"id".to_vec(), b"c".to_vec()];
-        let intersection = intersect_headers(&old, &new, Some(b"id"));
+        let intersection = intersect_headers(&old, &new, &[b"id".to_vec()]);
         assert_eq!(
             intersection.common,
             vec![CommonColumn {

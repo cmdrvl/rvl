@@ -103,6 +103,7 @@ Schema differences (old_only/new_only columns) are reported when both headers ar
 ## Definitions (v0)
 - **Row ID**
   - with `--key`: the ASCII-trimmed key value
+  - with a profile composite key: the ordered tuple of ASCII-trimmed component values
   - without `--key`: the 1-based data record index (header excluded; blank records skipped)
 - **Data record number (errors)**: the 1-based data record index within its source file (header excluded; blank records skipped)
 - **Blank record**: a data record (never the header record) where every field is empty after ASCII-trim (empty string only; missing tokens like `NA`/`NULL` are not blank records; ignored before alignment, counting, and key validation)
@@ -199,6 +200,13 @@ With `--key`
 - Column order may differ; numeric columns are matched by header name.
 - Contributor IDs look like: `<key_value>.market_value` (e.g., `NVDA.market_value`)
 
+With a profile composite key
+- A non-empty profile `key` list is an ordered key tuple. Every listed column must exist in both files.
+- Each component is ASCII-trimmed independently. Any empty component refuses with `E_KEY_EMPTY` and identifies that component's column.
+- Uniqueness and key-set equality apply to the complete tuple, not to any individual component.
+- Tuple components remain separate internally. Implementations must not flatten them with a sentinel delimiter, because arbitrary CSV bytes can collide with delimiter encodings.
+- Contributor labels render encoded components joined by ` + ` for display; JSON also carries the component array for unambiguous machine use.
+
 Alignment determinism (no-key mode)
 - If rvl can deterministically detect a reorder under a discovered perfect key candidate (same keys, different row-order sequence) and `total_change > 0` under row-order alignment, it must REFUSE with `E_NEED_KEY` and print the suggested `--key`.
 - rvl must never claim "REAL CHANGE" or emit `E_DIFFUSE` on row-order alignment when it can deterministically detect such a reorder (`E_NEED_KEY`).
@@ -285,6 +293,7 @@ Identifier encoding (JSON)
 - For `--json`, identifiers are unambiguous strings:
   - `u8:<utf8-string>` if valid UTF-8 and contains no ASCII control bytes
   - otherwise `hex:<lowercase-hex-bytes>`
+- Composite keys encode every component independently. Display-compatible key labels join encoded components with the literal ` + `; the corresponding `key_columns`, `row_key`, or `key_values` array is authoritative for machine use.
 
 ASCII control bytes are `0x00-0x1F` and `0x7F`.
 
@@ -440,8 +449,8 @@ Top-level shape (v0)
 - `version`: `"rvl.v0"`
 - `outcome`: `"REAL_CHANGE" | "NO_REAL_CHANGE" | "REFUSAL"`
 - `files`: `{ "old": "<path>", "new": "<path>" }`
-- `alignment`: `{ "mode": "key" | "row_order", "key_column": "<encoded normalized name>" | null }`
-- `alignment.key_column` uses identifier encoding for JSON (`u8:<...>` or `hex:<...>`).
+- `alignment`: `{ "mode": "key" | "row_order", "key_column": "<display-compatible encoded label>" | null, "key_columns": ["<encoded normalized name>", ...] }`
+- In key mode, `alignment.key_columns` is the authoritative ordered component list. `alignment.key_column` is the same encoded value for a single key, or the encoded components joined by ` + ` for a composite key. In row-order mode it is null and `key_columns` is empty.
 - `dialect`: `{ "old": { "delimiter": "<char>", "quote": "<char>", "escape": "<char>" | null } | null, "new": { "delimiter": "<char>", "quote": "<char>", "escape": "<char>" | null } | null }`
 - `dialect.old.*` / `dialect.new.*` values are single-byte strings when present; examples: tab is `"\t"`, backslash escape is `"\\"`.
 - Non-printable delimiters are encoded as a single character and may appear escaped (e.g., `0x1F` => `"\u001f"`).
@@ -451,7 +460,7 @@ Top-level shape (v0)
 - `rows_old/rows_new` count non-blank data records (after blank record skipping).
 - In key mode, `rows_aligned` is the key count.
 - In row-order mode, `rows_aligned` is `rows_old` (= `rows_new`) for REAL_CHANGE/NO_REAL_CHANGE; for `E_ROWCOUNT`, `rows_aligned` must be null.
-- `columns_*` counts exclude the key column (if any).
+- `columns_*` counts exclude every key column (if any).
 - `columns_old_only` / `columns_new_only` refer to columns present only in the old/new file (after header normalization).
 - `numeric_cells_checked = rows_aligned * numeric_columns` when both are known; otherwise null. `numeric_cells_changed` counts cells with `abs(delta) > tolerance` when computed.
 - For `E_NEED_KEY`, `numeric_cells_checked` and `numeric_cells_changed` must be null (avoid reporting row-order diffs when a reorder is detected).
@@ -462,14 +471,15 @@ Top-level shape (v0)
   - For `E_NEED_KEY`, `metrics.*` must be null (avoid reporting row-order diffs when a reorder is detected).
 - `limits`: `{ max_contributors }` (v0: `25`)
 - `contributors`: `[]` (empty unless REAL CHANGE)
-  - each: `{ row_id, column, old, new, delta, contribution, share, cumulative_share }`
-  - `row_id` and `column` use identifier encoding for JSON (`u8:<...>` or `hex:<...>`).
+  - each: `{ row_id, row_key?, column, old, new, delta, contribution, share, cumulative_share }`
+  - `row_id` and `column` use identifier encoding for JSON (`u8:<...>` or `hex:<...>`). For a composite key, `row_id` is the display-compatible joined label.
+  - In key mode, `row_key` is the authoritative ordered array of independently encoded key values (including for a single-column key). It is omitted in row-order mode.
   - `old/new/delta/contribution/share/cumulative_share` are JSON numbers (finite).
   - `share = contribution / total_change`; `cumulative_share` is the running sum of `share` in contributor order.
 - `refusal`: `null` unless REFUSAL
   - `{ code, message, detail }`
   - `detail` is a code-specific object (e.g., `{ file, line, column, key_samples, tied_delimiters }`)
-  - Any identifiers inside `detail` (e.g., `column`, `key_samples`) use the same JSON identifier encoding (`u8:` / `hex:`).
+  - Any identifiers inside `detail` (e.g., `column`, key samples) use the same JSON identifier encoding (`u8:` / `hex:`). Key-bearing details retain the display-compatible `key`/`*_samples` labels and also include authoritative component arrays (`key_values` or `*_key_samples`).
 
 ---
 
@@ -533,12 +543,12 @@ No-key mode (fastest)
 3) If `total_change > 0`, run a shuffle-detection pass via key discovery: if a perfect key candidate exists and its order differs, REFUSE (`E_NEED_KEY`) before printing a verdict
 
 Key mode
-- Load one side into a `HashMap<key, row_values>` for aligned lookup (v0).
+- Load one side into a `HashMap<ordered_key_tuple, row_values>` for aligned lookup (v0). A single-column key is a one-component tuple.
 - While joining, compute `total_change` + top-K heap.
 - After join, verify no unmatched keys remain.
 
 Determinism
-- Stable ordering for display: contribution desc, then row_id asc (key mode: raw row_id bytes asc; row-order mode: numeric row index asc), then raw column bytes asc.
+- Stable ordering for display: contribution desc, then row_id asc (key mode: lexicographic by the ordered raw component byte strings; row-order mode: numeric row index asc), then raw column bytes asc.
 - Top-K selection uses the same total ordering to avoid tie-driven nondeterminism.
 - Any printed sample lists (columns, keys) are sorted by raw bytes asc and truncated to a fixed count.
 
@@ -698,9 +708,9 @@ Design partner loop checklist (bd-bo0)
 
 ---
 
-## Epistemic Spine Extensions (Deferred — Profile Integration)
+## Epistemic Spine Extensions — Profile Integration
 
-These flags and behaviors are deferred until the `profile` tool exists and is stable, but the design is defined now for schema stability. The implementation must match the shape tool's profile integration pattern.
+These flags and behaviors are implemented. Their shared profile semantics must remain aligned with shape.
 
 ### Flags (epistemic spine extensions)
 
@@ -712,7 +722,7 @@ Both flags are optional. When neither is provided, behavior is identical to v0 (
 ### Precedence: `--key` vs profile key
 
 - If `--profile` provides a non-empty `key` and `--key` is also given: **REFUSAL** (`E_KEY_CONFLICT`) — refuse rather than silently pick one.
-- If `--profile` provides a non-empty `key` and `--key` is not given: use the profile's key. v0.1 supports only single-element `key: [col]`; multi-element keys (composite) are deferred.
+- If `--profile` provides a non-empty `key` and `--key` is not given: use the full ordered profile key, including composite keys such as `key: [col_a, col_b]`.
 - If `--profile` has an empty `key: []` and `--key` is given: use `--key`.
 - If `--profile` has an empty `key: []` and `--key` is not given: row-order mode (same as v0 without `--key`).
 
@@ -720,7 +730,7 @@ Both flags are optional. When neither is provided, behavior is identical to v0 (
 
 When a profile is provided:
 
-- **Eligible columns** are the intersection of: (a) columns present in **both** files, (b) the profile's `include_columns`, minus the key column.
+- **Eligible columns** are the intersection of: (a) columns present in **both** files, (b) the profile's `include_columns`, minus every key column.
 - Columns in `include_columns` that don't exist in either file are **not** a refusal — they are silently ignored (the profile may be broader than any single dataset).
 - Columns present in both files but **not** in `include_columns` are excluded from numeric analysis.
 - `counts.columns_old` / `columns_new` / `columns_common` / `columns_old_only` / `columns_new_only` reflect the profile-scoped view (only counting columns in `include_columns`).
@@ -876,7 +886,7 @@ E_PROFILE_REGISTRY:
   "profile_id": "csv.loan_tape.core.v0",
   "profile_sha256": "sha256:c9d594a1e96641f10b730f30a0efe754d0dd17e00f47572e363e4b1c3877cecd",
   "files": { "old": "jan.csv", "new": "feb.csv" },
-  "alignment": { "mode": "key", "key_column": "u8:loan_id" },
+  "alignment": { "mode": "key", "key_column": "u8:loan_id", "key_columns": ["u8:loan_id"] },
   "dialect": {
     "old": { "delimiter": ",", "quote": "\"", "escape": null },
     "new": { "delimiter": ",", "quote": "\"", "escape": null }
@@ -892,7 +902,7 @@ E_PROFILE_REGISTRY:
   "metrics": { "total_change": 750000.23, "max_abs_delta": 200000.0, "top_k_coverage": 0.9999 },
   "limits": { "max_contributors": 25 },
   "contributors": [
-    { "row_id": "u8:L004", "column": "u8:balance", "old": 21000000.0, "new": 20800000.0,
+    { "row_id": "u8:L004", "row_key": ["u8:L004"], "column": "u8:balance", "old": 21000000.0, "new": 20800000.0,
       "delta": -200000.0, "contribution": 200000.0, "share": 0.2667, "cumulative_share": 0.2667 }
   ],
   "refusal": null
@@ -905,6 +915,7 @@ Note: `columns_common: 4` reflects profile scoping — the original 8-column CSV
 
 - **Profile column scoping:** profile with 4 of 8 columns → only those 4 are analyzed; counts reflect scoped view
 - **Profile key derivation:** profile with `key: [loan_id]` and no `--key` flag → key mode activated from profile
+- **Composite profile key:** profile with `key: [unit_id, building]` aligns by the full tuple, excludes both key columns from analysis, and emits structured key arrays
 - **Key conflict:** `--key col` plus profile with `key: [col]` → `E_KEY_CONFLICT`
 - **Profile selector conflict:** `--profile path --profile-id id` → `E_AMBIGUOUS_PROFILE` as JSON refusal
 - **Profile not found:** `--profile-id nonexistent.v0` → `E_PROFILE_NOT_FOUND`
@@ -920,7 +931,6 @@ Note: `columns_common: 4` reflects profile scoping — the original 8-column CSV
 
 ### Can defer
 
-- Composite keys from profile (`key: [col_a, col_b]`) — requires composite-key scan in orchestrator
 - `--lock` input verification (needs lock tool integration)
 - Remote registry resolution or registry discovery by ID
 - Registry aliases for arbitrary non-UTF-8 raw header bytes
@@ -983,7 +993,7 @@ Outcome semantics
 
 Output
 - Add `field_changes[]` in JSON, separate from `contributors`.
-- Each field change includes `row_id`, `column`, and redacted change metadata by default.
+- Each field change includes `row_id`, `column`, and redacted change metadata by default. In key mode it also includes the authoritative `row_key` component array.
 - `old` and `new` string values are included only with `--explicit`.
 - Human output prints a bounded field-change section after numeric audit output.
 

@@ -2,6 +2,7 @@
 
 use crate::diff::heap::MAX_CONTRIBUTORS;
 use crate::format::ident_json::encode_identifier_json;
+use crate::format::key::{encode_key_components_json, encode_key_label_json};
 use crate::profile::{ColumnRegistryRunInfo, ResolvedProfile};
 use crate::refusal::codes::RefusalCode;
 use serde::Serialize;
@@ -38,13 +39,16 @@ pub struct Files {
 pub struct Alignment {
     pub mode: AlignmentMode,
     pub key_column: Option<String>,
+    pub key_columns: Vec<String>,
 }
 
 impl Alignment {
-    pub fn key(encoded_key_column: String) -> Self {
+    pub fn key(key_columns: &[Vec<u8>]) -> Self {
+        debug_assert!(!key_columns.is_empty());
         Self {
             mode: AlignmentMode::Key,
-            key_column: Some(encoded_key_column),
+            key_column: Some(encode_key_label_json(key_columns)),
+            key_columns: encode_key_components_json(key_columns),
         }
     }
 
@@ -52,6 +56,7 @@ impl Alignment {
         Self {
             mode: AlignmentMode::RowOrder,
             key_column: None,
+            key_columns: Vec::new(),
         }
     }
 }
@@ -124,6 +129,8 @@ impl Default for Limits {
 #[derive(Debug, Clone, Serialize)]
 pub struct Contributor {
     pub row_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub row_key: Option<Vec<String>>,
     pub column: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub old: Option<f64>,
@@ -139,8 +146,9 @@ pub struct Contributor {
 
 impl Contributor {
     #[allow(clippy::too_many_arguments)]
-    pub fn from_bytes(
-        row_id: &[u8],
+    pub fn new(
+        row_id: String,
+        row_key: Option<Vec<String>>,
         column: &[u8],
         old: f64,
         new: f64,
@@ -152,7 +160,8 @@ impl Contributor {
     ) -> Self {
         if explicit {
             Self {
-                row_id: encode_identifier_json(row_id),
+                row_id,
+                row_key,
                 column: encode_identifier_json(column),
                 old: Some(old),
                 new: Some(new),
@@ -163,7 +172,8 @@ impl Contributor {
             }
         } else {
             Self {
-                row_id: encode_identifier_json(row_id),
+                row_id,
+                row_key,
                 column: encode_identifier_json(column),
                 old: None,
                 new: None,
@@ -179,6 +189,8 @@ impl Contributor {
 #[derive(Debug, Clone, Serialize)]
 pub struct FieldChange {
     pub row_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub row_key: Option<Vec<String>>,
     pub column: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub old: Option<String>,
@@ -187,8 +199,9 @@ pub struct FieldChange {
 }
 
 impl FieldChange {
-    pub fn from_bytes(
-        row_id: &[u8],
+    pub fn new(
+        row_id: String,
+        row_key: Option<Vec<String>>,
         column: &[u8],
         old: &[u8],
         new: &[u8],
@@ -196,14 +209,16 @@ impl FieldChange {
     ) -> Self {
         if explicit {
             Self {
-                row_id: encode_identifier_json(row_id),
+                row_id,
+                row_key,
                 column: encode_identifier_json(column),
                 old: Some(encode_identifier_json(old)),
                 new: Some(encode_identifier_json(new)),
             }
         } else {
             Self {
-                row_id: encode_identifier_json(row_id),
+                row_id,
+                row_key,
                 column: encode_identifier_json(column),
                 old: None,
                 new: None,
@@ -394,6 +409,7 @@ mod tests {
             alignment: Alignment {
                 mode: AlignmentMode::Key,
                 key_column: Some("u8:id".to_string()),
+                key_columns: vec!["u8:id".to_string()],
             },
             dialect: Dialect {
                 old: Some(DialectSide::new(b',', b'"', None)),
@@ -433,8 +449,18 @@ mod tests {
     #[test]
     fn renders_real_change_json_shape() {
         let ctx = sample_context();
-        let contributor =
-            Contributor::from_bytes(b"row1", b"value", 1.0, 2.0, 1.0, 1.0, 0.1, 0.1, true);
+        let contributor = Contributor::new(
+            "u8:row1".to_string(),
+            Some(vec!["u8:row1".to_string()]),
+            b"value",
+            1.0,
+            2.0,
+            1.0,
+            1.0,
+            0.1,
+            0.1,
+            true,
+        );
         let output = JsonOutput::real_change(ctx, vec![contributor]);
         let value = serde_json::to_value(output).expect("json");
         assert_eq!(value["version"], "rvl.v0");

@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use crate::alignment::key_join::KeyValue;
+
 const DEFAULT_MAX_ROWS: usize = 64;
 const DEFAULT_MAX_COLUMNS: usize = 16;
 const HARD_MAX_ROWS: usize = 1024;
@@ -15,7 +17,7 @@ pub enum ReproOutcome {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum RowAnchor {
     RowIndex(u64),
-    Key(Vec<u8>),
+    Key(KeyValue),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,7 +30,7 @@ pub struct RowSelectionInput<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ColumnSelectionInput<'a> {
-    pub key_column: Option<&'a [u8]>,
+    pub key_columns: &'a [Vec<u8>],
     pub numeric_columns: &'a [Vec<u8>],
     pub contributor_columns: &'a [Vec<u8>],
     pub refusal_columns: &'a [Vec<u8>],
@@ -88,7 +90,7 @@ pub fn select_columns(
     let mut selected = Vec::new();
     let mut seen = HashSet::new();
 
-    if let Some(key_column) = input.key_column {
+    for key_column in input.key_columns {
         push_unique_column(&mut selected, &mut seen, key_column);
     }
 
@@ -112,7 +114,7 @@ pub fn select_columns(
             input.numeric_columns,
             input.contributor_columns,
             input.refusal_columns,
-            input.key_column,
+            input.key_columns,
         )
     {
         selected.push(first.to_vec());
@@ -180,9 +182,11 @@ fn first_column<'a>(
     numeric_columns: &'a [Vec<u8>],
     contributor_columns: &'a [Vec<u8>],
     refusal_columns: &'a [Vec<u8>],
-    key_column: Option<&'a [u8]>,
+    key_columns: &'a [Vec<u8>],
 ) -> Option<&'a [u8]> {
-    key_column
+    key_columns
+        .first()
+        .map(|value| value.as_slice())
         .or_else(|| numeric_columns.first().map(|value| value.as_slice()))
         .or_else(|| contributor_columns.first().map(|value| value.as_slice()))
         .or_else(|| refusal_columns.first().map(|value| value.as_slice()))
