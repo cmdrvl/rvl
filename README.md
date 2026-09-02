@@ -349,6 +349,22 @@ Profiles may also define `column_registry: <dir>`. rvl loads that registry direc
 
 Relative `column_registry` paths resolve relative to the profile YAML file. Missing or malformed registries refuse with `E_PROFILE_REGISTRY`; there is no fuzzy header matching or case/punctuation normalization.
 
+### Column Registry Content Hash
+
+When a profile uses `column_registry`, rvl computes the same registry content hash contract shared by `profile` and `shape`. The registry locator path is never hashed. Absolute paths are used as-is; relative paths resolve relative to the profile YAML file.
+
+CRV1 does not redefine `profile_sha256`. Frozen profiles may carry `column_registry_hash` in their canonical YAML so `profile_sha256` covers registry bytes transitively; rvl still recomputes the registry content hash from the loaded registry files at read time for runtime audit, witness, and capsule metadata.
+
+The framed byte stream is:
+
+1. `registry.json` first. It must exist, parse as JSON, and be a JSON object.
+2. Then direct child `*.json` files with UTF-8 file names, excluding `registry.json` and `_build.json`, sorted by file name.
+3. For each file: `relative_path_bytes`, `0x00`, ASCII decimal byte length, `0x00`, raw file bytes, `0xff`.
+
+rvl hashes that framed raw byte stream with BLAKE3 and records it as `blake3:<hex>`. JSON parsing is only for validation and alias loading; the hash is not computed from parsed JSON, pretty-printed JSON, normalized text, or the resolved absolute registry path.
+
+Only entries with `canonical_type: "column_name"` affect header aliases. Duplicate alias inputs are first-wins in sorted file order. Non-column entries are skipped for aliasing but still affect the registry hash because their file bytes are included.
+
 ---
 
 ## Exhaustive Audit
@@ -690,6 +706,12 @@ On REFUSAL, `counts` and `metrics` fields may be `null` if they couldn't be comp
 The full specification is `docs/PLAN_RVL.md`. This README covers everything needed to use the tool; the spec adds implementation details, edge-case definitions, and testing requirements.
 
 ## Development
+
+Agent operating instructions live in [`AGENTS.md`](./AGENTS.md). Harness-specific notes are intentionally short and point back to the root policy:
+
+- [`CLAUDE.md`](./CLAUDE.md)
+- [`GEMINI.md`](./GEMINI.md)
+- [`CODEX.md`](./CODEX.md)
 
 ```bash
 cargo fmt --check
