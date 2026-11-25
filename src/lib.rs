@@ -58,7 +58,7 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
 
     if args.old.is_none() || args.new.is_none() {
         eprintln!(
-            "error: the following required arguments were not provided:\n  <OLD_CSV>\n  <NEW_CSV>\n\nUsage: rvl <OLD_CSV> <NEW_CSV> [OPTIONS]\n       rvl --robot-triage\n       rvl capabilities --json\n       rvl robot-docs guide\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor <health|capabilities|robot-docs> [OPTIONS]\n\nFor more information, try '--help'."
+            "error: the following required arguments were not provided:\n  <OLD_CSV>\n  <NEW_CSV>\n\nUsage: rvl <OLD_CSV> <NEW_CSV> [OPTIONS]\n       rvl capabilities --json\n       rvl robot-docs guide\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor [health|capabilities|triage|robot-docs] [--json]\n\nFor more information, try '--help'."
         );
         return Ok(2);
     }
@@ -286,7 +286,10 @@ fn run_comparison(args: cli::args::Args) -> Result<u8, Box<dyn std::error::Error
         witness::record_run(&args, &result);
     }
 
-    Ok(cli::exit::exit_code(result.outcome))
+    Ok(cli::exit::process_exit_code(
+        result.outcome,
+        args.exit_zero_on_change,
+    ))
 }
 
 /// Run witness subcommand (query/last/count).

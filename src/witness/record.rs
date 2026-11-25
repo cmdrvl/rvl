@@ -147,10 +147,17 @@ impl WitnessRecord {
 
         let ts = {
             use std::time::SystemTime;
-            let d = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap_or_default();
-            let secs = d.as_secs();
+            // SOURCE_DATE_EPOCH (reproducible-builds convention) replaces the wall clock.
+            let secs = match std::env::var("SOURCE_DATE_EPOCH")
+                .ok()
+                .and_then(|raw| raw.trim().parse::<u64>().ok())
+            {
+                Some(epoch) => epoch,
+                None => SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            };
             // Manual ISO 8601 UTC formatting without pulling in chrono.
             // Days calculation from Unix epoch.
             let days = secs / 86400;

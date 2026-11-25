@@ -31,6 +31,15 @@ pub fn exit_code(outcome: Outcome) -> u8 {
     }
 }
 
+/// Process exit code: the domain code, except that `--exit-zero-on-change` maps
+/// REAL_CHANGE to 0 for `set -e` pipelines. Refusals always stay 2.
+pub fn process_exit_code(outcome: Outcome, exit_zero_on_change: bool) -> u8 {
+    match outcome {
+        Outcome::RealChange if exit_zero_on_change => 0,
+        other => exit_code(other),
+    }
+}
+
 /// Output stream for a given outcome and output mode.
 ///
 /// In JSON mode, all domain outcomes go to stdout.
@@ -52,6 +61,14 @@ mod tests {
         assert_eq!(exit_code(Outcome::NoRealChange), 0);
         assert_eq!(exit_code(Outcome::RealChange), 1);
         assert_eq!(exit_code(Outcome::Refusal), 2);
+    }
+
+    #[test]
+    fn exit_zero_on_change_only_remaps_real_change() {
+        assert_eq!(process_exit_code(Outcome::RealChange, true), 0);
+        assert_eq!(process_exit_code(Outcome::RealChange, false), 1);
+        assert_eq!(process_exit_code(Outcome::Refusal, true), 2);
+        assert_eq!(process_exit_code(Outcome::NoRealChange, true), 0);
     }
 
     #[test]

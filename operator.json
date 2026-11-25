@@ -1,8 +1,9 @@
 {
-  "schema_version": "operator.v0",
+  "schema_version": "operator.v1",
   "name": "rvl",
   "version": "0.7.1",
-  "description": "Numeric change explainer — finds the smallest set of cell-level changes that account for the difference between two CSV files",
+  "contract_version": "1.0.0",
+  "description": "Numeric change explainer — finds the smallest set of cell-level changes that account for the difference between two CSV files. Deprecated aliases kept for one release: `rvl --robot-triage` and `rvl doctor --robot-triage` (both now emit the cmdrvl.doctor.v1 triage report), `rvl doctor health`, and `--capsule-out` (use --capsule-dir).",
   "repository": "https://github.com/cmdrvl/rvl",
   "license": "MIT",
   "agent_guide": "https://github.com/cmdrvl/.github/blob/main/profile/AGENT_PROMPT.md",
@@ -11,12 +12,13 @@
     "binary": "rvl",
     "usage": [
       "rvl <old.csv> <new.csv> [OPTIONS]",
-      "rvl --robot-triage",
       "rvl capabilities --json",
       "rvl robot-docs guide",
       "rvl witness <query|last|count> [OPTIONS]",
-      "rvl doctor <health|capabilities|robot-docs> [OPTIONS]",
-      "rvl doctor --robot-triage"
+      "rvl doctor [--json]",
+      "rvl doctor capabilities --json",
+      "rvl doctor triage --json",
+      "rvl --robot-triage (deprecated alias of: rvl doctor triage --json)"
     ],
     "output_mode": "report",
     "output_schema": "rvl.v0",
@@ -39,20 +41,21 @@
     { "name": "max_audit_changes", "flag": "--max-audit-changes", "type": "integer", "default": 10000, "description": "Maximum changed cells to emit in audit modes" },
     { "name": "profile", "flag": "--profile", "type": "file_path", "description": "Use profile YAML at this path for key derivation and column scoping" },
     { "name": "profile_id", "flag": "--profile-id", "type": "string", "description": "Resolve profile by ID from ~/.cmdrvl/config/profile/profiles/*.yaml; legacy ~/.epistemic/profiles is copied on first default use" },
-    { "name": "capsule_out", "flag": "--capsule-out", "type": "directory_path", "description": "Write deterministic repro capsule artifacts to this directory (default: disabled)" },
+    { "name": "capsule_dir", "flag": "--capsule-dir", "aliases": ["--capsule-out"], "type": "directory_path", "description": "Write deterministic repro capsule artifacts to this directory (default: disabled). --capsule-out is a deprecated alias." },
+    { "name": "exit_zero_on_change", "flag": "--exit-zero-on-change", "type": "flag", "description": "Exit 0 instead of 1 on REAL_CHANGE so `set -e` pipelines do not abort on an expected change. Refusals still exit 2; never changes `doctor` exit codes." },
     { "name": "json", "flag": "--json", "type": "flag", "description": "Emit JSON output (single object)" },
     { "name": "no_witness", "flag": "--no-witness", "type": "flag", "description": "Suppress witness ledger recording" },
     { "name": "explicit", "flag": "--explicit", "type": "flag", "description": "Show raw data values in output (default: redacted for zero-retention safety)" },
     { "name": "describe", "flag": "--describe", "type": "flag", "description": "Print compiled operator.json and exit 0 without positional args" },
     { "name": "schema", "flag": "--schema", "type": "flag", "description": "Print JSON Schema for rvl.v0 output format and exit 0" },
     { "name": "version", "flag": "--version", "type": "flag", "description": "Print version and exit 0" },
-    { "name": "robot_triage", "flag": "--robot-triage", "type": "flag", "description": "Emit one-call machine triage for headless agents without positional args" }
+    { "name": "robot_triage", "flag": "--robot-triage", "type": "flag", "description": "Deprecated alias of `rvl doctor triage --json`: emits the cmdrvl.doctor.v1 triage report without positional args" }
   ],
 
-  "subcommands": [
+  "commands": [
     {
       "name": "capabilities",
-      "description": "Top-level machine-readable capability contract for headless agents",
+      "description": "Top-level machine-readable capability contract for headless agents (this document)",
       "status": "available",
       "usage": "rvl capabilities --json",
       "current_runtime_behavior": {
@@ -96,7 +99,8 @@
       ],
       "current_runtime_behavior": {
         "success_exit_code": 0,
-        "no_match_exit_code": 1,
+        "query_empty_result": "exit 0, prints []",
+        "last_on_empty_ledger_exit_code": 1,
         "error_exit_code": 2,
         "ledger_path_resolution": [
           "EPISTEMIC_WITNESS",
@@ -107,40 +111,21 @@
     },
     {
       "name": "doctor",
-      "description": "Read-only diagnostic commands for headless agents",
+      "description": "Read-only diagnostics emitting cmdrvl.doctor.v1: `doctor [--json]` (health), `doctor capabilities --json` (embeds this contract), `doctor triage --json` (next_actions). Exit 0 healthy, 1 unhealthy, 2 usage error. Deprecated aliases: `doctor health [--json]`, `doctor --robot-triage`.",
       "status": "available",
       "actions": [
-        {
-          "name": "health",
-          "usage": "rvl doctor health"
-        },
-        {
-          "name": "health-json",
-          "usage": "rvl doctor health --json"
-        },
-        {
-          "name": "capabilities",
-          "usage": "rvl doctor capabilities --json"
-        },
-        {
-          "name": "robot-docs",
-          "usage": "rvl doctor robot-docs"
-        },
-        {
-          "name": "robot-triage",
-          "usage": "rvl doctor --robot-triage"
-        },
-        {
-          "name": "fix",
-          "usage": "rvl doctor --fix"
-        }
+        { "name": "health", "usage": "rvl doctor [--json]" },
+        { "name": "capabilities", "usage": "rvl doctor capabilities --json" },
+        { "name": "triage", "usage": "rvl doctor triage --json" },
+        { "name": "robot-docs", "usage": "rvl doctor robot-docs" },
+        { "name": "fix", "usage": "rvl doctor --fix" }
       ],
       "current_runtime_behavior": {
         "read_only": true,
         "fix_mode": "not_available",
         "network": "not_used",
         "success_exit_code": 0,
-        "findings_exit_code": 1,
+        "unhealthy_exit_code": 1,
         "usage_error_exit_code": 2,
         "writes_witness": false,
         "writes_capsules": false
@@ -149,8 +134,8 @@
   ],
 
   "exit_codes": {
-    "0": { "meaning": "NO_REAL_CHANGE", "domain": "positive" },
-    "1": { "meaning": "REAL_CHANGE", "domain": "negative" },
+    "0": { "meaning": "NO_REAL_CHANGE (or REAL_CHANGE with --exit-zero-on-change; doctor: healthy)", "domain": "positive" },
+    "1": { "meaning": "REAL_CHANGE (doctor: unhealthy)", "domain": "expected_change" },
     "2": { "meaning": "REFUSAL / CLI error", "domain": "error" }
   },
 
@@ -180,22 +165,90 @@
     { "code": "E_AUDIT_FIELDS_REQUIRES_PROFILE", "message": "Field audit requires an active profile", "action": "retry_with_flag", "flag": "--profile" }
   ],
 
+  "env_vars": [
+    { "name": "EPISTEMIC_WITNESS", "description": "Overrides the witness ledger path for comparison runs; doctor commands do not write it." },
+    { "name": "HOME", "description": "Used to resolve ~/.cmdrvl default state and config paths; doctor commands do not write them." },
+    { "name": "NO_COLOR", "description": "Any value disables ANSI styling in clap help and error output." },
+    { "name": "TERM", "description": "TERM=dumb disables ANSI styling; output is also unstyled whenever stdout/stderr is not a TTY." },
+    { "name": "SOURCE_DATE_EPOCH", "description": "Unix seconds used instead of the wall clock for the witness record timestamp (reproducible builds convention)." }
+  ],
+
+  "formats": ["csv"],
+
+  "side_effects": {
+    "reads_files": true,
+    "writes_files": true,
+    "network": false,
+    "writes_witness": true,
+    "notes": "Comparison runs append one witness record unless --no-witness; --capsule-dir writes replay artifacts only when given. capabilities, robot-docs and doctor are read-only."
+  },
+
   "capabilities": {
-    "formats": ["csv"],
     "profile_aware": true,
+    "numeric_explanation": true,
+    "exhaustive_numeric_audit": true,
+    "profile_scoped_field_audit": true,
     "streaming": false,
     "witness": {
       "ambient_recording": "enabled_by_default",
       "query_subcommands": "available",
       "no_witness_flag": "suppresses_recording"
-    },
-    "agent_surfaces": {
-      "global_json": "rvl --json <old.csv> <new.csv>",
-      "robot_triage": "rvl --robot-triage",
-      "capabilities": "rvl capabilities --json",
-      "robot_docs": "rvl robot-docs guide",
-      "doctor_fix": "rvl doctor --fix"
     }
+  },
+
+  "agent_surfaces": {
+    "global_json": {
+      "command": "rvl --json <old.csv> <new.csv>",
+      "output": "rvl.v0 JSON compare report",
+      "stdout": "single JSON object",
+      "stderr": "process-level failures only"
+    },
+    "doctor": { "command": "rvl doctor --json", "output": "cmdrvl.doctor.v1 (mode health)", "mutates": false },
+    "doctor_triage": { "command": "rvl doctor triage --json", "output": "cmdrvl.doctor.v1 (mode triage)", "mutates": false },
+    "doctor_capabilities": { "command": "rvl doctor capabilities --json", "output": "cmdrvl.doctor.v1 (mode capabilities) embedding this contract", "mutates": false },
+    "robot_triage": { "command": "rvl --robot-triage", "output": "deprecated alias of rvl doctor triage --json", "mutates": false },
+    "capabilities": { "command": "rvl capabilities --json", "output": "operator.v1 contract (identical to --describe)", "mutates": false },
+    "robot_docs": { "command": "rvl robot-docs guide", "output": "agent-oriented markdown guide", "mutates": false },
+    "set_e_safe": { "command": "rvl <old.csv> <new.csv> --exit-zero-on-change", "output": "exit 0 on REAL_CHANGE; refusals still exit 2", "mutates": true }
+  },
+
+  "fix_mode": {
+    "available": false,
+    "command": "rvl doctor --fix",
+    "behavior": "exits 2, emits only stderr, and names read-only alternatives"
+  },
+
+  "composition": {
+    "family": {
+      "name": "cmdrvl-spine",
+      "siblings": ["shape", "verify", "benchmark", "assess", "pack"]
+    },
+    "role": "numeric_change_explainer",
+    "position": "after_shape_before_assess",
+    "accepts": [
+      { "kind": "csv_pair", "description": "The same CSV pair, key, and profile choices that passed a preceding shape gate." }
+    ],
+    "produces": [
+      { "kind": "rvl_report", "schema": "rvl.v0", "command": "rvl <old.csv> <new.csv> --key <column> --json" }
+    ],
+    "canonical_chains": [
+      {
+        "name": "shape_then_rvl_then_assess",
+        "commands": [
+          "shape <old.csv> <new.csv> --key <column> --json > shape.json",
+          "jq -e '.outcome == \"COMPATIBLE\"' shape.json >/dev/null",
+          "rvl <old.csv> <new.csv> --key <column> --json --exit-zero-on-change > rvl.json",
+          "assess shape.json rvl.json <other-artifacts> --policy <policy.yaml> --json > decision.json"
+        ],
+        "upstream_tools": ["shape"],
+        "downstream_tools": ["assess", "pack"]
+      }
+    ],
+    "agent_rules": [
+      "Prefer shape before rvl when the task compares two tabular datasets.",
+      "Keep key, profile, delimiter, and tolerance assumptions explicit across shape and rvl.",
+      "Use rvl output as evidence for assess; rvl does not make policy decisions."
+    ]
   },
 
   "pipeline": {

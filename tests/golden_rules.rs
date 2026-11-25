@@ -15,4 +15,6 @@ golden_rules_suite! {
         "/nonexistent/new.csv",
         "--json", "--no-witness",
     ],
+    // A `since` far in the future can match no ledger record, so this is an empty result set.
+    fixture_empty_query_args: &["witness", "query", "--since", "2999-01-01T00:00:00Z", "--json"],
 }

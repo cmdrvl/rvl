@@ -23,6 +23,7 @@ fn run_case(old: &str, new: &str, key: Option<&str>, json: bool) -> String {
         profile: None,
         profile_id: None,
         capsule_out: None,
+        exit_zero_on_change: false,
         json,
         no_witness: true,
         describe: false,

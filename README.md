@@ -301,7 +301,8 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--max-audit-changes <n>` | integer | `10000` | Maximum changed cells to emit in audit modes before refusing with `E_AUDIT_LIMIT`. |
 | `--profile <path>` | string | *(none)* | Use a profile YAML for key derivation and column scoping. |
 | `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.cmdrvl/config/profile/profiles/*.yaml`; legacy `~/.epistemic/profiles` is copied on first default use. |
-| `--capsule-out <dir>` | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`, and `profile.yaml` when a profile is active) to `<dir>/capsule-<id>/`. |
+| `--exit-zero-on-change` | flag | `false` | Exit `0` instead of `1` on REAL CHANGE so `set -e` scripts do not abort on an expected change. Refusals still exit `2`; `doctor` exit codes are never affected. |
+| `--capsule-dir <dir>` (alias `--capsule-out`) | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`, and `profile.yaml` when a profile is active) to `<dir>/capsule-<id>/`. |
 | `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
 | `--explicit` | flag | `false` (redacted) | Show raw data values (old/new/delta, key samples, audit field text). **Default is redacted for zero-retention safety**: output carries labels, counts and shares only. |
 | `--no-witness` | flag | `false` | Suppress witness ledger recording. |
@@ -312,9 +313,13 @@ Invalid `--threshold` or `--tolerance` values are CLI argument errors (exit 2).
 
 | Code | Meaning |
 |------|---------|
-| `0` | NO REAL CHANGE |
-| `1` | REAL CHANGE |
+| `0` | NO REAL CHANGE (or REAL CHANGE with `--exit-zero-on-change`; `doctor`: healthy) |
+| `1` | REAL CHANGE, a normal expected outcome (`doctor`: unhealthy) |
 | `2` | REFUSAL or CLI error |
+
+**`set -e` scripts:** exit `1` on REAL CHANGE aborts a `set -e` shell. Pass `--exit-zero-on-change` (REAL CHANGE then exits `0`, refusals still exit `2`), or guard the call: `rvl a.csv b.csv || [ $? -eq 1 ]`. The flag never changes `doctor`'s exit codes.
+
+**Environment:** `NO_COLOR` (any value) and `TERM=dumb` disable ANSI styling, and output is unstyled whenever it is not a TTY. `SOURCE_DATE_EPOCH` replaces the wall clock in the witness record timestamp.
 
 ### Output Routing
 
@@ -443,8 +448,8 @@ fi
 - **Exit codes** — `0`/`1`/`2` map directly to pass/fail/error branching
 - **`--json`** — structured output an agent can parse without regex
 - **Refusals have next steps** — an agent can read `.refusal.code` and decide whether to retry with different flags or escalate
-- **`rvl --robot-triage`** — one-call read-only health, capabilities, and recommended next command for headless agents
-- **`rvl capabilities --json`** — prints the machine-readable capability contract, side effects, exit codes, and agent surfaces
+- **`rvl doctor triage --json`** — one-call read-only health report (`cmdrvl.doctor.v1`, exit `0` healthy / `1` unhealthy) with `next_actions`; `rvl --robot-triage` and `rvl doctor --robot-triage` are deprecated aliases that emit the same report
+- **`rvl capabilities --json`** — prints the machine-readable `operator.v1` contract (identical to `--describe`): options, exit codes, refusals, env vars, side effects, agent surfaces
 - **`rvl robot-docs guide`** — prints paste-ready operating notes without reading input files or writing witness records
 - **`rvl --describe`** — prints the tool's `operator.json` contract so an agent can discover invocation, flags, and exit codes without reading docs
 
@@ -453,10 +458,11 @@ fi
 These commands are read-only. They do not parse CSVs, write witness ledgers, create capsules, or touch the network.
 
 ```bash
-rvl --robot-triage
 rvl capabilities --json
 rvl robot-docs guide
-rvl doctor health --json
+rvl doctor --json                # cmdrvl.doctor.v1, mode health
+rvl doctor triage --json         # mode triage (alias: rvl --robot-triage)
+rvl doctor capabilities --json   # mode capabilities, embeds the operator.v1 contract
 rvl doctor --fix  # exits 2 with safe read-only alternatives
 ```
 
@@ -466,7 +472,7 @@ Use capsules when you need a deterministic handoff between agents, CI jobs, or d
 
 ```bash
 # 1. Produce the normal verdict and write a replay capsule sidecar
-rvl old.csv new.csv --key id --json --capsule-out ./capsules > run.json
+rvl old.csv new.csv --key id --json --capsule-dir ./capsules > run.json
 
 # 2. Inspect generated capsule
 ls ./capsules/capsule-*/

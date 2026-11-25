@@ -21,7 +21,7 @@ pub enum KeyMode {
 #[command(
     name = "rvl",
     about = "Reveal the smallest set of numeric changes that explain what actually changed.",
-    override_usage = "rvl <old.csv> <new.csv> [OPTIONS]\n       rvl --robot-triage\n       rvl capabilities --json\n       rvl robot-docs guide\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor <health|capabilities|robot-docs> [OPTIONS]",
+    override_usage = "rvl <old.csv> <new.csv> [OPTIONS]\n       rvl capabilities --json\n       rvl robot-docs guide\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor [health|capabilities|triage|robot-docs] [--json]",
     after_help = "Output is redacted by default (zero-retention safe): labels, counts and shares only, no raw values.\nPass --explicit to show raw values (old/new/delta, key samples). Use it for local, non-sensitive runs; omit it\nfor logged, shared, or veil/airlock zero-retention workflows.",
     subcommand_negates_reqs = true
 )]
@@ -90,8 +90,13 @@ pub struct Args {
     pub profile_id: Option<String>,
 
     /// Write deterministic repro capsule artifacts to this directory (default: disabled).
-    #[arg(long, value_name = "DIR")]
+    /// `--capsule-out` is a deprecated alias.
+    #[arg(long = "capsule-dir", alias = "capsule-out", value_name = "DIR")]
     pub capsule_out: Option<PathBuf>,
+
+    /// Exit 0 instead of 1 on REAL_CHANGE, for `set -e` pipelines. Refusals still exit 2; never affects `doctor`.
+    #[arg(long)]
+    pub exit_zero_on_change: bool,
 
     /// Emit JSON output (single object).
     #[arg(long)]
@@ -162,6 +167,10 @@ pub struct DoctorArgs {
     #[arg(long = "robot-triage")]
     pub robot_triage: bool,
 
+    /// Emit the doctor report as JSON (cmdrvl.doctor.v1, mode health).
+    #[arg(long)]
+    pub json: bool,
+
     /// Refuse safely; repair mode is not available in this release.
     #[arg(long, hide = true)]
     pub fix: bool,
@@ -174,10 +183,19 @@ pub struct DoctorArgs {
 pub enum DoctorAction {
     /// Print a cheap one-line health summary.
     Health(DoctorHealthArgs),
-    /// Print the machine-readable doctor capability contract.
+    /// Print the doctor report carrying the operator contract (cmdrvl.doctor.v1, mode capabilities).
     Capabilities(DoctorCapabilitiesArgs),
+    /// Print the doctor report with next actions (cmdrvl.doctor.v1, mode triage).
+    Triage(DoctorTriageArgs),
     /// Print paste-ready operating notes for agents.
     RobotDocs,
+}
+
+#[derive(Debug, Clone, clap::Args)]
+pub struct DoctorTriageArgs {
+    /// Emit JSON output.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, clap::Args)]
@@ -244,7 +262,7 @@ pub struct WitnessLastArgs {
 
 impl Args {
     pub fn parse() -> Result<Self, clap::Error> {
-        Self::try_parse()
+        Self::parse_from(std::env::args_os())
     }
 
     pub fn parse_from<I, T>(itr: I) -> Result<Self, clap::Error>
@@ -252,7 +270,19 @@ impl Args {
         I: IntoIterator<Item = T>,
         T: Into<std::ffi::OsString> + Clone,
     {
-        Self::try_parse_from(itr)
+        use clap::{CommandFactory, FromArgMatches};
+
+        let mut command = Self::command();
+        if color_disabled_by_env(
+            std::env::var_os("NO_COLOR").as_deref(),
+            std::env::var_os("TERM").as_deref(),
+        ) {
+            // clap/anstream already strips ANSI for non-TTY and NO_COLOR, but a forced-color
+            // variable (CLICOLOR_FORCE) would still win over TERM=dumb; make "never" explicit.
+            command = command.color(clap::ColorChoice::Never);
+        }
+        let matches = command.try_get_matches_from(itr)?;
+        Self::from_arg_matches(&matches)
     }
 
     /// Create Args directly (for API/library use).
@@ -279,6 +309,7 @@ impl Args {
             profile: None,
             profile_id: None,
             capsule_out: None,
+            exit_zero_on_change: false,
             json,
             no_witness: false,
             explicit: false,
@@ -299,6 +330,14 @@ impl Args {
     pub fn new_path(&self) -> &PathBuf {
         self.new.as_ref().expect("new path required for comparison")
     }
+}
+
+/// NO_COLOR (any non-empty value) or TERM=dumb means no ANSI styling.
+pub(crate) fn color_disabled_by_env(
+    no_color: Option<&std::ffi::OsStr>,
+    term: Option<&std::ffi::OsStr>,
+) -> bool {
+    no_color.is_some_and(|value| !value.is_empty()) || term.is_some_and(|value| value == "dumb")
 }
 
 fn parse_threshold(raw: &str) -> Result<f64, String> {

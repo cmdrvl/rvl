@@ -1,76 +1,110 @@
 use std::path::Path;
 
-use serde::Serialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::cli::args::{DoctorAction, DoctorArgs, RobotDocsAction};
 
-const DOCTOR_SCHEMA_VERSION: &str = "rvl.doctor.v1";
-const DOCTOR_CONTRACT_VERSION: &str = "cmdrvl.read_only_doctor.v1";
+/// Schema id shared by every spine tool's doctor reports (spine-rules `cmdrvl.doctor.v1`).
+const DOCTOR_SCHEMA_VERSION: &str = "cmdrvl.doctor.v1";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DoctorMode {
+    Health,
+    Capabilities,
+    Triage,
+}
+
+impl DoctorMode {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Health => "health",
+            Self::Capabilities => "capabilities",
+            Self::Triage => "triage",
+        }
+    }
+}
 
 pub fn run(args: &DoctorArgs, json_output: bool) -> Result<u8, Box<dyn std::error::Error>> {
     if args.fix {
         return fix_unavailable();
     }
 
+    let json = args.json || json_output;
+
     if args.robot_triage {
-        return emit_robot_triage();
+        return emit_report(DoctorMode::Triage);
     }
 
     match &args.action {
-        Some(DoctorAction::Health(health_args)) => health(health_args.json || json_output),
+        Some(DoctorAction::Health(health_args)) => health(health_args.json || json),
         Some(DoctorAction::Capabilities(capabilities_args)) => {
-            emit_capabilities(capabilities_args.json || json_output)
+            if capabilities_args.json || json {
+                emit_report(DoctorMode::Capabilities)
+            } else {
+                emit_capabilities(false)
+            }
+        }
+        Some(DoctorAction::Triage(triage_args)) => {
+            if triage_args.json || json {
+                emit_report(DoctorMode::Triage)
+            } else {
+                human_triage()
+            }
         }
         Some(DoctorAction::RobotDocs) => emit_robot_docs(None),
-        None if json_output => emit_robot_triage(),
+        None if json => emit_report(DoctorMode::Health),
         None => human_triage(),
     }
 }
 
 fn health(json: bool) -> Result<u8, Box<dyn std::error::Error>> {
-    let report = build_report();
     if json {
-        println!("{}", serde_json::to_string_pretty(&report)?);
-    } else {
-        println!(
-            "rvl doctor {}: {} checks passed, {} findings",
-            report.summary.status,
-            report.summary.checks_passed,
-            report.findings.len()
-        );
+        return emit_report(DoctorMode::Health);
     }
-    Ok(report.exit_code)
+    let report = build_report(DoctorMode::Health);
+    println!(
+        "rvl doctor {}: {} checks passed, {} findings",
+        report.status(),
+        report.checks_passed,
+        report.error_count()
+    );
+    Ok(report.exit_code())
 }
 
 fn human_triage() -> Result<u8, Box<dyn std::error::Error>> {
-    let report = build_report();
+    let report = build_report(DoctorMode::Triage);
     println!("RVL DOCTOR");
     println!();
-    println!("Status: {}", report.summary.status);
-    println!("Checks passed: {}", report.summary.checks_passed);
-    println!("Findings: {}", report.findings.len());
-    if !report.findings.is_empty() {
+    println!("Status: {}", report.status());
+    println!("Checks passed: {}", report.checks_passed);
+    println!("Findings: {}", report.error_count());
+    if report.error_count() > 0 {
         println!();
-        for finding in &report.findings {
-            println!("- {}: {}", finding.id, finding.summary);
-            println!("  next: {}", finding.next_step);
+        for check in report.checks.iter().filter(|check| !check.pass) {
+            println!("- {}: {}", check.id, check.message);
+            println!("  next: {}", check.fix);
         }
     }
     println!();
     println!("Next: rvl capabilities --json");
-    Ok(report.exit_code)
+    Ok(report.exit_code())
 }
 
+/// `rvl capabilities --json` is the operator.v1 contract, byte-identical to `--describe`.
 pub fn emit_capabilities(json: bool) -> Result<u8, Box<dyn std::error::Error>> {
-    let payload = build_capabilities();
     if json {
-        println!("{}", serde_json::to_string_pretty(&payload)?);
+        println!("{}", crate::OPERATOR_JSON);
     } else {
+        let contract = operator_contract();
         println!("rvl capabilities");
-        println!("schema_version: {}", payload.schema_version);
-        println!("contract_version: {}", payload.contract_version);
-        println!("read_only: {}", payload.read_only);
+        println!(
+            "schema_version: {}",
+            contract["schema_version"].as_str().unwrap_or("?")
+        );
+        println!(
+            "contract_version: {}",
+            contract["contract_version"].as_str().unwrap_or("?")
+        );
         println!("json: rvl capabilities --json");
     }
     Ok(0)
@@ -88,21 +122,30 @@ pub fn emit_robot_docs(action: Option<&RobotDocsAction>) -> Result<u8, Box<dyn s
     );
     println!();
     println!("Commands:");
-    println!("- rvl --robot-triage");
     println!("- rvl capabilities --json");
     println!("- rvl robot-docs guide");
     println!("- rvl --json <old.csv> <new.csv>");
-    println!("- rvl doctor health");
-    println!("- rvl doctor health --json");
+    println!("- rvl doctor [--json]");
     println!("- rvl doctor capabilities --json");
+    println!("- rvl doctor triage --json");
     println!("- rvl doctor robot-docs");
-    println!("- rvl doctor --robot-triage");
     println!("- rvl doctor --fix");
     println!();
+    println!("Deprecated aliases (still work; same cmdrvl.doctor.v1 output):");
+    println!("- rvl --robot-triage  ->  rvl doctor triage --json");
+    println!("- rvl doctor --robot-triage  ->  rvl doctor triage --json");
+    println!("- rvl doctor health [--json]  ->  rvl doctor [--json]");
+    println!("- --capsule-out  ->  --capsule-dir");
+    println!();
     println!("Exit codes:");
-    println!("- 0: healthy");
-    println!("- 1: findings present");
-    println!("- 2: command-line usage error from clap");
+    println!("- 0: NO_REAL_CHANGE (doctor: healthy)");
+    println!("- 1: REAL_CHANGE, a normal expected outcome (doctor: unhealthy, an error finding)");
+    println!("- 2: refusal or command-line usage error");
+    println!();
+    println!("set -e safety:");
+    println!(
+        "- Pass `--exit-zero-on-change` to exit 0 on REAL_CHANGE (refusals still exit 2, doctor is unaffected), or guard the call: `rvl a.csv b.csv || [ $? -eq 1 ]`."
+    );
     println!();
     println!("Redaction (--explicit):");
     println!(
@@ -127,15 +170,20 @@ pub fn emit_robot_docs(action: Option<&RobotDocsAction>) -> Result<u8, Box<dyn s
     );
     println!();
     println!(
-        "Repair policy: rvl doctor --fix is unavailable and exits 2 without stdout. Use rvl --robot-triage or rvl capabilities --json for read-only diagnostics."
+        "Repair policy: rvl doctor --fix is unavailable and exits 2 without stdout. Use rvl doctor triage --json or rvl capabilities --json for read-only diagnostics."
     );
     Ok(0)
 }
 
+/// Deprecated `rvl --robot-triage` alias: the triage-mode cmdrvl.doctor.v1 report.
 pub fn emit_robot_triage() -> Result<u8, Box<dyn std::error::Error>> {
-    let report = build_report();
-    println!("{}", serde_json::to_string_pretty(&report)?);
-    Ok(report.exit_code)
+    emit_report(DoctorMode::Triage)
+}
+
+fn emit_report(mode: DoctorMode) -> Result<u8, Box<dyn std::error::Error>> {
+    let report = build_report(mode);
+    println!("{}", serde_json::to_string_pretty(&report.to_json())?);
+    Ok(report.exit_code())
 }
 
 fn fix_unavailable() -> Result<u8, Box<dyn std::error::Error>> {
@@ -146,25 +194,116 @@ fn fix_unavailable() -> Result<u8, Box<dyn std::error::Error>> {
         stderr,
         "rvl doctor --fix is unavailable: diagnostics are read-only in this release."
     )?;
-    writeln!(stderr, "Try --robot-triage: rvl --robot-triage")?;
+    writeln!(stderr, "Try triage: rvl doctor triage --json")?;
     writeln!(stderr, "Try capabilities --json: rvl capabilities --json")?;
     writeln!(stderr, "Try robot-docs guide: rvl robot-docs guide")?;
     stderr.flush()?;
     Ok(2)
 }
 
-fn build_report() -> DoctorReport {
-    let capabilities = build_capabilities();
+fn operator_contract() -> Value {
+    serde_json::from_str(crate::OPERATOR_JSON).unwrap_or(Value::Null)
+}
+
+struct Check {
+    id: &'static str,
+    pass: bool,
+    message: String,
+    fix: &'static str,
+}
+
+struct Report {
+    mode: DoctorMode,
+    checks: Vec<Check>,
+    checks_passed: usize,
+}
+
+impl Report {
+    fn error_count(&self) -> usize {
+        self.checks.iter().filter(|check| !check.pass).count()
+    }
+
+    fn healthy(&self) -> bool {
+        self.error_count() == 0
+    }
+
+    fn status(&self) -> &'static str {
+        if self.healthy() {
+            "healthy"
+        } else {
+            "unhealthy"
+        }
+    }
+
+    /// Doctor contract: 0 healthy, 1 unhealthy (an error finding), never 2.
+    fn exit_code(&self) -> u8 {
+        if self.healthy() { 0 } else { 1 }
+    }
+
+    fn to_json(&self) -> Value {
+        let findings: Vec<Value> = self
+            .checks
+            .iter()
+            .map(|check| {
+                let mut finding = json!({
+                    "id": check.id,
+                    "severity": if check.pass { "info" } else { "error" },
+                    "message": check.message,
+                });
+                if !check.pass {
+                    finding["fix"] = json!(check.fix);
+                }
+                finding
+            })
+            .collect();
+
+        let mut report = json!({
+            "schema_version": DOCTOR_SCHEMA_VERSION,
+            "mode": self.mode.as_str(),
+            "tool": "rvl",
+            "tool_version": env!("CARGO_PKG_VERSION"),
+            "healthy": self.healthy(),
+            "findings": findings,
+        });
+
+        match self.mode {
+            DoctorMode::Health => {}
+            DoctorMode::Capabilities => {
+                report["contract"] = operator_contract();
+            }
+            DoctorMode::Triage => {
+                let mut next_actions: Vec<String> = self
+                    .checks
+                    .iter()
+                    .filter(|check| !check.pass)
+                    .map(|check| check.fix.to_string())
+                    .collect();
+                if next_actions.is_empty() {
+                    next_actions.push("rvl capabilities --json".to_string());
+                    next_actions.push("rvl <old.csv> <new.csv> --key <column> --json".to_string());
+                } else {
+                    next_actions.push("rvl doctor capabilities --json".to_string());
+                }
+                report["next_actions"] = json!(next_actions);
+            }
+        }
+        report
+    }
+}
+
+fn build_report(mode: DoctorMode) -> Report {
     let mut checks = vec![
         Check {
             id: "binary-metadata",
-            status: CheckStatus::Pass,
-            summary: format!("rvl {} is runnable", env!("CARGO_PKG_VERSION")),
+            pass: true,
+            message: format!("rvl {} is runnable", env!("CARGO_PKG_VERSION")),
+            fix: "reinstall rvl",
         },
         Check {
             id: "operator-manifest",
-            status: operator_manifest_status(),
-            summary: "compiled operator manifest is readable".to_string(),
+            pass: operator_manifest_ok(),
+            message: "compiled operator manifest is readable".to_string(),
+            fix: "rebuild rvl with a valid operator.json",
         },
     ];
 
@@ -172,65 +311,16 @@ fn build_report() -> DoctorReport {
         checks.push(check);
     }
 
-    let findings: Vec<Finding> = checks
-        .iter()
-        .filter(|check| check.status == CheckStatus::Fail)
-        .map(|check| Finding {
-            id: check.id,
-            severity: "warning",
-            summary: check.summary.clone(),
-            next_step: match check.id {
-                "source-gitignore-doctor" => "add .doctor/ to .gitignore",
-                "operator-manifest" => "rebuild rvl with a valid operator.json",
-                _ => "inspect rvl capabilities --json",
-            },
-        })
-        .collect();
-
-    let status = if findings.is_empty() {
-        "healthy"
-    } else {
-        "findings_present"
-    };
-    let exit_code = if findings.is_empty() { 0 } else { 1 };
-    let checks_passed = checks
-        .iter()
-        .filter(|check| check.status == CheckStatus::Pass)
-        .count();
-
-    DoctorReport {
-        schema_version: DOCTOR_SCHEMA_VERSION,
-        tool: "rvl",
-        version: env!("CARGO_PKG_VERSION"),
-        contract_version: DOCTOR_CONTRACT_VERSION,
-        read_only: true,
-        summary: Summary {
-            status,
-            checks_passed,
-            checks_total: checks.len(),
-            findings_count: findings.len(),
-        },
-        findings,
+    let checks_passed = checks.iter().filter(|check| check.pass).count();
+    Report {
+        mode,
         checks,
-        actions_planned: Vec::new(),
-        recommended_command: if status == "healthy" {
-            "rvl capabilities --json"
-        } else {
-            "rvl --robot-triage"
-        },
-        capabilities_url: "command:rvl capabilities --json",
-        capabilities,
-        exit_code,
+        checks_passed,
     }
 }
 
-fn operator_manifest_status() -> CheckStatus {
-    match serde_json::from_str::<serde_json::Value>(crate::OPERATOR_JSON) {
-        Ok(value) if value.get("name").and_then(|name| name.as_str()) == Some("rvl") => {
-            CheckStatus::Pass
-        }
-        _ => CheckStatus::Fail,
-    }
+fn operator_manifest_ok() -> bool {
+    operator_contract().get("name").and_then(Value::as_str) == Some("rvl")
 }
 
 fn source_checkout_gitignore_check() -> Option<Check> {
@@ -240,15 +330,16 @@ fn source_checkout_gitignore_check() -> Option<Check> {
     }
 
     let gitignore = cwd.join(".gitignore");
-    let status = match std::fs::read_to_string(&gitignore) {
-        Ok(contents) if contents.lines().any(|line| line.trim() == ".doctor/") => CheckStatus::Pass,
-        _ => CheckStatus::Fail,
+    let pass = match std::fs::read_to_string(&gitignore) {
+        Ok(contents) => contents.lines().any(|line| line.trim() == ".doctor/"),
+        Err(_) => false,
     };
 
     Some(Check {
         id: "source-gitignore-doctor",
-        status,
-        summary: ".doctor/ is ignored in this rvl checkout".to_string(),
+        pass,
+        message: ".doctor/ is ignored in this rvl checkout".to_string(),
+        fix: "add .doctor/ to .gitignore",
     })
 }
 
@@ -264,374 +355,4 @@ fn looks_like_rvl_source_checkout(path: &Path) -> bool {
         }
         Err(_) => false,
     }
-}
-
-fn build_capabilities() -> DoctorCapabilities {
-    DoctorCapabilities {
-        schema_version: "rvl.doctor.capabilities.v1",
-        tool: "rvl",
-        version: env!("CARGO_PKG_VERSION"),
-        contract_version: DOCTOR_CONTRACT_VERSION,
-        read_only: true,
-        online_default: false,
-        fix_mode: FixModeCapability {
-            available: false,
-            command: "rvl doctor --fix",
-            behavior: "exits 2, emits only stderr, and names read-only alternatives",
-        },
-        agent_surfaces: json!({
-            "global_json": {
-                "command": "rvl --json <old.csv> <new.csv>",
-                "output": "rvl.v0 JSON compare report",
-                "stdout": "single JSON object",
-                "stderr": "process-level failures only"
-            },
-            "robot_triage": {
-                "command": "rvl --robot-triage",
-                "output": "rvl.doctor.v1 JSON diagnostic report",
-                "mutates": false
-            },
-            "capabilities": {
-                "command": "rvl capabilities --json",
-                "output": "rvl.doctor.capabilities.v1 JSON capability contract",
-                "mutates": false
-            },
-            "robot_docs": {
-                "command": "rvl robot-docs guide",
-                "output": "agent-oriented markdown guide",
-                "mutates": false
-            },
-            "doctor_namespace": {
-                "commands": [
-                    "rvl doctor health",
-                    "rvl doctor health --json",
-                    "rvl doctor capabilities --json",
-                    "rvl doctor robot-docs",
-                    "rvl doctor --robot-triage",
-                    "rvl doctor --fix"
-                ],
-                "status": "available"
-            }
-        }),
-        rvl_capabilities: json!({
-            "formats": ["csv"],
-            "profile_aware": true,
-            "numeric_explanation": true,
-            "exhaustive_numeric_audit": true,
-            "profile_scoped_field_audit": true,
-            "schema_describe": true,
-            "operator_describe": true,
-            "witness_query": true,
-            "repro_capsules": true,
-            "streaming": false
-        }),
-        composition: json!({
-            "family": {
-                "name": "cmdrvl-spine",
-                "siblings": ["shape", "verify", "benchmark", "assess", "pack"],
-                "capabilities": {
-                    "shape": "shape capabilities --json",
-                    "rvl": "rvl capabilities --json",
-                    "assess": "assess capabilities --json",
-                    "pack": "pack capabilities --json"
-                }
-            },
-            "role": "numeric_change_explainer",
-            "position": "after_shape_before_assess",
-            "accepts": [
-                {
-                    "kind": "csv_pair",
-                    "description": "The same CSV pair, key, and profile choices that passed a preceding shape gate."
-                }
-            ],
-            "produces": [
-                {
-                    "kind": "rvl_report",
-                    "schema": "rvl.v0",
-                    "command": "rvl <old.csv> <new.csv> --key <column> --json"
-                }
-            ],
-            "canonical_chains": [
-                {
-                    "name": "shape_then_rvl_then_assess",
-                    "commands": [
-                        "shape <old.csv> <new.csv> --key <column> --json > shape.json",
-                        "jq -e '.outcome == \"COMPATIBLE\"' shape.json >/dev/null",
-                        "rvl <old.csv> <new.csv> --key <column> --json > rvl.json",
-                        "assess shape.json rvl.json <other-artifacts> --policy <policy.yaml> --json > decision.json"
-                    ],
-                    "upstream_tools": ["shape"],
-                    "downstream_tools": ["assess", "pack"]
-                }
-            ],
-            "agent_rules": [
-                "Prefer shape before rvl when the task compares two tabular datasets.",
-                "Keep key, profile, delimiter, and tolerance assumptions explicit across shape and rvl.",
-                "Use rvl output as evidence for assess; rvl does not make policy decisions."
-            ]
-        }),
-        side_effects: json!({
-            "rvl --robot-triage": {
-                "reads_stdin": false,
-                "reads_input_files": false,
-                "parses_csv": false,
-                "writes_witness_ledger": false,
-                "writes_capsules": false,
-                "writes_doctor_artifacts": false,
-                "changes_cwd": false,
-                "uses_network": false
-            },
-            "rvl capabilities --json": {
-                "reads_stdin": false,
-                "reads_input_files": false,
-                "parses_csv": false,
-                "writes_witness_ledger": false,
-                "writes_capsules": false,
-                "writes_doctor_artifacts": false,
-                "changes_cwd": false,
-                "uses_network": false
-            },
-            "rvl robot-docs guide": {
-                "reads_stdin": false,
-                "reads_input_files": false,
-                "parses_csv": false,
-                "writes_witness_ledger": false,
-                "writes_capsules": false,
-                "writes_doctor_artifacts": false,
-                "changes_cwd": false,
-                "uses_network": false
-            },
-            "rvl doctor --fix": {
-                "reads_stdin": false,
-                "reads_input_files": false,
-                "parses_csv": false,
-                "writes_witness_ledger": false,
-                "writes_capsules": false,
-                "writes_doctor_artifacts": false,
-                "changes_cwd": false,
-                "uses_network": false,
-                "available": false
-            }
-        }),
-        commands: vec![
-            CommandCapability {
-                command: "rvl --robot-triage",
-                output: "json",
-                mutates: false,
-            },
-            CommandCapability {
-                command: "rvl capabilities --json",
-                output: "json",
-                mutates: false,
-            },
-            CommandCapability {
-                command: "rvl robot-docs guide",
-                output: "markdown",
-                mutates: false,
-            },
-            CommandCapability {
-                command: "rvl --json <old.csv> <new.csv>",
-                output: "rvl.v0 json",
-                mutates: true,
-            },
-            CommandCapability {
-                command: "rvl doctor health",
-                output: "one-line text",
-                mutates: false,
-            },
-            CommandCapability {
-                command: "rvl doctor health --json",
-                output: "json",
-                mutates: false,
-            },
-            CommandCapability {
-                command: "rvl doctor capabilities --json",
-                output: "json",
-                mutates: false,
-            },
-            CommandCapability {
-                command: "rvl doctor robot-docs",
-                output: "markdown",
-                mutates: false,
-            },
-            CommandCapability {
-                command: "rvl doctor --robot-triage",
-                output: "json",
-                mutates: false,
-            },
-            CommandCapability {
-                command: "rvl doctor --fix",
-                output: "stderr refusal",
-                mutates: false,
-            },
-        ],
-        detectors: vec![
-            DetectorCapability {
-                id: "binary-metadata",
-                description: "Confirms the rvl binary can report its compiled version.",
-                online_required: false,
-            },
-            DetectorCapability {
-                id: "operator-manifest",
-                description: "Confirms the compiled operator manifest is present and names rvl.",
-                online_required: false,
-            },
-            DetectorCapability {
-                id: "source-gitignore-doctor",
-                description: "When run from the rvl source checkout, confirms .doctor/ is ignored.",
-                online_required: false,
-            },
-        ],
-        fixers: Vec::new(),
-        exit_codes: vec![
-            ExitCodeCapability {
-                code: 0,
-                meaning: "healthy or display command succeeded",
-            },
-            ExitCodeCapability {
-                code: 1,
-                meaning: "doctor findings present",
-            },
-            ExitCodeCapability {
-                code: 2,
-                meaning: "command-line usage error or rvl domain refusal/error",
-            },
-        ],
-        env_vars: vec![
-            EnvVarCapability {
-                name: "EPISTEMIC_WITNESS",
-                description: "Overrides the witness ledger path for comparison runs; doctor commands do not write it.",
-            },
-            EnvVarCapability {
-                name: "HOME",
-                description: "Used to resolve ~/.cmdrvl default state and config paths; doctor commands do not write them.",
-            },
-        ],
-        data_paths: vec![
-            DataPathCapability {
-                path: ".doctor/",
-                purpose: "reserved and gitignored for future doctor run artifacts",
-                mutates_in_this_release: false,
-            },
-            DataPathCapability {
-                path: "~/.cmdrvl/state/witness/witness.jsonl",
-                purpose: "comparison-run witness ledger; not touched by doctor commands",
-                mutates_in_this_release: false,
-            },
-            DataPathCapability {
-                path: "~/.cmdrvl/config/profile/profiles",
-                purpose: "default --profile-id search path; not touched by doctor commands",
-                mutates_in_this_release: false,
-            },
-        ],
-    }
-}
-
-#[derive(Debug, Serialize)]
-struct DoctorReport {
-    schema_version: &'static str,
-    tool: &'static str,
-    version: &'static str,
-    contract_version: &'static str,
-    read_only: bool,
-    summary: Summary,
-    findings: Vec<Finding>,
-    checks: Vec<Check>,
-    actions_planned: Vec<String>,
-    recommended_command: &'static str,
-    capabilities_url: &'static str,
-    capabilities: DoctorCapabilities,
-    #[serde(skip)]
-    exit_code: u8,
-}
-
-#[derive(Debug, Serialize)]
-struct Summary {
-    status: &'static str,
-    checks_passed: usize,
-    checks_total: usize,
-    findings_count: usize,
-}
-
-#[derive(Debug, Serialize)]
-struct Finding {
-    id: &'static str,
-    severity: &'static str,
-    summary: String,
-    next_step: &'static str,
-}
-
-#[derive(Debug, Serialize)]
-struct Check {
-    id: &'static str,
-    status: CheckStatus,
-    summary: String,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum CheckStatus {
-    Pass,
-    Fail,
-}
-
-#[derive(Debug, Serialize)]
-struct DoctorCapabilities {
-    schema_version: &'static str,
-    tool: &'static str,
-    version: &'static str,
-    contract_version: &'static str,
-    read_only: bool,
-    online_default: bool,
-    fix_mode: FixModeCapability,
-    agent_surfaces: serde_json::Value,
-    rvl_capabilities: serde_json::Value,
-    composition: serde_json::Value,
-    side_effects: serde_json::Value,
-    commands: Vec<CommandCapability>,
-    detectors: Vec<DetectorCapability>,
-    fixers: Vec<String>,
-    exit_codes: Vec<ExitCodeCapability>,
-    env_vars: Vec<EnvVarCapability>,
-    data_paths: Vec<DataPathCapability>,
-}
-
-#[derive(Debug, Serialize)]
-struct FixModeCapability {
-    available: bool,
-    command: &'static str,
-    behavior: &'static str,
-}
-
-#[derive(Debug, Serialize)]
-struct CommandCapability {
-    command: &'static str,
-    output: &'static str,
-    mutates: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct DetectorCapability {
-    id: &'static str,
-    description: &'static str,
-    online_required: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct ExitCodeCapability {
-    code: u8,
-    meaning: &'static str,
-}
-
-#[derive(Debug, Serialize)]
-struct EnvVarCapability {
-    name: &'static str,
-    description: &'static str,
-}
-
-#[derive(Debug, Serialize)]
-struct DataPathCapability {
-    path: &'static str,
-    purpose: &'static str,
-    mutates_in_this_release: bool,
 }

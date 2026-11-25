@@ -119,6 +119,7 @@ fn run_with_capsule(
         profile: None,
         profile_id: None,
         capsule_out: Some(capsule_root.to_path_buf()),
+        exit_zero_on_change: false,
         json: true,
         no_witness: true,
         describe: false,
@@ -190,6 +191,7 @@ fn replay_from_manifest(manifest: &Value, capsule_dir: &Path) -> Value {
             .and_then(Value::as_str)
             .map(str::to_string),
         capsule_out: None,
+        exit_zero_on_change: false,
         json: args_block
             .get("json")
             .and_then(Value::as_bool)
