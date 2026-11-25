@@ -12,6 +12,9 @@ fn run_case(old: &str, new: &str, key: Option<&str>, json: bool) -> String {
     let args = Args {
         old: Some(PathBuf::from(old)),
         new: Some(PathBuf::from(new)),
+        sheet: None,
+        old_sheet: None,
+        new_sheet: None,
         key: key.map(|value| value.to_string()),
         key_mode: Default::default(),
         threshold: 0.95,

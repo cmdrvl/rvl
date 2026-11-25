@@ -29,16 +29,35 @@ pub struct WitnessInput {
 /// Serialize a WitnessRecord to canonical JSON (sorted keys, single line).
 ///
 /// serde_json does NOT sort keys when serializing structs directly — it
-/// preserves declaration order. We roundtrip through `serde_json::Value`
-/// (whose `Map` uses `BTreeMap` by default, which sorts keys) to guarantee
-/// deterministic sorted output.
+/// preserves declaration order. We roundtrip through `serde_json::Value` and
+/// sort every object explicitly. Do not rely on `Map` being a `BTreeMap`: that
+/// is a cargo-feature accident (`preserve_order`, which a dependency such as
+/// cmdrvl-tabular enables for the whole build, turns it into insertion order).
 ///
 /// This function is the ONLY serialization path for witness records. Both
 /// `compute_id()` and `LedgerWriter::append()` must use it so that
 /// `hash(line_with_id_blanked) == record.id` always holds.
 pub fn canonical_json(record: &WitnessRecord) -> String {
     let value = serde_json::to_value(record).expect("WitnessRecord is always serializable");
-    serde_json::to_string(&value).expect("Value is always serializable")
+    serde_json::to_string(&sort_keys(value)).expect("Value is always serializable")
+}
+
+fn sort_keys(value: serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::Object(map) => {
+            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(&b.0));
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(k, v)| (k, sort_keys(v)))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sort_keys).collect()),
+        other => other,
+    }
 }
 
 impl WitnessRecord {

@@ -3,7 +3,7 @@
   "name": "rvl",
   "tool_version": "0.7.1",
   "contract_version": "1.0.0",
-  "description": "Numeric change explainer — finds the smallest set of cell-level changes that account for the difference between two CSV files. Deprecated aliases kept for one release: `rvl --robot-triage` and `rvl doctor --robot-triage` (both now emit the cmdrvl.doctor.v1 triage report), `rvl doctor health`, and `--capsule-out` (use --capsule-dir).",
+  "description": "Numeric change explainer — finds the smallest set of cell-level changes that account for the difference between two tabular files (CSV, TSV, JSONL, Parquet, XLSX; the two may differ in format). Deprecated aliases kept for one release: `rvl --robot-triage` and `rvl doctor --robot-triage` (both now emit the cmdrvl.doctor.v1 triage report), `rvl doctor health`, and `--capsule-out` (use --capsule-dir).",
   "repository": "https://github.com/cmdrvl/rvl",
   "license": "MIT",
   "agent_guide": "https://github.com/cmdrvl/.github/blob/main/profile/AGENT_PROMPT.md",
@@ -12,6 +12,7 @@
     "binary": "rvl",
     "usage": [
       "rvl <old.csv> <new.csv> [OPTIONS]",
+      "rvl <old.xlsx> <new.parquet> --sheet <name|index> [OPTIONS]",
       "rvl capabilities --json",
       "rvl robot-docs guide",
       "rvl witness <query|last|count> [OPTIONS]",
@@ -26,11 +27,14 @@
   },
 
   "arguments": [
-    { "name": "old", "type": "file_path", "required": true, "position": 0, "description": "Old CSV file (required for compare mode)" },
-    { "name": "new", "type": "file_path", "required": true, "position": 1, "description": "New CSV file (required for compare mode)" }
+    { "name": "old", "type": "file_path", "required": true, "position": 0, "description": "Old input: CSV, TSV, JSONL, Parquet or XLSX/XLS (required for compare mode)" },
+    { "name": "new", "type": "file_path", "required": true, "position": 1, "description": "New input: CSV, TSV, JSONL, Parquet or XLSX/XLS (required for compare mode). The two inputs may be different formats." }
   ],
 
   "options": [
+    { "name": "sheet", "flag": "--sheet", "type": "string", "description": "Worksheet (name or 0-based index) for both inputs when they are workbooks; required when a workbook has several sheets" },
+    { "name": "old_sheet", "flag": "--old-sheet", "type": "string", "description": "Worksheet for the old input (overrides --sheet)" },
+    { "name": "new_sheet", "flag": "--new-sheet", "type": "string", "description": "Worksheet for the new input (overrides --sheet)" },
     { "name": "key", "flag": "--key", "type": "string", "description": "Align rows by this key column (otherwise align by row order)" },
     { "name": "key_mode", "flag": "--key-mode", "type": "string", "default": "exact", "description": "Key-set policy: exact requires equal sets; overlap compares continuing rows only and reports membership counts (key samples require --explicit). Requires --key or a profile key." },
     { "name": "threshold", "flag": "--threshold", "type": "float", "default": 0.95, "description": "Coverage target: 0 < x <= 1" },
@@ -165,7 +169,8 @@
     { "code": "E_AUDIT_FIELDS_REQUIRES_EXHAUSTIVE", "message": "Field audit requires --exhaustive", "action": "retry_with_flag", "flag": "--exhaustive" },
     { "code": "E_AUDIT_FIELDS_REQUIRES_PROFILE", "message": "Field audit requires an active profile", "action": "retry_with_flag", "flag": "--profile" },
     { "code": "E_INPUT_NOT_LOCKED", "message": "Input file is not pinned in the --lock lockfile(s)", "action": "retry_with_flag", "flag": "--lock" },
-    { "code": "E_INPUT_DRIFT", "message": "Input bytes differ from the hash pinned in the lockfile", "action": "escalate" }
+    { "code": "E_INPUT_DRIFT", "message": "Input bytes differ from the hash pinned in the lockfile", "action": "escalate" },
+    { "code": "E_INPUT_FORMAT", "message": "A JSONL, Parquet or XLSX input was refused by the shared reader; detail.tabular_code carries its typed code (E_AMBIGUOUS_SHEET, E_SHEET_NOT_FOUND, E_UNSUPPORTED_VALUE, E_FORMAT, ...)", "action": "retry_with_flag", "flag": "--sheet" }
   ],
 
   "env_vars": [
@@ -176,7 +181,7 @@
     { "name": "SOURCE_DATE_EPOCH", "description": "Unix seconds used instead of the wall clock for the witness record timestamp (reproducible builds convention)." }
   ],
 
-  "formats": ["csv"],
+  "formats": ["csv", "tsv", "jsonl", "parquet", "xlsx"],
 
   "side_effects": {
     "reads_files": true,

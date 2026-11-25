@@ -246,6 +246,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     let old = match parse_csv(
         args.old_path(),
         FileSide::Old,
+        args.sheet_for(FileSide::Old),
         args.delimiter,
         rerun_paths,
         active_profile.header_aliases.as_ref(),
@@ -266,6 +267,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     let new = match parse_csv(
         args.new_path(),
         FileSide::New,
+        args.sheet_for(FileSide::New),
         args.delimiter,
         rerun_paths,
         active_profile.header_aliases.as_ref(),
@@ -1240,23 +1242,57 @@ fn run_diff(
     }
 }
 
-fn parse_csv(
+/// Raw input bytes. CSV/TSV and unknown extensions are read as-is. JSONL, Parquet and XLSX/XLS
+/// go through the shared tabular reader and arrive here as canonical CSV bytes (see
+/// `tabular_input`), so everything after this point is the unchanged CSV pipeline.
+fn read_input_bytes(
     path: &Path,
     file_side: FileSide,
+    sheet: Option<&str>,
     forced_delimiter: Option<u8>,
     rerun_paths: RerunPaths<'_>,
-    header_aliases: Option<&HashMap<Vec<u8>, Vec<u8>>>,
-) -> Result<ParsedCsv, Box<RefusalPayload>> {
-    let bytes = fs::read(path).map_err(|err| {
+) -> Result<Vec<u8>, Box<RefusalPayload>> {
+    let io_refusal = |error: String| {
         Box::new(RefusalPayload::with_default_next(
             RefusalCode::Io,
             RefusalKind::Io {
                 file: file_side,
-                error: err.to_string(),
+                error,
             },
             rerun_paths,
         ))
-    })?;
+    };
+    if crate::tabular_input::is_tabular_path(path).is_none() {
+        return fs::read(path).map_err(|err| io_refusal(err.to_string()));
+    }
+    crate::tabular_input::read_as_csv(path, sheet, forced_delimiter.unwrap_or(b',')).map_err(
+        |refusal| {
+            if refusal.is_io {
+                return io_refusal(refusal.detail);
+            }
+            Box::new(RefusalPayload::with_default_next(
+                RefusalCode::InputFormat,
+                RefusalKind::InputFormat {
+                    file: file_side,
+                    tabular_code: refusal.code,
+                    detail: refusal.detail,
+                    context: refusal.context,
+                },
+                rerun_paths,
+            ))
+        },
+    )
+}
+
+fn parse_csv(
+    path: &Path,
+    file_side: FileSide,
+    sheet: Option<&str>,
+    forced_delimiter: Option<u8>,
+    rerun_paths: RerunPaths<'_>,
+    header_aliases: Option<&HashMap<Vec<u8>, Vec<u8>>>,
+) -> Result<ParsedCsv, Box<RefusalPayload>> {
+    let bytes = read_input_bytes(path, file_side, sheet, forced_delimiter, rerun_paths)?;
 
     let guarded = guard_input_bytes(&bytes).map_err(|issue| {
         Box::new(RefusalPayload::with_default_next(
@@ -2545,6 +2581,17 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
             "lockfile": lockfile,
             "expected_hash": expected_hash,
             "actual_hash": actual_hash,
+        }),
+        RefusalKind::InputFormat {
+            file,
+            tabular_code,
+            detail,
+            context,
+        } => json!({
+            "file": file.as_str(),
+            "tabular_code": tabular_code,
+            "detail": detail,
+            "context": context,
         }),
         RefusalKind::LockIo { lockfile, error } => json!({
             "lockfile": lockfile,

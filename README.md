@@ -30,8 +30,18 @@ Two CSV exports. 50,000 numeric cells. Your boss wants to know what changed and 
 - **Refuses instead of guessing** — if the top 25 contributors can't reach the threshold, rvl refuses with `E_DIFFUSE` instead of printing a misleading partial list. If rows are reordered without a key, it refuses with `E_NEED_KEY` and suggests which column to use.
 - **Zero config** — auto-detects delimiters, parses currency symbols (`$1,234.56`), accounting parentheses (`(123.45)` → negative), and thousands separators. No format flags needed.
 - **Tolerance built in** — floating-point noise below `1e-9` (configurable) is zeroed out. No false positives from rounding differences.
+- **CSV, TSV, JSONL, Parquet and Excel** — `rvl old.xlsx new.parquet --sheet loans --key id` works, and the two inputs may be different formats. See [Input formats](#input-formats).
 
 ---
+
+## Input formats
+
+rvl reads CSV, TSV, JSONL / NDJSON, Parquet and XLSX/XLS, chosen by file extension, and the old and new files may be different formats. CSV and TSV (and any other extension) go through rvl's own reader exactly as before. JSONL, Parquet and Excel go through the shared [`cmdrvl-tabular`](https://github.com/cmdrvl/tabular) reader, which renders every value to one canonical text form; rvl then feeds that text, in memory, to the same CSV pipeline, so the same data gives the same comparison in any container (`tests/formats.rs` runs all 25 old × new pairings of the five formats against the CSV result, redacted and `--explicit`).
+
+- **Worksheets:** `--sheet <name|index>` picks the sheet for both files; `--old-sheet` / `--new-sheet` override per side. A workbook with several sheets and no sheet flag refuses `E_INPUT_FORMAT` (`detail.tabular_code` = `E_AMBIGUOUS_SHEET`, with the sheet list).
+- **Refusals:** anything the shared reader refuses (a Parquet binary or nested column, an unsupported Excel cell, a file whose content disagrees with its extension, an unknown sheet) is `E_INPUT_FORMAT`, with the reader's typed code and coordinates in `detail` and never a cell value. A missing file is the ordinary `E_IO`.
+- **Dates, timestamps and decimals** arrive as ISO text (`2024-02-29`, `2018-11-02T19:22:09.153Z`, `12.50`), which rvl treats as non-numeric labels, not numbers; see the tabular README for the exact forms. An Excel date and a midnight datetime are the same text.
+- **Not covered:** `--delimiter` applies to CSV text only (non-CSV inputs are rendered with it if you pass one, otherwise with a comma); `--lock` hashes the file bytes as they are on disk; large Excel and Parquet files are read into memory by their libraries (rvl already holds both inputs in memory).
 
 ## Quick Example
 

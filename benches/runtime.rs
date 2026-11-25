@@ -77,6 +77,9 @@ fn run_case(case: &Case, iterations: u64, warmup: u64) -> f64 {
     let args = Args {
         old: Some(case.old.clone()),
         new: Some(case.new.clone()),
+        sheet: None,
+        old_sheet: None,
+        new_sheet: None,
         key: case.key.clone(),
         key_mode: Default::default(),
         threshold: 0.95,

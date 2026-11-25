@@ -26,13 +26,26 @@ pub enum KeyMode {
     subcommand_negates_reqs = true
 )]
 pub struct Args {
-    /// Old CSV path.
-    #[arg(value_name = "OLD_CSV")]
+    /// Old input path (CSV, TSV, JSONL, Parquet, XLSX/XLS).
+    #[arg(value_name = "OLD")]
     pub old: Option<PathBuf>,
 
-    /// New CSV path.
-    #[arg(value_name = "NEW_CSV")]
+    /// New input path (CSV, TSV, JSONL, Parquet, XLSX/XLS).
+    #[arg(value_name = "NEW")]
     pub new: Option<PathBuf>,
+
+    /// Worksheet for both inputs when they are workbooks: a sheet name or a 0-based index.
+    /// Required for a workbook with more than one sheet. Ignored for other formats.
+    #[arg(long, value_name = "NAME|INDEX")]
+    pub sheet: Option<String>,
+
+    /// Worksheet for the old input (overrides --sheet).
+    #[arg(long = "old-sheet", value_name = "NAME|INDEX")]
+    pub old_sheet: Option<String>,
+
+    /// Worksheet for the new input (overrides --sheet).
+    #[arg(long = "new-sheet", value_name = "NAME|INDEX")]
+    pub new_sheet: Option<String>,
 
     /// Align rows by this key column (otherwise align by row order).
     #[arg(long, value_name = "COLUMN")]
@@ -303,6 +316,9 @@ impl Args {
         Self {
             old: Some(old),
             new: Some(new),
+            sheet: None,
+            old_sheet: None,
+            new_sheet: None,
             key,
             key_mode: KeyMode::Exact,
             threshold,
@@ -335,6 +351,15 @@ impl Args {
     /// Get the new path, panics if not set (only valid in comparison mode).
     pub fn new_path(&self) -> &PathBuf {
         self.new.as_ref().expect("new path required for comparison")
+    }
+
+    /// Worksheet selector for one side: `--old-sheet` / `--new-sheet`, else `--sheet`.
+    pub fn sheet_for(&self, side: crate::refusal::details::FileSide) -> Option<&str> {
+        let specific = match side {
+            crate::refusal::details::FileSide::Old => self.old_sheet.as_deref(),
+            crate::refusal::details::FileSide::New => self.new_sheet.as_deref(),
+        };
+        specific.or(self.sheet.as_deref())
     }
 }
 

@@ -108,6 +108,9 @@ fn run_with_capsule(
     let args = Args {
         old: Some(old.to_path_buf()),
         new: Some(new.to_path_buf()),
+        sheet: None,
+        old_sheet: None,
+        new_sheet: None,
         key: key.map(str::to_string),
         key_mode: Default::default(),
         threshold: 0.95,
@@ -157,6 +160,9 @@ fn replay_from_manifest(manifest: &Value, capsule_dir: &Path) -> Value {
     let args = Args {
         old: Some(capsule_dir.join("old.csv")),
         new: Some(capsule_dir.join("new.csv")),
+        sheet: None,
+        old_sheet: None,
+        new_sheet: None,
         key: args_block
             .get("key")
             .and_then(Value::as_str)

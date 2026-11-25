@@ -15,6 +15,7 @@ pub(crate) mod paths;
 pub mod profile;
 pub mod refusal;
 pub mod repro;
+pub mod tabular_input;
 pub mod witness;
 
 pub(crate) const OPERATOR_JSON: &str = include_str!("../operator.json");

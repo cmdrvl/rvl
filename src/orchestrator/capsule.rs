@@ -366,6 +366,16 @@ pub(super) fn build_comparison_command(
         parts.push("--delimiter".to_string());
         parts.push(format!("0x{delimiter:02x}"));
     }
+    for (flag, value) in [
+        ("--sheet", args.sheet.as_deref()),
+        ("--old-sheet", args.old_sheet.as_deref()),
+        ("--new-sheet", args.new_sheet.as_deref()),
+    ] {
+        if let Some(value) = value {
+            parts.push(flag.to_string());
+            parts.push(shell_escape(value));
+        }
+    }
     if args.exhaustive {
         parts.push("--exhaustive".to_string());
         parts.push("--max-audit-changes".to_string());

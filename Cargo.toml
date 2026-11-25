@@ -21,6 +21,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 blake3 = "1"
 sha2 = "0.10"
+# JSONL / Parquet / XLSX inputs (CSV and TSV keep rvl's own reader). Pinned by commit.
+cmdrvl-tabular = { git = "https://github.com/cmdrvl/tabular", rev = "f461f34" }
 
 [dev-dependencies]
 arrow-csv = "57.2.0"

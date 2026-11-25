@@ -129,6 +129,15 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
                 "Example: {file} bytes hash to {actual_hash} but {lockfile} pins {expected_hash}."
             )
         }
+        RefusalKind::InputFormat {
+            file,
+            tabular_code,
+            detail,
+            ..
+        } => {
+            let file = file_label(*file, old_name, new_name);
+            format!("Example: {file} was refused by the format reader ({tabular_code}): {detail}.")
+        }
         RefusalKind::LockIo { lockfile, error } => {
             format!("Example: cannot use lockfile {lockfile}: {error}.")
         }

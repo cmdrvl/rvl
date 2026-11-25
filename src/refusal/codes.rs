@@ -29,13 +29,14 @@ pub enum RefusalCode {
     AuditFieldsRequiresProfile,
     InputNotLocked,
     InputDrift,
+    InputFormat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnknownRefusalCode;
 
 impl RefusalCode {
-    pub const ALL: [RefusalCode; 25] = [
+    pub const ALL: [RefusalCode; 26] = [
         RefusalCode::Io,
         RefusalCode::Encoding,
         RefusalCode::CsvParse,
@@ -61,6 +62,7 @@ impl RefusalCode {
         RefusalCode::AuditFieldsRequiresProfile,
         RefusalCode::InputNotLocked,
         RefusalCode::InputDrift,
+        RefusalCode::InputFormat,
     ];
 
     #[inline]
@@ -91,6 +93,7 @@ impl RefusalCode {
             RefusalCode::AuditFieldsRequiresProfile => "E_AUDIT_FIELDS_REQUIRES_PROFILE",
             RefusalCode::InputNotLocked => "E_INPUT_NOT_LOCKED",
             RefusalCode::InputDrift => "E_INPUT_DRIFT",
+            RefusalCode::InputFormat => "E_INPUT_FORMAT",
         }
     }
 
@@ -123,6 +126,7 @@ impl RefusalCode {
             RefusalCode::AuditFieldsRequiresProfile => "field audit requires an active profile",
             RefusalCode::InputNotLocked => "input file is not pinned in the lockfile",
             RefusalCode::InputDrift => "input bytes differ from the lockfile hash",
+            RefusalCode::InputFormat => "input could not be read in its file format",
         }
     }
 }
@@ -171,6 +175,7 @@ impl FromStr for RefusalCode {
             "E_AUDIT_FIELDS_REQUIRES_PROFILE" => Ok(RefusalCode::AuditFieldsRequiresProfile),
             "E_INPUT_NOT_LOCKED" => Ok(RefusalCode::InputNotLocked),
             "E_INPUT_DRIFT" => Ok(RefusalCode::InputDrift),
+            "E_INPUT_FORMAT" => Ok(RefusalCode::InputFormat),
             _ => Err(UnknownRefusalCode),
         }
     }

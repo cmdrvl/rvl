@@ -102,6 +102,14 @@ pub enum RefusalKind {
         expected_hash: String,
         actual_hash: String,
     },
+    /// A JSONL / Parquet / XLSX input was refused by the shared tabular reader. `tabular_code`
+    /// is its typed `E_*` code; `context` holds only coordinates, sheet names and type names.
+    InputFormat {
+        file: FileSide,
+        tabular_code: String,
+        detail: String,
+        context: serde_json::Value,
+    },
     /// A `--lock` lockfile could not be read, parsed, or used (reported as E_IO).
     LockIo {
         lockfile: String,
@@ -244,6 +252,19 @@ impl RefusalKind {
                     .unwrap_or_else(|| ".".to_string());
                 format!("lock verify {lockfile} --root {root} --json")
             }
+            RefusalKind::InputFormat {
+                file,
+                tabular_code,
+                ..
+            } => match tabular_code.as_str() {
+                "E_AMBIGUOUS_SHEET" | "E_SHEET_NOT_FOUND" => format!(
+                    "rvl {} {} --{}-sheet <name|index> (or --sheet for both) to pick the worksheet, then rerun",
+                    paths.old,
+                    paths.new,
+                    file.as_str()
+                ),
+                _ => "fix or re-export the input (CSV always works), then rerun".to_string(),
+            },
             RefusalKind::LockIo { .. } => {
                 "pass a readable lock.v0 file to --lock (create one with: vacuum --json <dir> | hashbytes | lock --dataset-id <dataset> --output <lockfile>) and rerun".to_string()
             }

@@ -59,6 +59,9 @@ fn make_args(old: &Path, new: &Path) -> Args {
     Args {
         old: Some(old.to_path_buf()),
         new: Some(new.to_path_buf()),
+        sheet: None,
+        old_sheet: None,
+        new_sheet: None,
         key: None,
         key_mode: Default::default(),
         threshold: 0.95,
