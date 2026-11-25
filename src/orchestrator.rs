@@ -2204,13 +2204,18 @@ fn build_human_field_changes(
         .collect()
 }
 
+/// Old and new raw cell bytes of a changed non-numeric cell.
+type TransitionKey = (Vec<u8>, Vec<u8>);
+/// How many rows made a transition, and which rows (by their key text).
+type TransitionRows = (u64, BTreeSet<String>);
+
 #[derive(Default)]
 struct NonNumericColumnStats {
     non_null_values: u64,
     parsed_date_values: u64,
     distinct_values: BTreeSet<Vec<u8>>,
     date_deltas: BTreeMap<i64, u64>,
-    transitions: BTreeMap<(Vec<u8>, Vec<u8>), (u64, BTreeSet<String>)>,
+    transitions: BTreeMap<TransitionKey, TransitionRows>,
     changed_rows: u64,
     byte_length_delta: i64,
     became_null: u64,
@@ -2486,7 +2491,7 @@ fn parse_date_days(raw: &[u8]) -> Option<i64> {
     } else {
         value
     };
-    let mut parts = date_value.split(|character| character == '-' || character == '/');
+    let mut parts = date_value.split(['-', '/']);
     let year_text = parts.next()?;
     if year_text.len() != 4 {
         return None;
