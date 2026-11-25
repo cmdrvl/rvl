@@ -302,6 +302,7 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--profile <path>` | string | *(none)* | Use a profile YAML for key derivation and column scoping. |
 | `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.cmdrvl/config/profile/profiles/*.yaml`; legacy `~/.epistemic/profiles` is copied on first default use. |
 | `--exit-zero-on-change` | flag | `false` | Exit `0` instead of `1` on REAL CHANGE so `set -e` scripts do not abort on an expected change. Refusals still exit `2`; `doctor` exit codes are never affected. |
+| `--lock <lockfile>` | path (repeatable) | *(none)* | Verify both inputs against pinned `lock.v0` lockfile(s) before comparing: exact path match, else a unique basename match (real `lock` output stores paths relative to the vacuum root). Refuses `E_INPUT_NOT_LOCKED` / `E_INPUT_DRIFT`. Verified lockfile identities appear in the JSON `lock` array and the witness record. |
 | `--capsule-dir <dir>` (alias `--capsule-out`) | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`, and `profile.yaml` when a profile is active) to `<dir>/capsule-<id>/`. |
 | `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
 | `--explicit` | flag | `false` (redacted) | Show raw data values (old/new/delta, key samples, audit field text). **Default is redacted for zero-retention safety**: output carries labels, counts and shares only. |
@@ -562,6 +563,8 @@ Every refusal includes the error code, first concrete example, and a `Next:` rem
 | `E_AUDIT_LIMIT` | `--exhaustive` found more changed cells than `--max-audit-changes` | Rerun with a higher audit limit |
 | `E_AUDIT_FIELDS_REQUIRES_EXHAUSTIVE` | `--audit-fields` was used without `--exhaustive` | Add `--exhaustive` |
 | `E_AUDIT_FIELDS_REQUIRES_PROFILE` | `--audit-fields` was used without an active profile | Rerun with `--profile <path>` or `--profile-id <id>` |
+| `E_INPUT_NOT_LOCKED` | `--lock` was given but an input matches no lockfile member | Add the file to the lock (`vacuum --json <dir> \| hashbytes \| lock --dataset-id <id> --output <lockfile>`) or pass the right lockfile |
+| `E_INPUT_DRIFT` | An input's bytes differ from the hash pinned in the lockfile | Use the locked file, or re-lock if the change is expected. `next_command` is a runnable `lock verify <lockfile> --root <dir> --json` |
 
 ---
 

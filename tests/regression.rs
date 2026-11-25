@@ -24,6 +24,7 @@ fn run_case(old: &str, new: &str, key: Option<&str>, json: bool) -> String {
         profile_id: None,
         capsule_out: None,
         exit_zero_on_change: false,
+        lock: Vec::new(),
         json,
         no_witness: true,
         describe: false,

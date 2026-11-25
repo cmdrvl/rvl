@@ -113,6 +113,25 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             }
             line
         }
+        RefusalKind::InputNotLocked { file, path } => {
+            let file = file_label(*file, old_name, new_name);
+            format!("Example: {file} ({path}) matches no member of the --lock lockfile(s).")
+        }
+        RefusalKind::InputDrift {
+            file,
+            lockfile,
+            expected_hash,
+            actual_hash,
+            ..
+        } => {
+            let file = file_label(*file, old_name, new_name);
+            format!(
+                "Example: {file} bytes hash to {actual_hash} but {lockfile} pins {expected_hash}."
+            )
+        }
+        RefusalKind::LockIo { lockfile, error } => {
+            format!("Example: cannot use lockfile {lockfile}: {error}.")
+        }
         RefusalKind::NoOverlap { rows_old, rows_new } => format!(
             "Example: old={rows_old} new={rows_new} overlap=0; no continuing rows to compare."
         ),

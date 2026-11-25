@@ -27,13 +27,15 @@ pub enum RefusalCode {
     AuditLimit,
     AuditFieldsRequiresExhaustive,
     AuditFieldsRequiresProfile,
+    InputNotLocked,
+    InputDrift,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnknownRefusalCode;
 
 impl RefusalCode {
-    pub const ALL: [RefusalCode; 23] = [
+    pub const ALL: [RefusalCode; 25] = [
         RefusalCode::Io,
         RefusalCode::Encoding,
         RefusalCode::CsvParse,
@@ -57,6 +59,8 @@ impl RefusalCode {
         RefusalCode::AuditLimit,
         RefusalCode::AuditFieldsRequiresExhaustive,
         RefusalCode::AuditFieldsRequiresProfile,
+        RefusalCode::InputNotLocked,
+        RefusalCode::InputDrift,
     ];
 
     #[inline]
@@ -85,6 +89,8 @@ impl RefusalCode {
             RefusalCode::AuditLimit => "E_AUDIT_LIMIT",
             RefusalCode::AuditFieldsRequiresExhaustive => "E_AUDIT_FIELDS_REQUIRES_EXHAUSTIVE",
             RefusalCode::AuditFieldsRequiresProfile => "E_AUDIT_FIELDS_REQUIRES_PROFILE",
+            RefusalCode::InputNotLocked => "E_INPUT_NOT_LOCKED",
+            RefusalCode::InputDrift => "E_INPUT_DRIFT",
         }
     }
 
@@ -115,6 +121,8 @@ impl RefusalCode {
             RefusalCode::AuditLimit => "audit output limit exceeded",
             RefusalCode::AuditFieldsRequiresExhaustive => "field audit requires exhaustive mode",
             RefusalCode::AuditFieldsRequiresProfile => "field audit requires an active profile",
+            RefusalCode::InputNotLocked => "input file is not pinned in the lockfile",
+            RefusalCode::InputDrift => "input bytes differ from the lockfile hash",
         }
     }
 }
@@ -161,6 +169,8 @@ impl FromStr for RefusalCode {
             "E_AUDIT_LIMIT" => Ok(RefusalCode::AuditLimit),
             "E_AUDIT_FIELDS_REQUIRES_EXHAUSTIVE" => Ok(RefusalCode::AuditFieldsRequiresExhaustive),
             "E_AUDIT_FIELDS_REQUIRES_PROFILE" => Ok(RefusalCode::AuditFieldsRequiresProfile),
+            "E_INPUT_NOT_LOCKED" => Ok(RefusalCode::InputNotLocked),
+            "E_INPUT_DRIFT" => Ok(RefusalCode::InputDrift),
             _ => Err(UnknownRefusalCode),
         }
     }

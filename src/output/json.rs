@@ -274,6 +274,8 @@ pub struct JsonContext {
     pub profile_sha256: Option<String>,
     pub profile_column_registry: Option<ColumnRegistryRunInfo>,
     pub capsule_profile: Option<ResolvedProfile>,
+    /// Lockfiles that verified the inputs (`--lock`); empty when `--lock` was not used.
+    pub lock: Vec<crate::lock::LockReceipt>,
     pub mode: Option<OutputMode>,
     pub audit: Option<Audit>,
     pub threshold: f64,
@@ -291,6 +293,9 @@ pub struct JsonOutput {
     pub mode: Option<OutputMode>,
     pub profile_id: Option<String>,
     pub profile_sha256: Option<String>,
+    /// Verified lockfile identities; omitted unless `--lock` verified the inputs.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lock: Vec<crate::lock::LockReceipt>,
     pub files: Files,
     pub alignment: Alignment,
     pub dialect: Dialect,
@@ -312,6 +317,7 @@ impl JsonOutput {
         Self {
             version: "rvl.v0",
             outcome: Outcome::RealChange,
+            lock: ctx.lock.clone(),
             mode: ctx.mode,
             profile_id: if ctx.profile_used {
                 ctx.profile_id.clone()
@@ -342,6 +348,7 @@ impl JsonOutput {
         Self {
             version: "rvl.v0",
             outcome: Outcome::NoRealChange,
+            lock: ctx.lock.clone(),
             mode: ctx.mode,
             profile_id: if ctx.profile_used {
                 ctx.profile_id.clone()
@@ -372,6 +379,7 @@ impl JsonOutput {
         Self {
             version: "rvl.v0",
             outcome: Outcome::Refusal,
+            lock: ctx.lock.clone(),
             mode: ctx.mode,
             profile_id: if ctx.profile_used {
                 ctx.profile_id.clone()
@@ -441,6 +449,7 @@ mod tests {
             profile_sha256: None,
             profile_column_registry: None,
             capsule_profile: None,
+            lock: Vec::new(),
             mode: None,
             audit: None,
             threshold: 0.95,

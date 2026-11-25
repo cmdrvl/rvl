@@ -64,6 +64,7 @@ fn make_args(old: &Path, new: &Path) -> Args {
         profile_id: None,
         capsule_out: None,
         exit_zero_on_change: false,
+        lock: Vec::new(),
         json: true,
         no_witness: true,
         describe: false,

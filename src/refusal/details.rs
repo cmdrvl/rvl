@@ -89,6 +89,24 @@ pub enum RefusalKind {
         rows_old: u64,
         rows_new: u64,
     },
+    /// `--lock` was passed but this input matches no lockfile member.
+    InputNotLocked {
+        file: FileSide,
+        path: String,
+    },
+    /// `--lock` member matches this input but its pinned hash differs from the bytes.
+    InputDrift {
+        file: FileSide,
+        path: String,
+        lockfile: String,
+        expected_hash: String,
+        actual_hash: String,
+    },
+    /// A `--lock` lockfile could not be read, parsed, or used (reported as E_IO).
+    LockIo {
+        lockfile: String,
+        error: String,
+    },
     RowCount {
         rows_old: u64,
         rows_new: u64,
@@ -214,6 +232,20 @@ impl RefusalKind {
             }
             RefusalKind::KeyMismatch { .. } => {
                 "export comparable scopes or fix the join key, then rerun".to_string()
+            }
+            RefusalKind::InputNotLocked { path, .. } => format!(
+                "add {path} to the lock (vacuum --json <dir> | hashbytes | lock --dataset-id <dataset> --output <lockfile>) or pass the lockfile that pins it, then rerun"
+            ),
+            RefusalKind::InputDrift { path, lockfile, .. } => {
+                let root = std::path::Path::new(path)
+                    .parent()
+                    .map(|parent| parent.to_string_lossy().into_owned())
+                    .filter(|parent| !parent.is_empty())
+                    .unwrap_or_else(|| ".".to_string());
+                format!("lock verify {lockfile} --root {root} --json")
+            }
+            RefusalKind::LockIo { .. } => {
+                "pass a readable lock.v0 file to --lock (create one with: vacuum --json <dir> | hashbytes | lock --dataset-id <dataset> --output <lockfile>) and rerun".to_string()
             }
             RefusalKind::NoOverlap { .. } => {
                 "export scopes with at least one continuing key or fix the join key, then rerun".to_string()

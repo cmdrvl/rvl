@@ -41,6 +41,7 @@
     { "name": "max_audit_changes", "flag": "--max-audit-changes", "type": "integer", "default": 10000, "description": "Maximum changed cells to emit in audit modes" },
     { "name": "profile", "flag": "--profile", "type": "file_path", "description": "Use profile YAML at this path for key derivation and column scoping" },
     { "name": "profile_id", "flag": "--profile-id", "type": "string", "description": "Resolve profile by ID from ~/.cmdrvl/config/profile/profiles/*.yaml; legacy ~/.epistemic/profiles is copied on first default use" },
+    { "name": "lock", "flag": "--lock", "type": "file_path", "repeatable": true, "description": "Verify both inputs against pinned lock.v0 lockfile(s) before comparing (exact path match, else unique basename). Refuses E_INPUT_NOT_LOCKED when an input is absent, E_INPUT_DRIFT when its bytes differ from the pinned hash. Verified lockfile identities are reported in the JSON `lock` field and the witness record." },
     { "name": "capsule_dir", "flag": "--capsule-dir", "aliases": ["--capsule-out"], "type": "directory_path", "description": "Write deterministic repro capsule artifacts to this directory (default: disabled). --capsule-out is a deprecated alias." },
     { "name": "exit_zero_on_change", "flag": "--exit-zero-on-change", "type": "flag", "description": "Exit 0 instead of 1 on REAL_CHANGE so `set -e` pipelines do not abort on an expected change. Refusals still exit 2; never changes `doctor` exit codes." },
     { "name": "json", "flag": "--json", "type": "flag", "description": "Emit JSON output (single object)" },
@@ -162,7 +163,9 @@
     { "code": "E_DIFFUSE", "message": "Diffuse change below coverage threshold", "action": "retry_with_flag", "flag": "--threshold" },
     { "code": "E_AUDIT_LIMIT", "message": "Audit output limit exceeded", "action": "retry_with_flag", "flag": "--max-audit-changes" },
     { "code": "E_AUDIT_FIELDS_REQUIRES_EXHAUSTIVE", "message": "Field audit requires --exhaustive", "action": "retry_with_flag", "flag": "--exhaustive" },
-    { "code": "E_AUDIT_FIELDS_REQUIRES_PROFILE", "message": "Field audit requires an active profile", "action": "retry_with_flag", "flag": "--profile" }
+    { "code": "E_AUDIT_FIELDS_REQUIRES_PROFILE", "message": "Field audit requires an active profile", "action": "retry_with_flag", "flag": "--profile" },
+    { "code": "E_INPUT_NOT_LOCKED", "message": "Input file is not pinned in the --lock lockfile(s)", "action": "retry_with_flag", "flag": "--lock" },
+    { "code": "E_INPUT_DRIFT", "message": "Input bytes differ from the hash pinned in the lockfile", "action": "escalate" }
   ],
 
   "env_vars": [

@@ -35,6 +35,7 @@ use crate::diff::tolerance::ToleranceTracker;
 use crate::format::ident_human::render_identifier_human;
 use crate::format::ident_json::encode_identifier_json;
 use crate::format::key::{encode_key_components_json, encode_key_label_json, render_key_human};
+use crate::lock::{LockFailure, LockReceipt, LockSet, LockfileError, merge_receipts};
 use crate::normalize::headers::normalize_headers_with_aliases;
 use crate::numeric::columns::{
     ColumnIntersection, ColumnTypingError, Side as ColumnSide, detect_numeric_columns,
@@ -81,6 +82,9 @@ pub struct ProfileRunInfo {
     pub profile_sha256: Option<String>,
     pub column_registry: Option<ColumnRegistryRunInfo>,
     pub capsule_profile: Option<ResolvedProfile>,
+    /// Lockfiles that verified the inputs (`--lock`). Carried here because this struct is
+    /// already threaded to every JSON/witness render site.
+    pub lock: Vec<LockReceipt>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -169,7 +173,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         ));
     }
 
-    let active_profile = match resolve_active_profile(args, rerun_paths) {
+    let mut active_profile = match resolve_active_profile(args, rerun_paths) {
         Ok(profile) => profile,
         Err(refusal) => {
             return Ok(render_refusal(
@@ -197,6 +201,22 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
             None,
             &active_profile.info,
         ));
+    }
+
+    if !args.lock.is_empty() {
+        match verify_locks(args, rerun_paths) {
+            Ok(receipts) => active_profile.info.lock = receipts,
+            Err(refusal) => {
+                return Ok(render_refusal(
+                    *refusal,
+                    args,
+                    None,
+                    None,
+                    None,
+                    &active_profile.info,
+                ));
+            }
+        }
     }
 
     let cli_key = match args.key.as_deref() {
@@ -294,6 +314,74 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     } else {
         run_row_order(old, new, context)
     }
+}
+
+/// Verify both inputs against the `--lock` lockfiles, before any CSV parsing.
+fn verify_locks(
+    args: &Args,
+    rerun_paths: RerunPaths<'_>,
+) -> Result<Vec<LockReceipt>, Box<RefusalPayload>> {
+    let refuse = |code: RefusalCode, kind: RefusalKind| {
+        Box::new(RefusalPayload::with_default_next(code, kind, rerun_paths))
+    };
+    let set = match LockSet::load(&args.lock) {
+        Ok(set) => set,
+        Err(LockfileError { lockfile, error }) => {
+            return Err(refuse(
+                RefusalCode::Io,
+                RefusalKind::LockIo { lockfile, error },
+            ));
+        }
+    };
+
+    let mut receipts = Vec::new();
+    for (side, path) in [
+        (FileSide::Old, args.old_path()),
+        (FileSide::New, args.new_path()),
+    ] {
+        let path_text = path.to_string_lossy().into_owned();
+        match set.verify(path) {
+            Ok(found) => merge_receipts(&mut receipts, found),
+            Err(LockFailure::Lockfile { lockfile, error }) => {
+                return Err(refuse(
+                    RefusalCode::Io,
+                    RefusalKind::LockIo { lockfile, error },
+                ));
+            }
+            Err(LockFailure::InputUnreadable { error }) => {
+                return Err(refuse(
+                    RefusalCode::Io,
+                    RefusalKind::Io { file: side, error },
+                ));
+            }
+            Err(LockFailure::NotLocked) => {
+                return Err(refuse(
+                    RefusalCode::InputNotLocked,
+                    RefusalKind::InputNotLocked {
+                        file: side,
+                        path: path_text,
+                    },
+                ));
+            }
+            Err(LockFailure::Drift {
+                lockfile,
+                expected_hash,
+                actual_hash,
+            }) => {
+                return Err(refuse(
+                    RefusalCode::InputDrift,
+                    RefusalKind::InputDrift {
+                        file: side,
+                        path: path_text,
+                        lockfile,
+                        expected_hash,
+                        actual_hash,
+                    },
+                ));
+            }
+        }
+    }
+    Ok(receipts)
 }
 
 fn resolve_active_profile(
@@ -399,6 +487,7 @@ fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
             profile_sha256: profile.profile_sha256.clone(),
             column_registry,
             capsule_profile: Some(profile),
+            lock: Vec::new(),
         },
     }
 }
@@ -1548,6 +1637,9 @@ fn render_refusal_with_context(
         );
         refusal.detail.next = command.clone();
         Some(command)
+    } else if refusal.code == RefusalCode::InputDrift {
+        // The default next step for drift is a literal, runnable `lock verify` invocation.
+        Some(refusal.detail.next.clone())
     } else {
         None
     };
@@ -1888,6 +1980,7 @@ fn json_context_with_field_changes(
         profile_sha256: profile.profile_sha256.clone(),
         profile_column_registry: profile.column_registry.clone(),
         capsule_profile: profile.capsule_profile.clone(),
+        lock: profile.lock.clone(),
         mode: if args.exhaustive {
             Some(JsonOutputMode::ExhaustiveNumeric)
         } else {
@@ -1909,6 +2002,7 @@ fn profile_from_json_context(ctx: &JsonContext) -> ProfileRunInfo {
         profile_sha256: ctx.profile_sha256.clone(),
         column_registry: ctx.profile_column_registry.clone(),
         capsule_profile: ctx.capsule_profile.clone(),
+        lock: ctx.lock.clone(),
     }
 }
 
@@ -2434,6 +2528,27 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
             "extra_samples": extra_samples.iter().map(|key| encode_key_label_json(key)).collect::<Vec<_>>(),
             "missing_key_samples": missing_samples.iter().map(|key| encode_key_components_json(key)).collect::<Vec<_>>(),
             "extra_key_samples": extra_samples.iter().map(|key| encode_key_components_json(key)).collect::<Vec<_>>(),
+        }),
+        RefusalKind::InputNotLocked { file, path } => json!({
+            "file": file.as_str(),
+            "path": path,
+        }),
+        RefusalKind::InputDrift {
+            file,
+            path,
+            lockfile,
+            expected_hash,
+            actual_hash,
+        } => json!({
+            "file": file.as_str(),
+            "path": path,
+            "lockfile": lockfile,
+            "expected_hash": expected_hash,
+            "actual_hash": actual_hash,
+        }),
+        RefusalKind::LockIo { lockfile, error } => json!({
+            "lockfile": lockfile,
+            "error": error,
         }),
         RefusalKind::NoOverlap { rows_old, rows_new } => json!({
             "rows_old": rows_old,

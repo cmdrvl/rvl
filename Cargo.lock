@@ -2942,6 +2942,7 @@ dependencies = [
  "polars",
  "serde",
  "serde_json",
+ "sha2",
  "simd-csv",
  "spine-rules",
 ]

@@ -96,6 +96,22 @@ impl WitnessRecord {
         if args.key_mode == crate::cli::args::KeyMode::Overlap {
             params.insert("key_mode".to_string(), serde_json::json!(args.key_mode));
         }
+        if !args.lock.is_empty() {
+            // Lockfiles requested, and (separately) the ones that actually verified the inputs.
+            params.insert(
+                "lock".to_string(),
+                serde_json::json!(
+                    args.lock
+                        .iter()
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .collect::<Vec<_>>()
+                ),
+            );
+            params.insert(
+                "lock_verified".to_string(),
+                serde_json::json!(result.profile.lock),
+            );
+        }
         params.insert(
             "key".to_string(),
             args.key
@@ -467,6 +483,7 @@ mod tests {
             profile_sha256: Some("sha256:abc".to_string()),
             column_registry: None,
             capsule_profile: None,
+            lock: Vec::new(),
         };
         let rec = WitnessRecord::from_run(&args, &result, b"a", b"b", "a.csv", "b.csv");
 

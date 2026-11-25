@@ -6,6 +6,7 @@ pub mod csv;
 pub mod diff;
 pub mod doctor;
 pub mod format;
+pub mod lock;
 pub mod normalize;
 pub mod numeric;
 pub mod orchestrator;
@@ -138,6 +139,19 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                     "mode": { "type": "string", "enum": ["exhaustive_numeric"] },
                     "profile_id": { "type": ["string", "null"] },
                     "profile_sha256": { "type": ["string", "null"] },
+                    "lock": {
+                        "type": "array",
+                        "description": "Present only when --lock verified the inputs: the lockfiles that vouched for them.",
+                        "items": {
+                            "type": "object",
+                            "required": ["lockfile", "lock_hash"],
+                            "properties": {
+                                "lockfile": { "type": "string" },
+                                "lock_hash": { "type": ["string", "null"] }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
                     "files": {
                         "type": "object",
                         "properties": {

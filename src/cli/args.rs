@@ -89,6 +89,11 @@ pub struct Args {
     #[arg(long = "profile-id", value_name = "ID")]
     pub profile_id: Option<String>,
 
+    /// Verify both inputs against a pinned lock.v0 lockfile before comparing (repeatable).
+    /// Refuses E_INPUT_NOT_LOCKED / E_INPUT_DRIFT.
+    #[arg(long, value_name = "LOCKFILE", action = clap::ArgAction::Append)]
+    pub lock: Vec<PathBuf>,
+
     /// Write deterministic repro capsule artifacts to this directory (default: disabled).
     /// `--capsule-out` is a deprecated alias.
     #[arg(long = "capsule-dir", alias = "capsule-out", value_name = "DIR")]
@@ -308,6 +313,7 @@ impl Args {
             max_audit_changes: DEFAULT_MAX_AUDIT_CHANGES,
             profile: None,
             profile_id: None,
+            lock: Vec::new(),
             capsule_out: None,
             exit_zero_on_change: false,
             json,

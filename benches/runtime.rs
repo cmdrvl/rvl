@@ -89,6 +89,7 @@ fn run_case(case: &Case, iterations: u64, warmup: u64) -> f64 {
         profile_id: None,
         capsule_out: None,
         exit_zero_on_change: false,
+        lock: Vec::new(),
         json: false,
         no_witness: true,
         explicit: false,
