@@ -308,6 +308,7 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--delimiter <delim>` | string | *(auto-detect)* | Force CSV delimiter for both files. See [Delimiter](#delimiter). |
 | `--exhaustive` | flag | `false` | Emit every changed numeric cell above tolerance instead of the smallest explanation prefix. |
 | `--audit-fields` | flag | `false` | With `--exhaustive` and an active profile, emit exact changes in profile-scoped non-numeric fields. |
+| `--non-numeric` | flag | `false` | Compare common non-numeric columns without a profile: date shifts, categorical transitions, text churn, nullity flips and row churn. |
 | `--max-audit-changes <n>` | integer | `10000` | Maximum changed cells to emit in audit modes before refusing with `E_AUDIT_LIMIT`. |
 | `--profile <path>` | string | *(none)* | Use a profile YAML for key derivation and column scoping. |
 | `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.cmdrvl/config/profile/profiles/*.yaml`; legacy `~/.epistemic/profiles` is copied on first default use. |
@@ -425,6 +426,16 @@ rvl old.csv new.csv --profile profile.yaml --exhaustive --audit-fields --json
 ```
 
 Field audit is deliberately profile-scoped. It compares common non-numeric columns by exact parsed CSV bytes after header canonicalization; it does not trim, case-fold, fuzzy-match, or score text similarity. Field changes appear in `field_changes[]`, are redacted by default, include `old`/`new` only with `--explicit`, and count toward the same `--max-audit-changes` limit as numeric audit entries.
+
+For a domain-agnostic non-numeric comparison, use `--non-numeric` without a profile:
+
+```bash
+rvl old.csv new.csv --key id --non-numeric --json
+```
+
+The `non_numeric` report contains deterministic `date_shifts[]`, low-cardinality `categorical_transitions[]` (including affected-row tokens), high-cardinality `text_churn[]`, `nullity_flips[]`, and key/row `row_churn`. Dates are parsed when at least 95% of observed values are valid civil dates and report exact signed day deltas. Default output uses `[REDACTED]` for column labels and BLAKE3 tokens for values and affected rows; `--explicit` shows encoded identifiers and values. Numeric columns remain available to the ordinary numeric explanation in the same run.
+
+Profiles may optionally override inference with `columns.<column>.type: date`, `categorical`, or `text`; the override is still domain-neutral and is carried into deterministic capsule replay.
 
 ---
 

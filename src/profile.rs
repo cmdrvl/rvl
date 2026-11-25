@@ -13,6 +13,7 @@ pub struct ResolvedProfile {
     pub include_columns: Vec<Vec<u8>>,
     pub key_columns: Vec<Vec<u8>>,
     pub key_labels: Vec<String>,
+    pub column_types: HashMap<Vec<u8>, String>,
     pub profile_id: Option<String>,
     pub profile_sha256: Option<String>,
     pub source_path: PathBuf,
@@ -93,6 +94,7 @@ struct RawProfile {
     profile_sha256: Option<String>,
     include_columns: Vec<String>,
     key: Vec<String>,
+    column_types: Vec<(String, String)>,
     column_registry: Option<String>,
 }
 
@@ -128,6 +130,13 @@ pub fn load_profile_from_path(path: &Path) -> Result<ResolvedProfile, ResolveErr
         }
     }
 
+    let mut column_types = HashMap::new();
+    for (column, column_type) in parsed.column_types {
+        if let Some(bytes) = parse_column_identifier(&column) {
+            column_types.insert(bytes, column_type.to_ascii_lowercase());
+        }
+    }
+
     let column_registry = if let Some(reference) = parsed.column_registry {
         Some(
             load_column_registry(path, &reference).map_err(|err| ResolveError::Registry {
@@ -146,6 +155,7 @@ pub fn load_profile_from_path(path: &Path) -> Result<ResolvedProfile, ResolveErr
         include_columns,
         key_columns,
         key_labels,
+        column_types,
         profile_id: parsed.profile_id,
         profile_sha256: parsed.profile_sha256,
         source_path: path.to_path_buf(),
@@ -210,6 +220,18 @@ pub fn render_profile_yaml_with_registry_override(
         out.push_str(&encode_profile_identifier(key));
         out.push('\n');
     }
+    if !profile.column_types.is_empty() {
+        let mut columns = profile.column_types.iter().collect::<Vec<_>>();
+        columns.sort_by(|left, right| left.0.cmp(right.0));
+        out.push_str("columns:\n");
+        for (column, column_type) in columns {
+            out.push_str("  ");
+            out.push_str(&encode_profile_identifier(column));
+            out.push_str(":\n    type: ");
+            out.push_str(column_type);
+            out.push('\n');
+        }
+    }
     out
 }
 
@@ -251,10 +273,45 @@ fn parse_profile_yaml(raw: &str) -> Result<RawProfile, String> {
             index += consumed + 1;
             continue;
         }
+        if line == "columns:" {
+            let (types, consumed) = parse_column_types(&lines[index + 1..]);
+            parsed.column_types = types;
+            index += consumed + 1;
+            continue;
+        }
 
         index += 1;
     }
     Ok(parsed)
+}
+
+fn parse_column_types(following_lines: &[&str]) -> (Vec<(String, String)>, usize) {
+    let mut values = Vec::new();
+    let mut current_column = None;
+    let mut consumed = 0;
+    for raw_line in following_lines {
+        let without_comment = strip_comment(raw_line);
+        let trimmed = without_comment.trim();
+        if trimmed.is_empty() {
+            consumed += 1;
+            continue;
+        }
+        let indentation = without_comment.len() - without_comment.trim_start().len();
+        if indentation < 2 {
+            break;
+        }
+        if indentation == 2 && trimmed.ends_with(':') {
+            current_column = parse_scalar(trimmed.trim_end_matches(':').trim());
+        } else if indentation >= 4
+            && let Some(rest) = trimmed.strip_prefix("type:")
+            && let (Some(column), Some(column_type)) =
+                (current_column.as_ref(), parse_scalar(rest.trim()))
+        {
+            values.push((column.clone(), column_type));
+        }
+        consumed += 1;
+    }
+    (values, consumed)
 }
 
 fn parse_list(inline_value: &str, following_lines: &[&str]) -> (Vec<String>, usize) {
@@ -642,6 +699,7 @@ key: [loan_id]
             include_columns: vec![b"loan_id".to_vec(), b"\xff#".to_vec()],
             key_columns: vec![b"loan_id".to_vec()],
             key_labels: vec!["loan_id".to_string()],
+            column_types: HashMap::from([(b"status".to_vec(), "categorical".to_string())]),
             profile_id: Some("csv.demo.v0".to_string()),
             profile_sha256: Some("sha256:abc123".to_string()),
             source_path: path.clone(),
@@ -652,6 +710,7 @@ key: [loan_id]
         let loaded = load_profile_from_path(&path).expect("rendered profile should load");
         assert_eq!(loaded.include_columns, profile.include_columns);
         assert_eq!(loaded.key_columns, profile.key_columns);
+        assert_eq!(loaded.column_types, profile.column_types);
         assert_eq!(loaded.profile_id, profile.profile_id);
         assert_eq!(loaded.profile_sha256, profile.profile_sha256);
 

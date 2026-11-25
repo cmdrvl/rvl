@@ -2,7 +2,7 @@
 
 mod capsule;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::error::Error;
 use std::fs;
 use std::io::Cursor;
@@ -54,9 +54,10 @@ use crate::output::human::real_change::{
 };
 use crate::output::human::refusal::{RefusalBody, render_refusal_body};
 use crate::output::json::{
-    Alignment as JsonAlignment, Audit as JsonAudit, Counts, Dialect, DialectSide,
-    FieldChange as JsonFieldChange, Files, JsonContext, JsonOutput, Metrics,
-    OutputMode as JsonOutputMode, Refusal as JsonRefusal,
+    Alignment as JsonAlignment, Audit as JsonAudit, CategoricalTransition, Counts, DateShift,
+    Dialect, DialectSide, FieldChange as JsonFieldChange, Files, JsonContext, JsonOutput, Metrics,
+    NonNumericReport, NullityFlip, OutputMode as JsonOutputMode, Refusal as JsonRefusal, RowChurn,
+    TextChurn,
 };
 use crate::profile::{
     ColumnRegistryRunInfo, ResolveError, ResolvedProfile, load_profile_from_path,
@@ -92,6 +93,7 @@ struct ActiveProfile {
     include_scope: Option<HashSet<Vec<u8>>>,
     key: Option<Vec<Vec<u8>>>,
     key_labels: Vec<String>,
+    column_types: HashMap<Vec<u8>, String>,
     header_aliases: Option<HashMap<Vec<u8>, Vec<u8>>>,
     info: ProfileRunInfo,
 }
@@ -157,7 +159,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         new: &new_path,
     };
 
-    if args.audit_fields && !args.exhaustive {
+    if args.audit_fields && !args.exhaustive && !args.non_numeric {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::AuditFieldsRequiresExhaustive,
             RefusalKind::AuditFieldsRequiresExhaustive,
@@ -187,7 +189,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         }
     };
 
-    if args.audit_fields && !active_profile.info.used {
+    if args.audit_fields && !args.non_numeric && !active_profile.info.used {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::AuditFieldsRequiresProfile,
             RefusalKind::AuditFieldsRequiresProfile,
@@ -466,6 +468,7 @@ fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
     let include_scope = Some(profile.include_set());
     let key = (!profile.key_columns.is_empty()).then(|| profile.key_columns.clone());
     let key_labels = profile.key_labels.clone();
+    let column_types = profile.column_types.clone();
     let header_aliases = profile
         .column_registry
         .as_ref()
@@ -482,6 +485,7 @@ fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
         include_scope,
         key,
         key_labels,
+        column_types,
         header_aliases,
         info: ProfileRunInfo {
             used: true,
@@ -894,13 +898,21 @@ fn run_diff(
         }
     };
 
-    let field_columns = if args.audit_fields {
+    let audit_fields_mode = args.audit_fields || args.non_numeric;
+    let audit_mode = args.exhaustive || args.non_numeric;
+    let field_columns = if args.non_numeric {
+        non_numeric_columns_with_overrides(
+            &intersection.common,
+            &numeric_columns,
+            &active_profile.column_types,
+        )
+    } else if args.audit_fields {
         non_numeric_columns(&intersection.common, &numeric_columns)
     } else {
         Vec::new()
     };
 
-    if numeric_columns.is_empty() && !args.audit_fields {
+    if numeric_columns.is_empty() && !audit_fields_mode {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::NoNumeric,
             RefusalKind::NoNumeric,
@@ -1043,7 +1055,7 @@ fn run_diff(
         }
     }
 
-    let mut field_audit = if args.audit_fields {
+    let mut field_audit = if audit_fields_mode {
         collect_field_changes(&alignment, &field_columns, args.max_audit_changes)
     } else {
         FieldChangeAudit::default()
@@ -1125,7 +1137,7 @@ fn run_diff(
 
     let alignment_label = alignment_key_columns.map(render_key_human);
 
-    if args.exhaustive && audit_changes > args.max_audit_changes {
+    if audit_mode && audit_changes > args.max_audit_changes {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::AuditLimit,
             RefusalKind::AuditLimit {
@@ -1148,16 +1160,25 @@ fn run_diff(
         return Ok(render_refusal_with_context(refusal, args, context));
     }
 
-    if args.exhaustive {
+    if audit_mode {
         sort_field_change_details(&mut field_audit.details);
-        let field_changes = if args.audit_fields {
+        let field_changes = if audit_fields_mode {
             Some(build_json_field_changes(
                 &field_audit.details,
                 args.explicit,
+                args.non_numeric,
             ))
         } else {
             None
         };
+        let non_numeric = args.non_numeric.then(|| {
+            build_non_numeric_report(
+                &alignment,
+                &field_columns,
+                &active_profile.column_types,
+                args.explicit,
+            )
+        });
         let ctx = json_context_with_field_changes(
             args,
             alignment_mode,
@@ -1168,8 +1189,13 @@ fn run_diff(
             metrics,
             field_audit.changed,
             field_changes,
+            non_numeric,
         );
-        if accumulator.total_change == 0.0 && field_audit.changed == 0 {
+        let non_numeric_changed = ctx
+            .non_numeric
+            .as_ref()
+            .is_some_and(non_numeric_report_has_change);
+        if accumulator.total_change == 0.0 && field_audit.changed == 0 && !non_numeric_changed {
             return Ok(render_no_real_change(args, ctx, alignment_label.as_deref()));
         }
         sort_contribution_details(&mut exhaustive_details);
@@ -1803,7 +1829,10 @@ fn render_real_change(
 ) -> PipelineResult {
     let run_profile = profile_from_json_context(&ctx);
     let total_change = ctx.metrics.total_change.unwrap_or(0.0);
-    let audit_mode = ctx.mode == Some(JsonOutputMode::ExhaustiveNumeric);
+    let audit_mode = matches!(
+        ctx.mode,
+        Some(JsonOutputMode::ExhaustiveNumeric | JsonOutputMode::NonNumeric)
+    );
     let contributor_summary = build_capsule_contributor_summary(details, total_change, coverage);
 
     let result = if args.json {
@@ -1834,7 +1863,8 @@ fn render_real_change(
         ));
         lines.push(String::new());
         let contributors = build_human_contributors(details, total_change);
-        let field_changes = build_human_field_changes(field_details);
+        let field_changes =
+            build_human_field_changes(field_details, args.explicit, args.non_numeric);
         let body = RealChangeBody {
             contributors: &contributors,
             field_changes: &field_changes,
@@ -1842,7 +1872,7 @@ fn render_real_change(
             threshold: args.threshold,
             explicit: args.explicit,
             audit_mode,
-            audit_fields: args.audit_fields,
+            audit_fields: args.audit_fields || args.non_numeric,
         };
         lines.extend(render_real_change_body(&body));
         PipelineResult {
@@ -1973,6 +2003,7 @@ fn json_context(
         metrics,
         0,
         None,
+        None,
     )
 }
 
@@ -1987,8 +2018,9 @@ fn json_context_with_field_changes(
     metrics: Metrics,
     field_changes_emitted: u64,
     field_changes: Option<Vec<JsonFieldChange>>,
+    non_numeric: Option<NonNumericReport>,
 ) -> JsonContext {
-    let audit = if args.exhaustive {
+    let audit = if args.exhaustive || args.non_numeric {
         counts
             .numeric_cells_changed
             .map(|numeric_changes_emitted| JsonAudit {
@@ -2017,7 +2049,9 @@ fn json_context_with_field_changes(
         profile_column_registry: profile.column_registry.clone(),
         capsule_profile: profile.capsule_profile.clone(),
         lock: profile.lock.clone(),
-        mode: if args.exhaustive {
+        mode: if args.non_numeric {
+            Some(JsonOutputMode::NonNumeric)
+        } else if args.exhaustive {
             Some(JsonOutputMode::ExhaustiveNumeric)
         } else {
             None
@@ -2028,6 +2062,7 @@ fn json_context_with_field_changes(
         counts,
         metrics,
         field_changes,
+        non_numeric,
     }
 }
 
@@ -2111,32 +2146,387 @@ fn build_json_contributors(
     contributors
 }
 
-fn build_json_field_changes(details: &[FieldChangeDetail], explicit: bool) -> Vec<JsonFieldChange> {
+fn build_json_field_changes(
+    details: &[FieldChangeDetail],
+    explicit: bool,
+    redact_identifiers: bool,
+) -> Vec<JsonFieldChange> {
     details
         .iter()
         .map(|detail| {
             let (row_id, row_key) = encode_row_id_json(&detail.id.row_id);
-            JsonFieldChange::new(
-                row_id,
-                row_key,
-                &detail.id.column,
-                &detail.old,
-                &detail.new,
-                explicit,
-            )
+            if redact_identifiers && !explicit {
+                JsonFieldChange {
+                    row_id: "redacted".to_string(),
+                    row_key: None,
+                    column: "[REDACTED]".to_string(),
+                    old: None,
+                    new: None,
+                }
+            } else {
+                JsonFieldChange::new(
+                    row_id,
+                    row_key,
+                    &detail.id.column,
+                    &detail.old,
+                    &detail.new,
+                    explicit,
+                )
+            }
         })
         .collect()
 }
 
-fn build_human_field_changes(details: &[FieldChangeDetail]) -> Vec<RealChangeFieldChange> {
+fn build_human_field_changes(
+    details: &[FieldChangeDetail],
+    explicit: bool,
+    redact_identifiers: bool,
+) -> Vec<RealChangeFieldChange> {
     details
         .iter()
         .map(|detail| RealChangeFieldChange {
-            label: render_cell_label(&detail.id),
-            old: render_identifier_human(&detail.old),
-            new: render_identifier_human(&detail.new),
+            label: if redact_identifiers && !explicit {
+                "[REDACTED]".to_string()
+            } else {
+                render_cell_label(&detail.id)
+            },
+            old: if redact_identifiers && !explicit {
+                "[REDACTED]".to_string()
+            } else {
+                render_identifier_human(&detail.old)
+            },
+            new: if redact_identifiers && !explicit {
+                "[REDACTED]".to_string()
+            } else {
+                render_identifier_human(&detail.new)
+            },
         })
         .collect()
+}
+
+#[derive(Default)]
+struct NonNumericColumnStats {
+    non_null_values: u64,
+    parsed_date_values: u64,
+    distinct_values: BTreeSet<Vec<u8>>,
+    date_deltas: BTreeMap<i64, u64>,
+    transitions: BTreeMap<(Vec<u8>, Vec<u8>), (u64, BTreeSet<String>)>,
+    changed_rows: u64,
+    byte_length_delta: i64,
+    became_null: u64,
+    became_non_null: u64,
+}
+
+fn build_non_numeric_report(
+    alignment: &AlignmentContext,
+    columns: &[crate::numeric::columns::CommonColumn],
+    column_types: &HashMap<Vec<u8>, String>,
+    explicit: bool,
+) -> NonNumericReport {
+    let mut stats = (0..columns.len())
+        .map(|_| NonNumericColumnStats::default())
+        .collect::<Vec<_>>();
+
+    match alignment {
+        AlignmentContext::Key { key_rows, .. } => {
+            for row in key_rows {
+                let row_token = non_numeric_row_token(Some(row.key.as_ref()), 0, explicit);
+                for (index, column) in columns.iter().enumerate() {
+                    let old_raw = row
+                        .old
+                        .fields
+                        .get(column.old_index)
+                        .map(|value| value.as_slice())
+                        .unwrap_or(b"");
+                    let new_raw = row
+                        .new
+                        .fields
+                        .get(column.new_index)
+                        .map(|value| value.as_slice())
+                        .unwrap_or(b"");
+                    update_non_numeric_stats(&mut stats[index], old_raw, new_raw, &row_token);
+                }
+            }
+        }
+        AlignmentContext::RowOrder { old_rows, new_rows } => {
+            for (row_index, (old_row, new_row)) in old_rows.iter().zip(new_rows.iter()).enumerate()
+            {
+                let row_token = non_numeric_row_token(None, row_index + 1, explicit);
+                for (index, column) in columns.iter().enumerate() {
+                    let old_raw = old_row
+                        .get(column.old_index)
+                        .map(|value| value.as_slice())
+                        .unwrap_or(b"");
+                    let new_raw = new_row
+                        .get(column.new_index)
+                        .map(|value| value.as_slice())
+                        .unwrap_or(b"");
+                    update_non_numeric_stats(&mut stats[index], old_raw, new_raw, &row_token);
+                }
+            }
+        }
+    }
+
+    let mut date_shifts = Vec::new();
+    let mut categorical_transitions = Vec::new();
+    let mut text_churn = Vec::new();
+    let mut nullity_flips = Vec::new();
+
+    for (column, stats) in columns.iter().zip(stats) {
+        let column_label = non_numeric_label(&column.name, explicit);
+        if stats.became_null > 0 || stats.became_non_null > 0 {
+            nullity_flips.push(NullityFlip {
+                column: column_label.clone(),
+                became_null: stats.became_null,
+                became_non_null: stats.became_non_null,
+            });
+        }
+
+        let override_type = column_types.get(&column.name).map(String::as_str);
+        let is_date = match override_type {
+            Some("date") => true,
+            Some("categorical" | "text") => false,
+            _ => {
+                stats.non_null_values > 0
+                    && stats.parsed_date_values.saturating_mul(100)
+                        >= stats.non_null_values.saturating_mul(95)
+            }
+        };
+        let is_categorical = match override_type {
+            Some("categorical") => true,
+            Some("date" | "text") => false,
+            _ => {
+                stats.distinct_values.len() <= 32
+                    || (stats.non_null_values > 0
+                        && (stats.distinct_values.len() as u64).saturating_mul(5)
+                            <= stats.non_null_values)
+            }
+        };
+
+        if is_date {
+            for (delta_days, changed_rows) in stats.date_deltas {
+                date_shifts.push(DateShift {
+                    column: column_label.clone(),
+                    delta_days,
+                    changed_rows,
+                });
+            }
+        } else if is_categorical {
+            for ((old, new), (count, affected_rows)) in stats.transitions {
+                categorical_transitions.push(CategoricalTransition {
+                    column: column_label.clone(),
+                    old: non_numeric_token(&old, explicit),
+                    new: non_numeric_token(&new, explicit),
+                    count,
+                    affected_rows: affected_rows.into_iter().collect(),
+                });
+            }
+        } else if stats.changed_rows > 0 {
+            text_churn.push(TextChurn {
+                column: column_label,
+                changed_rows: stats.changed_rows,
+                byte_length_delta: stats.byte_length_delta,
+            });
+        }
+    }
+
+    let row_churn = match alignment {
+        AlignmentContext::Key { membership, .. } => {
+            membership.as_ref().map(|membership| RowChurn {
+                removed: membership.old_only_count as u64,
+                added: membership.new_only_count as u64,
+            })
+        }
+        AlignmentContext::RowOrder { old_rows, new_rows } => {
+            let removed = old_rows.len().saturating_sub(new_rows.len()) as u64;
+            let added = new_rows.len().saturating_sub(old_rows.len()) as u64;
+            (removed > 0 || added > 0).then_some(RowChurn { removed, added })
+        }
+    };
+
+    date_shifts.sort_by(|left, right| {
+        left.column
+            .cmp(&right.column)
+            .then_with(|| left.delta_days.cmp(&right.delta_days))
+    });
+    categorical_transitions.sort_by(|left, right| {
+        left.column
+            .cmp(&right.column)
+            .then_with(|| left.old.cmp(&right.old))
+            .then_with(|| left.new.cmp(&right.new))
+    });
+    text_churn.sort_by(|left, right| left.column.cmp(&right.column));
+    nullity_flips.sort_by(|left, right| left.column.cmp(&right.column));
+
+    NonNumericReport {
+        date_shifts,
+        categorical_transitions,
+        text_churn,
+        nullity_flips,
+        row_churn,
+    }
+}
+
+fn update_non_numeric_stats(
+    stats: &mut NonNumericColumnStats,
+    old_raw: &[u8],
+    new_raw: &[u8],
+    row_token: &str,
+) {
+    let old_missing = is_missing_token(old_raw);
+    let new_missing = is_missing_token(new_raw);
+    if !old_missing {
+        stats.non_null_values = stats.non_null_values.saturating_add(1);
+        stats.distinct_values.insert(old_raw.to_vec());
+        if parse_date_days(old_raw).is_some() {
+            stats.parsed_date_values = stats.parsed_date_values.saturating_add(1);
+        }
+    }
+    if !new_missing {
+        stats.non_null_values = stats.non_null_values.saturating_add(1);
+        stats.distinct_values.insert(new_raw.to_vec());
+        if parse_date_days(new_raw).is_some() {
+            stats.parsed_date_values = stats.parsed_date_values.saturating_add(1);
+        }
+    }
+    if old_missing && !new_missing {
+        stats.became_non_null = stats.became_non_null.saturating_add(1);
+    } else if !old_missing && new_missing {
+        stats.became_null = stats.became_null.saturating_add(1);
+    }
+    if old_raw == new_raw {
+        return;
+    }
+
+    stats.changed_rows = stats.changed_rows.saturating_add(1);
+    stats.byte_length_delta += new_raw.len() as i64 - old_raw.len() as i64;
+    if !old_missing && !new_missing {
+        if let (Some(old_date), Some(new_date)) =
+            (parse_date_days(old_raw), parse_date_days(new_raw))
+        {
+            let delta_days = new_date - old_date;
+            *stats.date_deltas.entry(delta_days).or_default() += 1;
+        }
+        let key = (old_raw.to_vec(), new_raw.to_vec());
+        let entry = stats
+            .transitions
+            .entry(key)
+            .or_insert_with(|| (0, BTreeSet::new()));
+        entry.0 = entry.0.saturating_add(1);
+        entry.1.insert(row_token.to_string());
+    }
+}
+
+fn non_numeric_report_has_change(report: &NonNumericReport) -> bool {
+    !report.date_shifts.is_empty()
+        || !report.categorical_transitions.is_empty()
+        || !report.text_churn.is_empty()
+        || !report.nullity_flips.is_empty()
+        || report
+            .row_churn
+            .as_ref()
+            .is_some_and(|churn| churn.removed > 0 || churn.added > 0)
+}
+
+fn non_numeric_label(column: &[u8], explicit: bool) -> String {
+    if explicit {
+        encode_identifier_json(column)
+    } else {
+        "[REDACTED]".to_string()
+    }
+}
+
+fn non_numeric_token(value: &[u8], explicit: bool) -> String {
+    if explicit {
+        encode_identifier_json(value)
+    } else {
+        format!("blake3:{}", blake3::hash(value).to_hex())
+    }
+}
+
+fn non_numeric_row_token(key: Option<&[Vec<u8>]>, row_index: usize, explicit: bool) -> String {
+    match key {
+        Some(key) if explicit => encode_key_label_json(key),
+        Some(key) => {
+            let mut bytes = Vec::new();
+            for component in key {
+                bytes.extend_from_slice(&(component.len() as u64).to_le_bytes());
+                bytes.extend_from_slice(component);
+            }
+            non_numeric_token(&bytes, false)
+        }
+        None => {
+            if explicit {
+                format!("row:{row_index}")
+            } else {
+                non_numeric_token(row_index.to_string().as_bytes(), false)
+            }
+        }
+    }
+}
+
+fn parse_date_days(raw: &[u8]) -> Option<i64> {
+    let value = std::str::from_utf8(raw).ok()?.trim();
+    if let Ok(serial) = value.parse::<f64>()
+        && serial.is_finite()
+        && (1.0..=2_958_465.0).contains(&serial)
+    {
+        return Some(civil_date_days(1899, 12, 30) + serial.floor() as i64);
+    }
+
+    let date_value = if value.len() >= 10
+        && value.as_bytes()[4..5]
+            .iter()
+            .any(|byte| *byte == b'-' || *byte == b'/')
+        && value.as_bytes()[7..8]
+            .iter()
+            .any(|byte| *byte == b'-' || *byte == b'/')
+    {
+        value.get(..10).unwrap_or(value)
+    } else {
+        value
+    };
+    let mut parts = date_value.split(|character| character == '-' || character == '/');
+    let year_text = parts.next()?;
+    if year_text.len() != 4 {
+        return None;
+    }
+    let year: i64 = year_text.parse().ok()?;
+    let month: i64 = parts.next()?.parse().ok()?;
+    let day: i64 = parts.next()?.parse().ok()?;
+    if parts.next().is_some() || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let days_in_month = match month {
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if day > days_in_month {
+        return None;
+    }
+
+    Some(civil_date_days(year, month, day))
+}
+
+fn civil_date_days(year: i64, month: i64, day: i64) -> i64 {
+    // Days from civil date, adapted from Howard Hinnant's public-domain algorithm.
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = if adjusted_year >= 0 {
+        adjusted_year / 400
+    } else {
+        (adjusted_year - 399) / 400
+    };
+    let year_of_era = adjusted_year - era * 400;
+    let month_index = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * month_index + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era
+}
+
+fn is_leap_year(year: i64) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
 fn build_capsule_contributor_summary(
@@ -2314,6 +2704,25 @@ fn non_numeric_columns(
     common
         .iter()
         .filter(|column| !numeric_names.contains(column.name.as_slice()))
+        .cloned()
+        .collect()
+}
+
+fn non_numeric_columns_with_overrides(
+    common: &[crate::numeric::columns::CommonColumn],
+    numeric: &[crate::numeric::columns::CommonColumn],
+    column_types: &HashMap<Vec<u8>, String>,
+) -> Vec<crate::numeric::columns::CommonColumn> {
+    let numeric_names: HashSet<&[u8]> = numeric
+        .iter()
+        .map(|column| column.name.as_slice())
+        .collect();
+    common
+        .iter()
+        .filter(|column| {
+            !numeric_names.contains(column.name.as_slice())
+                || column_types.contains_key(&column.name)
+        })
         .cloned()
         .collect()
 }

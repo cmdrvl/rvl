@@ -501,6 +501,11 @@ Keep these coarse and stable:
 - `E_MISSINGNESS`: numeric value vs missing token (cannot compute)
 - `E_DIFFUSE`: top `MAX_CONTRIBUTORS` cannot reach `threshold`
 
+### Domain-agnostic non-numeric mode
+
+`--non-numeric` is an opt-in comparison path for common non-numeric columns and does not require a profile or numeric overlap. It emits deterministic `non_numeric` JSON fields for date shifts (exact signed civil-day deltas when at least 95% of values parse), low-cardinality transitions with affected-row tokens, high-cardinality text churn, nullity flips, and row churn. Default output retains no column names, cell values, or keys: labels are `[REDACTED]` and value/row tokens are BLAKE3 digests; `--explicit` reveals encoded identifiers. The mode is domain-agnostic and does not reserve or recognize field names.
+An active profile may override a column's inferred class with `columns.<column>.type: date`, `categorical`, or `text`; capsule replay preserves these overrides.
+
 ---
 
 ## Refusal Output Contract (v0)

@@ -87,6 +87,7 @@ fn run_case(case: &Case, iterations: u64, warmup: u64) -> f64 {
         delimiter: None,
         exhaustive: false,
         audit_fields: false,
+        non_numeric: false,
         max_audit_changes: 10_000,
         profile: None,
         profile_id: None,

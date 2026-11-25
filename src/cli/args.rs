@@ -22,7 +22,7 @@ pub enum KeyMode {
     name = "rvl",
     about = "Reveal the smallest set of numeric changes that explain what actually changed.",
     override_usage = "rvl <old.csv> <new.csv> [OPTIONS]\n       rvl capabilities --json\n       rvl robot-docs guide\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor [health|capabilities|triage|robot-docs] [--json]",
-    after_help = "Output is redacted by default (zero-retention safe): labels, counts and shares only, no raw values.\nPass --explicit to show raw values (old/new/delta, key samples). Use it for local, non-sensitive runs; omit it\nfor logged, shared, or veil/airlock zero-retention workflows.",
+    after_help = "Output is redacted by default (zero-retention safe): labels, counts and shares only, no raw values.\nPass --explicit to show raw values (old/new/delta, key samples). Use --non-numeric for deterministic date, categorical, text, nullity and row-churn comparison.\nUse --explicit only for local, non-sensitive runs; omit it for logged, shared, or veil/airlock workflows.",
     subcommand_negates_reqs = true
 )]
 pub struct Args {
@@ -84,6 +84,10 @@ pub struct Args {
     /// Emit exact changes in profile-scoped non-numeric fields during exhaustive audit.
     #[arg(long)]
     pub audit_fields: bool,
+
+    /// Compare common non-numeric columns by distribution and aligned rows.
+    #[arg(long = "non-numeric")]
+    pub non_numeric: bool,
 
     /// Maximum changed cells to emit in audit modes.
     #[arg(
@@ -326,6 +330,7 @@ impl Args {
             delimiter,
             exhaustive: false,
             audit_fields: false,
+            non_numeric: false,
             max_audit_changes: DEFAULT_MAX_AUDIT_CHANGES,
             profile: None,
             profile_id: None,

@@ -20,6 +20,7 @@ pub enum Outcome {
 #[serde(rename_all = "snake_case")]
 pub enum OutputMode {
     ExhaustiveNumeric,
+    NonNumeric,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -215,6 +216,52 @@ pub struct FieldChange {
     pub new: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct NonNumericReport {
+    pub date_shifts: Vec<DateShift>,
+    pub categorical_transitions: Vec<CategoricalTransition>,
+    pub text_churn: Vec<TextChurn>,
+    pub nullity_flips: Vec<NullityFlip>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub row_churn: Option<RowChurn>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DateShift {
+    pub column: String,
+    pub delta_days: i64,
+    pub changed_rows: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CategoricalTransition {
+    pub column: String,
+    pub old: String,
+    pub new: String,
+    pub count: u64,
+    pub affected_rows: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TextChurn {
+    pub column: String,
+    pub changed_rows: u64,
+    pub byte_length_delta: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NullityFlip {
+    pub column: String,
+    pub became_null: u64,
+    pub became_non_null: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RowChurn {
+    pub removed: u64,
+    pub added: u64,
+}
+
 impl FieldChange {
     pub fn new(
         row_id: String,
@@ -283,6 +330,7 @@ pub struct JsonContext {
     pub counts: Counts,
     pub metrics: Metrics,
     pub field_changes: Option<Vec<FieldChange>>,
+    pub non_numeric: Option<NonNumericReport>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -309,6 +357,8 @@ pub struct JsonOutput {
     pub contributors: Vec<Contributor>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field_changes: Option<Vec<FieldChange>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub non_numeric: Option<NonNumericReport>,
     pub refusal: Option<Refusal>,
 }
 
@@ -340,6 +390,7 @@ impl JsonOutput {
             limits: Limits::default(),
             contributors,
             field_changes: ctx.field_changes,
+            non_numeric: ctx.non_numeric,
             refusal: None,
         }
     }
@@ -371,6 +422,7 @@ impl JsonOutput {
             limits: Limits::default(),
             contributors: Vec::new(),
             field_changes: ctx.field_changes,
+            non_numeric: ctx.non_numeric,
             refusal: None,
         }
     }
@@ -402,6 +454,7 @@ impl JsonOutput {
             limits: Limits::default(),
             contributors: Vec::new(),
             field_changes: ctx.field_changes,
+            non_numeric: ctx.non_numeric,
             refusal: Some(refusal),
         }
     }
@@ -473,6 +526,7 @@ mod tests {
                 top_k_coverage: Some(0.95),
             },
             field_changes: None,
+            non_numeric: None,
         }
     }
 

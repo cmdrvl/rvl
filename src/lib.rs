@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+#![recursion_limit = "512"]
 
 pub mod alignment;
 pub mod cli;
@@ -150,7 +151,7 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                 "properties": {
                     "version": { "type": "string", "const": "rvl.v0" },
                     "outcome": { "type": "string", "enum": ["REAL_CHANGE", "NO_REAL_CHANGE", "REFUSAL"] },
-                    "mode": { "type": "string", "enum": ["exhaustive_numeric"] },
+                    "mode": { "type": "string", "enum": ["exhaustive_numeric", "non_numeric"] },
                     "profile_id": { "type": ["string", "null"] },
                     "profile_sha256": { "type": ["string", "null"] },
                     "lock": {
@@ -266,6 +267,76 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                             },
                             "required": ["row_id", "column"]
                         }
+                    },
+                    "non_numeric": {
+                        "type": "object",
+                        "properties": {
+                            "date_shifts": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "column": { "type": "string" },
+                                        "delta_days": { "type": "integer" },
+                                        "changed_rows": { "type": "integer", "minimum": 0 }
+                                    },
+                                    "required": ["column", "delta_days", "changed_rows"],
+                                    "additionalProperties": false
+                                }
+                            },
+                            "categorical_transitions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "column": { "type": "string" },
+                                        "old": { "type": "string" },
+                                        "new": { "type": "string" },
+                                        "count": { "type": "integer", "minimum": 0 },
+                                        "affected_rows": { "type": "array", "items": { "type": "string" } }
+                                    },
+                                    "required": ["column", "old", "new", "count", "affected_rows"],
+                                    "additionalProperties": false
+                                }
+                            },
+                            "text_churn": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "column": { "type": "string" },
+                                        "changed_rows": { "type": "integer", "minimum": 0 },
+                                        "byte_length_delta": { "type": "integer" }
+                                    },
+                                    "required": ["column", "changed_rows", "byte_length_delta"],
+                                    "additionalProperties": false
+                                }
+                            },
+                            "nullity_flips": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "column": { "type": "string" },
+                                        "became_null": { "type": "integer", "minimum": 0 },
+                                        "became_non_null": { "type": "integer", "minimum": 0 }
+                                    },
+                                    "required": ["column", "became_null", "became_non_null"],
+                                    "additionalProperties": false
+                                }
+                            },
+                            "row_churn": {
+                                "type": ["object", "null"],
+                                "properties": {
+                                    "removed": { "type": "integer", "minimum": 0 },
+                                    "added": { "type": "integer", "minimum": 0 }
+                                },
+                                "required": ["removed", "added"],
+                                "additionalProperties": false
+                            }
+                        },
+                        "required": ["date_shifts", "categorical_transitions", "text_churn", "nullity_flips"],
+                        "additionalProperties": false
                     },
                     "refusal": {
                         "type": ["object", "null"],

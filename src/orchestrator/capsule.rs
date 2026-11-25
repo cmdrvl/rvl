@@ -97,6 +97,7 @@ struct CapsuleArgs {
     delimiter: Option<String>,
     exhaustive: bool,
     audit_fields: bool,
+    non_numeric: bool,
     max_audit_changes: u64,
     json: bool,
     no_witness: bool,
@@ -175,6 +176,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
         delimiter: args.delimiter.map(|d| format!("0x{d:02x}")),
         exhaustive: args.exhaustive,
         audit_fields: args.audit_fields,
+        non_numeric: args.non_numeric,
         max_audit_changes: args.max_audit_changes,
         json: args.json,
         no_witness: args.no_witness,
@@ -384,6 +386,9 @@ pub(super) fn build_comparison_command(
     if args.audit_fields {
         parts.push("--audit-fields".to_string());
     }
+    if args.non_numeric {
+        parts.push("--non-numeric".to_string());
+    }
     if args.json {
         parts.push("--json".to_string());
     }
@@ -432,12 +437,15 @@ mod tests {
             Some(b','),
             true,
         );
+        let mut args = args;
+        args.non_numeric = true;
         let replay = build_replay_command(&args, false);
         assert!(replay.contains("rvl old.csv new.csv"));
         assert!(replay.contains("--key 'portfolio id'"));
         assert!(replay.contains("--threshold 0.95"));
         assert!(replay.contains("--tolerance "));
         assert!(replay.contains("--delimiter 0x2c"));
+        assert!(replay.contains("--non-numeric"));
         assert!(replay.contains("--json"));
     }
 

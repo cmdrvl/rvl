@@ -271,6 +271,7 @@ fn golden_json_real_change_output() {
             top_k_coverage: Some(1.0),
         },
         field_changes: None,
+        non_numeric: None,
     };
     let contributors = vec![rvl::output::json::Contributor::new(
         "u8:A".to_string(),
@@ -374,6 +375,7 @@ fn golden_json_no_real_change_output() {
             top_k_coverage: None,
         },
         field_changes: None,
+        non_numeric: None,
     };
 
     let output = JsonOutput::no_real_change(ctx);
@@ -439,6 +441,7 @@ fn golden_json_refusal_output() {
         counts: Counts::default(),
         metrics: Metrics::default(),
         field_changes: None,
+        non_numeric: None,
     };
 
     let refusal = Refusal::new(
