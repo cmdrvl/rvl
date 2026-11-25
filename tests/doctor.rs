@@ -106,6 +106,27 @@ fn top_level_robot_docs_guide_names_agent_surface() {
 }
 
 #[test]
+fn help_and_robot_docs_explain_explicit_redaction_default() {
+    let help = run(&["--help"]);
+    assert_eq!(help.status.code(), Some(0));
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("redacted by default"), "{help}");
+    assert!(
+        help.contains("Pass --explicit to show raw values"),
+        "{help}"
+    );
+
+    let guide = run(&["robot-docs", "guide"]);
+    let guide = String::from_utf8_lossy(&guide.stdout);
+    assert!(guide.contains("Redaction (--explicit):"), "{guide}");
+    assert!(guide.contains("Default output is redacted"), "{guide}");
+    assert!(
+        guide.contains("Pass `--explicit` to show raw values"),
+        "{guide}"
+    );
+}
+
+#[test]
 fn doctor_health_is_read_only_and_successful() {
     let output = run(&["doctor", "health"]);
 

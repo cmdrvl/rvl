@@ -22,6 +22,7 @@ pub enum KeyMode {
     name = "rvl",
     about = "Reveal the smallest set of numeric changes that explain what actually changed.",
     override_usage = "rvl <old.csv> <new.csv> [OPTIONS]\n       rvl --robot-triage\n       rvl capabilities --json\n       rvl robot-docs guide\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor <health|capabilities|robot-docs> [OPTIONS]",
+    after_help = "Output is redacted by default (zero-retention safe): labels, counts and shares only, no raw values.\nPass --explicit to show raw values (old/new/delta, key samples). Use it for local, non-sensitive runs; omit it\nfor logged, shared, or veil/airlock zero-retention workflows.",
     subcommand_negates_reqs = true
 )]
 pub struct Args {

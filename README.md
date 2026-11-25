@@ -35,8 +35,10 @@ Two CSV exports. 50,000 numeric cells. Your boss wants to know what changed and 
 
 ## Quick Example
 
+> **Redacted by default.** rvl is zero-retention safe out of the box: without `--explicit`, human and JSON output show cell labels and shares of total change but **no raw data values** (no old/new/delta numbers, no key samples, no changed-field text). Add `--explicit` to see the values. The examples below use `--explicit`; the redacted form follows.
+
 ```bash
-$ rvl old.csv new.csv --key id
+$ rvl old.csv new.csv --key id --explicit
 ```
 
 ```
@@ -63,6 +65,20 @@ Everything else in common numeric columns is <= tolerance or in the tail (not re
 ```
 
 Out of 50,196 cells, **3 cells** explain 95.2% of all numeric change. That's the whole answer.
+
+The same run **without** `--explicit` (the default) keeps the verdict, labels and shares, and drops the values:
+
+```bash
+$ rvl old.csv new.csv --key id
+```
+
+```
+1 cell explain 100.0% of total numeric change (threshold 95.0%):
+
+1. NVDA.market_value  +100.0% of total change
+```
+
+Use `--explicit` for local, non-sensitive runs where you want the numbers. Keep the default when output may be logged, pasted, or retained (for example `veil`/`airlock` zero-retention workflows). In `--json`, redacted contributors omit `old`, `new`, `delta` and `contribution`; `--explicit` adds them.
 
 ```bash
 # No change? Proof:
@@ -109,6 +125,8 @@ Settings: threshold=95.0% tolerance=1e-9
 
 Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold).
 ```
+
+*(Shown with `--explicit`; by default the signed delta and `(old -> new)` values are replaced by each cell's share of total change.)*
 
 **How to read this:**
 - **3 cells explain 95.2%** — only 3 numeric cells (out of 50,196) account for 95.2% of all numeric change.
@@ -274,6 +292,7 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--key <column>` | string | *(none)* | Align rows by key column value. Without this, rows align by position (1st↔1st, 2nd↔2nd, etc.). |
+| `--key-mode <exact\|overlap>` | string | `exact` | Key-set policy. `exact` requires identical key sets (else `E_KEY_MISMATCH`, whose `next_command` is a runnable `--key-mode overlap` rerun). `overlap` compares continuing keys only, reports `alignment.key_membership` (overlap / old-only / new-only counts), and scopes the verdict to continuing rows; zero overlap refuses `E_NO_OVERLAP`. Needs `--key` or a profile key. |
 | `--threshold <float>` | float | `0.95` | Coverage target (0 < x ≤ 1.0). The minimum fraction of total numeric change that the top contributors must explain. |
 | `--tolerance <float>` | float | `1e-9` | Per-cell noise floor (x ≥ 0). Absolute deltas ≤ this value are treated as zero. |
 | `--delimiter <delim>` | string | *(auto-detect)* | Force CSV delimiter for both files. See [Delimiter](#delimiter). |
@@ -284,6 +303,8 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.cmdrvl/config/profile/profiles/*.yaml`; legacy `~/.epistemic/profiles` is copied on first default use. |
 | `--capsule-out <dir>` | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`, and `profile.yaml` when a profile is active) to `<dir>/capsule-<id>/`. |
 | `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
+| `--explicit` | flag | `false` (redacted) | Show raw data values (old/new/delta, key samples, audit field text). **Default is redacted for zero-retention safety**: output carries labels, counts and shares only. |
+| `--no-witness` | flag | `false` | Suppress witness ledger recording. |
 
 Invalid `--threshold` or `--tolerance` values are CLI argument errors (exit 2).
 
@@ -407,12 +428,13 @@ if [ $? -ne 0 ]; then
 fi
 
 # 2. Numeric explanation (only if structurally compatible)
+# (default output is redacted: contributors carry share only; add --explicit for old/new/delta)
 rvl old.csv new.csv --key id --json > rvl.json
 
 # 3. Agent extracts the verdict
 outcome=$(jq -r '.outcome' rvl.json)
 if [ "$outcome" = "REAL_CHANGE" ]; then
-  jq '.contributors[] | "\(.row_id).\(.column): \(.delta)"' rvl.json
+  jq '.contributors[] | "\(.row_id).\(.column): \(.share)"' rvl.json
 fi
 ```
 
@@ -666,6 +688,7 @@ A single JSON object on stdout. If the process fails before domain evaluation (e
       "row_id": "u8:NVDA",
       "row_key": ["u8:NVDA"],           // present in key mode; composite values remain separate
       "column": "u8:market_value",
+      // old/new/delta/contribution appear ONLY with --explicit (default output is redacted)
       "old": 123.0,
       "new": 1842223.0,
       "delta": 1842100.0,

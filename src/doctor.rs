@@ -104,6 +104,17 @@ pub fn emit_robot_docs(action: Option<&RobotDocsAction>) -> Result<u8, Box<dyn s
     println!("- 1: findings present");
     println!("- 2: command-line usage error from clap");
     println!();
+    println!("Redaction (--explicit):");
+    println!(
+        "- Default output is redacted for zero-retention safety: labels, counts and shares only, no raw values."
+    );
+    println!(
+        "- Pass `--explicit` to show raw values (old/new/delta, key samples, audit field text), e.g. `rvl <old.csv> <new.csv> --key <column> --json --explicit`."
+    );
+    println!(
+        "- Use `--explicit` for local non-sensitive runs; omit it for logged, shared, or veil/airlock zero-retention workflows."
+    );
+    println!();
     println!("Composition:");
     println!(
         "- Pair `rvl <old.csv> <new.csv> --key <column> --json` with a preceding `shape` compatibility report."
