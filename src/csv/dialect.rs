@@ -11,7 +11,7 @@ use crate::csv::parser::{CsvParseError, EscapeMode, build_reader, validate_quote
 use crate::normalize::trim::is_ascii_blank_slice;
 
 /// Candidate delimiters for auto-detection (in priority order).
-pub const CANDIDATE_DELIMITERS: [u8; 5] = [b',', b'\t', b';', b'|', b'^'];
+pub const CANDIDATE_DELIMITERS: [u8; 5] = *b",\t;|^";
 
 const MAX_DATA_RECORDS: usize = 200;
 const MAX_SAMPLE_BYTES: u64 = 64 * 1024;

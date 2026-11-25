@@ -5,16 +5,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Cargo builds the binary and tells us where it is; walking up from `current_exe()` breaks
+/// when the target directory layout differs (it did on the newer CI cargo).
 fn rvl_binary() -> PathBuf {
-    let mut path = std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
-    path.push("rvl");
-    path
+    PathBuf::from(env!("CARGO_BIN_EXE_rvl"))
 }
 
 fn temp_dir() -> PathBuf {
