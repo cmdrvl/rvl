@@ -13,6 +13,7 @@ fn run_case(old: &str, new: &str, key: Option<&str>, json: bool) -> String {
         old: Some(PathBuf::from(old)),
         new: Some(PathBuf::from(new)),
         key: key.map(|value| value.to_string()),
+        key_mode: Default::default(),
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,

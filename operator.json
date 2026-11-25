@@ -30,6 +30,7 @@
 
   "options": [
     { "name": "key", "flag": "--key", "type": "string", "description": "Align rows by this key column (otherwise align by row order)" },
+    { "name": "key_mode", "flag": "--key-mode", "type": "string", "default": "exact", "description": "Key-set policy: exact requires equal sets; overlap compares continuing rows only and reports membership counts (key samples require --explicit). Requires --key or a profile key." },
     { "name": "threshold", "flag": "--threshold", "type": "float", "default": 0.95, "description": "Coverage target: 0 < x <= 1" },
     { "name": "tolerance", "flag": "--tolerance", "type": "float", "default": 1e-9, "description": "Per-cell noise floor: x >= 0" },
     { "name": "delimiter", "flag": "--delimiter", "type": "string", "description": "Force CSV delimiter (comma/tab/semicolon/pipe/caret, 0xNN, or single ASCII byte)" },
@@ -161,7 +162,8 @@
     { "code": "E_NO_KEY", "message": "Key column missing from file", "action": "retry_with_flag", "flag": "--key" },
     { "code": "E_KEY_EMPTY", "message": "Empty key value in row", "action": "escalate" },
     { "code": "E_KEY_DUP", "message": "Duplicate key values (non-unique)", "action": "escalate" },
-    { "code": "E_KEY_MISMATCH", "message": "Key sets differ between files", "action": "escalate" },
+    { "code": "E_KEY_MISMATCH", "message": "Key sets differ between files; next_command provides an opt-in overlap rerun", "action": "retry_with_flag", "flag": "--key-mode" },
+    { "code": "E_NO_OVERLAP", "message": "No continuing keys in overlap mode", "action": "adjust_input" },
     { "code": "E_ROWCOUNT", "message": "Row count mismatch and no key provided", "action": "retry_with_flag", "flag": "--key" },
     { "code": "E_NEED_KEY", "message": "Cannot deterministically align without a key", "action": "retry_with_flag", "flag": "--key" },
     { "code": "E_DIALECT", "message": "Delimiter ambiguous or undetectable", "action": "retry_with_flag", "flag": "--delimiter" },

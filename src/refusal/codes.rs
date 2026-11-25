@@ -12,6 +12,7 @@ pub enum RefusalCode {
     KeyEmpty,
     KeyDup,
     KeyMismatch,
+    NoOverlap,
     RowCount,
     NeedKey,
     Dialect,
@@ -32,7 +33,7 @@ pub enum RefusalCode {
 pub struct UnknownRefusalCode;
 
 impl RefusalCode {
-    pub const ALL: [RefusalCode; 22] = [
+    pub const ALL: [RefusalCode; 23] = [
         RefusalCode::Io,
         RefusalCode::Encoding,
         RefusalCode::CsvParse,
@@ -41,6 +42,7 @@ impl RefusalCode {
         RefusalCode::KeyEmpty,
         RefusalCode::KeyDup,
         RefusalCode::KeyMismatch,
+        RefusalCode::NoOverlap,
         RefusalCode::RowCount,
         RefusalCode::NeedKey,
         RefusalCode::Dialect,
@@ -68,6 +70,7 @@ impl RefusalCode {
             RefusalCode::KeyEmpty => "E_KEY_EMPTY",
             RefusalCode::KeyDup => "E_KEY_DUP",
             RefusalCode::KeyMismatch => "E_KEY_MISMATCH",
+            RefusalCode::NoOverlap => "E_NO_OVERLAP",
             RefusalCode::RowCount => "E_ROWCOUNT",
             RefusalCode::NeedKey => "E_NEED_KEY",
             RefusalCode::Dialect => "E_DIALECT",
@@ -97,6 +100,7 @@ impl RefusalCode {
             RefusalCode::KeyEmpty => "empty key value",
             RefusalCode::KeyDup => "duplicate key values",
             RefusalCode::KeyMismatch => "key sets differ",
+            RefusalCode::NoOverlap => "no overlapping keys",
             RefusalCode::RowCount => "row count mismatch",
             RefusalCode::NeedKey => "cannot deterministically align without a key",
             RefusalCode::Dialect => "delimiter ambiguous or undetectable",
@@ -142,6 +146,7 @@ impl FromStr for RefusalCode {
             "E_KEY_EMPTY" => Ok(RefusalCode::KeyEmpty),
             "E_KEY_DUP" => Ok(RefusalCode::KeyDup),
             "E_KEY_MISMATCH" => Ok(RefusalCode::KeyMismatch),
+            "E_NO_OVERLAP" => Ok(RefusalCode::NoOverlap),
             "E_ROWCOUNT" => Ok(RefusalCode::RowCount),
             "E_NEED_KEY" => Ok(RefusalCode::NeedKey),
             "E_DIALECT" => Ok(RefusalCode::Dialect),

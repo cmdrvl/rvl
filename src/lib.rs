@@ -124,6 +124,12 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                 "$id": "https://rvl.v0/schema.json",
                 "title": "rvl Output Schema",
                 "description": "JSON schema for rvl.v0 output format",
+                "$defs": {
+                    "key_samples": {
+                        "type": "array", "maxItems": 10,
+                        "items": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+                    }
+                },
                 "type": "object",
                 "required": ["version", "outcome", "files", "alignment", "dialect", "threshold", "tolerance", "counts", "metrics", "limits", "contributors"],
                 "properties": {
@@ -148,6 +154,20 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                             "key_columns": {
                                 "type": "array",
                                 "items": { "type": "string" }
+                            },
+                            "key_membership": {
+                                "type": "object",
+                                "description": "Present only in overlap mode. Verdict and metrics cover continuing rows only. Samples contain at most ten byte-sorted encoded key tuples and are omitted unless --explicit is active.",
+                                "properties": {
+                                    "verdict_scope": { "const": "continuing_rows" },
+                                    "overlap_count": { "type": "integer", "minimum": 0 },
+                                    "old_only_count": { "type": "integer", "minimum": 0 },
+                                    "new_only_count": { "type": "integer", "minimum": 0 },
+                                    "old_only_samples": { "$ref": "#/$defs/key_samples" },
+                                    "new_only_samples": { "$ref": "#/$defs/key_samples" }
+                                },
+                                "required": ["verdict_scope", "overlap_count", "old_only_count", "new_only_count"],
+                                "additionalProperties": false
                             }
                         },
                         "required": ["mode", "key_column", "key_columns"]
@@ -224,6 +244,7 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                         "properties": {
                             "code": { "type": "string" },
                             "message": { "type": "string" },
+                            "next_command": { "type": "string", "description": "Runnable overlap rerun for E_KEY_MISMATCH; preserves profile and comparison settings." },
                             "detail": {}
                         },
                         "required": ["code", "message", "detail"]

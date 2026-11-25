@@ -93,6 +93,9 @@ impl WitnessRecord {
             serde_json::Value::Bool(args.audit_fields),
         );
         params.insert("json".to_string(), serde_json::Value::Bool(args.json));
+        if args.key_mode == crate::cli::args::KeyMode::Overlap {
+            params.insert("key_mode".to_string(), serde_json::json!(args.key_mode));
+        }
         params.insert(
             "key".to_string(),
             args.key

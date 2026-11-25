@@ -85,6 +85,10 @@ pub enum RefusalKind {
         missing_samples: Vec<KeyValue>,
         extra_samples: Vec<KeyValue>,
     },
+    NoOverlap {
+        rows_old: u64,
+        rows_new: u64,
+    },
     RowCount {
         rows_old: u64,
         rows_new: u64,
@@ -210,6 +214,9 @@ impl RefusalKind {
             }
             RefusalKind::KeyMismatch { .. } => {
                 "export comparable scopes or fix the join key, then rerun".to_string()
+            }
+            RefusalKind::NoOverlap { .. } => {
+                "export scopes with at least one continuing key or fix the join key, then rerun".to_string()
             }
             RefusalKind::RowCount { suggested_keys, .. } => {
                 if let Some(key) = suggested_keys.first() {

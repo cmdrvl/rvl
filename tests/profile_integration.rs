@@ -60,6 +60,7 @@ fn make_args(old: &Path, new: &Path) -> Args {
         old: Some(old.to_path_buf()),
         new: Some(new.to_path_buf()),
         key: None,
+        key_mode: Default::default(),
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,

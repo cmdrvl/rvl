@@ -40,6 +40,21 @@ pub struct Alignment {
     pub mode: AlignmentMode,
     pub key_column: Option<String>,
     pub key_columns: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_membership: Option<KeyMembership>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct KeyMembership {
+    pub verdict_scope: &'static str,
+    pub overlap_count: usize,
+    pub old_only_count: usize,
+    pub new_only_count: usize,
+    /// Encoded tuples, omitted entirely unless --explicit is active.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_only_samples: Option<Vec<Vec<String>>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_only_samples: Option<Vec<Vec<String>>>,
 }
 
 impl Alignment {
@@ -49,6 +64,7 @@ impl Alignment {
             mode: AlignmentMode::Key,
             key_column: Some(encode_key_label_json(key_columns)),
             key_columns: encode_key_components_json(key_columns),
+            key_membership: None,
         }
     }
 
@@ -57,6 +73,7 @@ impl Alignment {
             mode: AlignmentMode::RowOrder,
             key_column: None,
             key_columns: Vec::new(),
+            key_membership: None,
         }
     }
 }
@@ -232,6 +249,8 @@ pub struct Refusal {
     pub code: String,
     pub message: String,
     pub detail: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_command: Option<String>,
 }
 
 impl Refusal {
@@ -240,6 +259,7 @@ impl Refusal {
             code: code.as_str().to_string(),
             message: message.into(),
             detail,
+            next_command: None,
         }
     }
 }
@@ -410,6 +430,7 @@ mod tests {
                 mode: AlignmentMode::Key,
                 key_column: Some("u8:id".to_string()),
                 key_columns: vec!["u8:id".to_string()],
+                key_membership: None,
             },
             dialect: Dialect {
                 old: Some(DialectSide::new(b',', b'"', None)),

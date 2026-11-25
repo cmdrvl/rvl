@@ -78,6 +78,7 @@ fn run_case(case: &Case, iterations: u64, warmup: u64) -> f64 {
         old: Some(case.old.clone()),
         new: Some(case.new.clone()),
         key: case.key.clone(),
+        key_mode: Default::default(),
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,

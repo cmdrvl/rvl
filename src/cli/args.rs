@@ -8,6 +8,14 @@ const DEFAULT_THRESHOLD: f64 = 0.95;
 const DEFAULT_TOLERANCE: f64 = 1e-9;
 const DEFAULT_MAX_AUDIT_CHANGES: u64 = 10_000;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyMode {
+    #[default]
+    Exact,
+    Overlap,
+}
+
 /// CLI argument parsing & validation (bd-l7j).
 #[derive(Debug, Clone, Parser)]
 #[command(
@@ -28,6 +36,10 @@ pub struct Args {
     /// Align rows by this key column (otherwise align by row order).
     #[arg(long, value_name = "COLUMN")]
     pub key: Option<String>,
+
+    /// Key-set policy: exact requires equal sets; overlap compares continuing rows only.
+    #[arg(long, value_enum, default_value = "exact")]
+    pub key_mode: KeyMode,
 
     /// Coverage target: 0 < x <= 1 (default: 0.95).
     #[arg(
@@ -256,6 +268,7 @@ impl Args {
             old: Some(old),
             new: Some(new),
             key,
+            key_mode: KeyMode::Exact,
             threshold,
             tolerance,
             delimiter,

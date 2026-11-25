@@ -113,6 +113,9 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             }
             line
         }
+        RefusalKind::NoOverlap { rows_old, rows_new } => format!(
+            "Example: old={rows_old} new={rows_new} overlap=0; no continuing rows to compare."
+        ),
         RefusalKind::RowCount {
             rows_old,
             rows_new,
@@ -132,7 +135,7 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
         RefusalKind::NeedKey { suggested_keys } => {
             let keys = render_samples(suggested_keys);
             if keys.is_empty() {
-                "Example: detected a reorder under a perfect key candidate.".to_string()
+                "Example: no key was selected for deterministic alignment.".to_string()
             } else {
                 format!("Example: suggested key candidates: [{keys}].")
             }

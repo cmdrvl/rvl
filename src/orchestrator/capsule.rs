@@ -89,6 +89,7 @@ struct CapsuleArgs {
     old: String,
     new: String,
     key: Option<String>,
+    key_mode: crate::cli::args::KeyMode,
     profile: Option<String>,
     profile_id: Option<String>,
     threshold: f64,
@@ -163,6 +164,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
         old: old_path,
         new: new_path,
         key: args.key.clone(),
+        key_mode: args.key_mode,
         profile: args
             .profile
             .as_ref()
@@ -327,11 +329,20 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
 }
 
 fn build_replay_command(args: &Args, use_local_profile: bool) -> String {
-    let mut parts = vec![
-        "rvl".to_string(),
-        "old.csv".to_string(),
-        "new.csv".to_string(),
-    ];
+    build_comparison_command(args, "old.csv", "new.csv", use_local_profile)
+}
+
+pub(super) fn build_comparison_command(
+    args: &Args,
+    old: &str,
+    new: &str,
+    use_local_profile: bool,
+) -> String {
+    let mut parts = vec!["rvl".to_string(), shell_escape(old), shell_escape(new)];
+
+    if args.key_mode == crate::cli::args::KeyMode::Overlap {
+        parts.push("--key-mode overlap".to_string());
+    }
 
     if let Some(key) = args.key.as_deref() {
         parts.push("--key".to_string());
@@ -365,6 +376,9 @@ fn build_replay_command(args: &Args, use_local_profile: bool) -> String {
     }
     if args.json {
         parts.push("--json".to_string());
+    }
+    if args.explicit {
+        parts.push("--explicit".to_string());
     }
     if args.no_witness {
         parts.push("--no-witness".to_string());

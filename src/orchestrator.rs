@@ -13,11 +13,12 @@ use serde_json::{Value, json};
 
 use crate::alignment::key_discovery::{KeyRow, discover_key_candidates};
 use crate::alignment::key_join::{
-    KeyAlignedRow, KeyJoinError, KeyValue, OwnedRecord, build_key_map, join_key_maps,
+    KeyAlignedRow, KeyJoinError, KeyMembership, KeyValue, OwnedRecord, build_key_map,
+    join_key_maps, join_overlapping_key_maps,
 };
 use crate::alignment::key_parse::parse_key_identifier;
 use crate::alignment::shuffle::detect_shuffle;
-use crate::cli::args::Args;
+use crate::cli::args::{Args, KeyMode};
 use crate::cli::exit::Outcome;
 use crate::csv::blank::is_blank_record;
 use crate::csv::dialect::{DialectError, auto_detect};
@@ -274,6 +275,22 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
 
     if let Some(keys) = key_columns.as_deref() {
         run_key_mode(keys, old, new, context)
+    } else if args.key_mode == KeyMode::Overlap {
+        let refusal = RefusalPayload::with_default_next(
+            RefusalCode::NeedKey,
+            RefusalKind::NeedKey {
+                suggested_keys: Vec::new(),
+            },
+            rerun_paths,
+        );
+        Ok(render_refusal(
+            refusal,
+            args,
+            None,
+            dialect_old,
+            dialect_new,
+            &active_profile.info,
+        ))
     } else {
         run_row_order(old, new, context)
     }
@@ -485,20 +502,58 @@ fn run_key_mode(
         }
     };
 
-    let aligned = match join_key_maps(old_map, new_map) {
-        Ok(rows) => rows,
-        Err(err) => {
-            let refusal = map_key_join_error(err, FileSide::New, key_columns, rerun_paths);
-            return Ok(render_refusal(
-                refusal,
-                args,
-                Some(key_columns),
+    let (aligned, membership) = if args.key_mode == KeyMode::Overlap {
+        let (rows, membership) = join_overlapping_key_maps(old_map, new_map);
+        (rows, Some(membership))
+    } else {
+        (
+            match join_key_maps(old_map, new_map) {
+                Ok(rows) => rows,
+                Err(err) => {
+                    let refusal = map_key_join_error(err, FileSide::New, key_columns, rerun_paths);
+                    return Ok(render_refusal(
+                        refusal,
+                        args,
+                        Some(key_columns),
+                        dialect_old,
+                        dialect_new,
+                        &active_profile.info,
+                    ));
+                }
+            },
+            None,
+        )
+    };
+
+    if aligned.is_empty() && args.key_mode == KeyMode::Overlap {
+        let refusal = RefusalPayload::with_default_next(
+            RefusalCode::NoOverlap,
+            RefusalKind::NoOverlap { rows_old, rows_new },
+            rerun_paths,
+        );
+        let mut alignment = JsonAlignment::key(key_columns);
+        alignment.key_membership = membership
+            .as_ref()
+            .map(|m| json_key_membership(m, args.explicit));
+        return Ok(render_refusal_with_context(
+            refusal,
+            args,
+            RefusalContext {
+                key: Some(key_columns),
                 dialect_old,
                 dialect_new,
-                &active_profile.info,
-            ));
-        }
-    };
+                alignment,
+                profile: active_profile.info.clone(),
+                counts: Counts {
+                    rows_old: Some(rows_old),
+                    rows_new: Some(rows_new),
+                    rows_aligned: Some(0),
+                    ..Counts::default()
+                },
+                metrics: Metrics::default(),
+            },
+        ));
+    }
 
     run_diff(
         AlignmentContext::Key {
@@ -506,6 +561,7 @@ fn run_key_mode(
             rows_old,
             rows_new,
             key_rows: aligned,
+            membership,
         },
         old.headers,
         new.headers,
@@ -597,11 +653,57 @@ enum AlignmentContext {
         rows_old: u64,
         rows_new: u64,
         key_rows: Vec<KeyAlignedRow>,
+        membership: Option<KeyMembership>,
     },
     RowOrder {
         old_rows: Vec<OwnedRecord>,
         new_rows: Vec<OwnedRecord>,
     },
+}
+
+impl AlignmentContext {
+    fn json_alignment(&self, explicit: bool) -> JsonAlignment {
+        match self {
+            Self::Key {
+                key_columns,
+                membership,
+                ..
+            } => {
+                let mut alignment = JsonAlignment::key(key_columns);
+                alignment.key_membership = membership
+                    .as_ref()
+                    .map(|m| json_key_membership(m, explicit));
+                alignment
+            }
+            Self::RowOrder { .. } => JsonAlignment::row_order(),
+        }
+    }
+}
+
+fn json_key_membership(
+    membership: &KeyMembership,
+    explicit: bool,
+) -> crate::output::json::KeyMembership {
+    crate::output::json::KeyMembership {
+        verdict_scope: "continuing_rows",
+        overlap_count: membership.overlap_count,
+        old_only_count: membership.old_only_count,
+        new_only_count: membership.new_only_count,
+        old_only_samples: explicit.then(|| {
+            membership
+                .old_only_samples
+                .iter()
+                .map(|key| encode_key_components_json(key))
+                .collect()
+        }),
+        new_only_samples: explicit.then(|| {
+            membership
+                .new_only_samples
+                .iter()
+                .map(|key| encode_key_components_json(key))
+                .collect()
+        }),
+    }
 }
 
 fn run_diff(
@@ -713,10 +815,7 @@ fn run_diff(
             RefusalKind::NoNumeric,
             rerun_paths,
         );
-        let alignment_mode = match &alignment {
-            AlignmentContext::Key { key_columns, .. } => JsonAlignment::key(key_columns),
-            AlignmentContext::RowOrder { .. } => JsonAlignment::row_order(),
-        };
+        let alignment_mode = alignment.json_alignment(args.explicit);
         let counts = Counts {
             rows_old: Some(rows_old),
             rows_new: Some(rows_new),
@@ -874,10 +973,7 @@ fn run_diff(
         None
     };
 
-    let alignment_mode = match &alignment {
-        AlignmentContext::Key { key_columns, .. } => JsonAlignment::key(key_columns),
-        AlignmentContext::RowOrder { .. } => JsonAlignment::row_order(),
-    };
+    let alignment_mode = alignment.json_alignment(args.explicit);
 
     let counts = Counts {
         rows_old: Some(rows_old),
@@ -1434,12 +1530,27 @@ fn render_refusal(
 }
 
 fn render_refusal_with_context(
-    refusal: RefusalPayload,
+    mut refusal: RefusalPayload,
     args: &Args,
     context: RefusalContext<'_>,
 ) -> PipelineResult {
     let old_display = display_name(args.old_path());
     let new_display = display_name(args.new_path());
+
+    let next_command = if refusal.code == RefusalCode::KeyMismatch {
+        let mut overlap_args = args.clone();
+        overlap_args.key_mode = KeyMode::Overlap;
+        let command = capsule::build_comparison_command(
+            &overlap_args,
+            &args.old_path().to_string_lossy(),
+            &args.new_path().to_string_lossy(),
+            false,
+        );
+        refusal.detail.next = command.clone();
+        Some(command)
+    } else {
+        None
+    };
 
     let result = if args.json {
         let ctx = json_context(
@@ -1452,7 +1563,8 @@ fn render_refusal_with_context(
             context.metrics,
         );
         let detail = refusal_detail_json(&refusal.detail);
-        let refusal_json = JsonRefusal::new(refusal.code, refusal.code.reason(), detail);
+        let mut refusal_json = JsonRefusal::new(refusal.code, refusal.code.reason(), detail);
+        refusal_json.next_command = next_command;
         let output = JsonOutput::refusal(ctx, refusal_json)
             .to_string()
             .unwrap_or_else(|_| "{}".to_string());
@@ -1689,7 +1801,29 @@ fn render_human_header_lines(
         },
     };
 
-    render_real_no_real_header(&header)
+    let mut lines = render_real_no_real_header(&header);
+    if let Some(membership) = ctx.alignment.key_membership.as_ref() {
+        lines.push(format!(
+            "Key membership: overlap={} old_only={} new_only={}",
+            membership.overlap_count, membership.old_only_count, membership.new_only_count
+        ));
+        lines.push(
+            "Verdict scope: continuing rows only; added/removed rows are excluded.".to_string(),
+        );
+        if let Some(samples) = &membership.old_only_samples {
+            lines.push(format!(
+                "Removed key samples: {}",
+                serde_json::to_string(samples).expect("key samples serialize")
+            ));
+        }
+        if let Some(samples) = &membership.new_only_samples {
+            lines.push(format!(
+                "Added key samples: {}",
+                serde_json::to_string(samples).expect("key samples serialize")
+            ));
+        }
+    }
+    lines
 }
 
 fn json_context(
@@ -2300,6 +2434,11 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
             "extra_samples": extra_samples.iter().map(|key| encode_key_label_json(key)).collect::<Vec<_>>(),
             "missing_key_samples": missing_samples.iter().map(|key| encode_key_components_json(key)).collect::<Vec<_>>(),
             "extra_key_samples": extra_samples.iter().map(|key| encode_key_components_json(key)).collect::<Vec<_>>(),
+        }),
+        RefusalKind::NoOverlap { rows_old, rows_new } => json!({
+            "rows_old": rows_old,
+            "rows_new": rows_new,
+            "overlap_count": 0,
         }),
         RefusalKind::RowCount {
             rows_old,

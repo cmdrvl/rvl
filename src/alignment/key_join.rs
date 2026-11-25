@@ -40,6 +40,15 @@ pub struct KeyAlignedRow {
     pub new: KeyEntry,
 }
 
+#[derive(Debug, Clone)]
+pub struct KeyMembership {
+    pub overlap_count: usize,
+    pub old_only_count: usize,
+    pub new_only_count: usize,
+    pub old_only_samples: Vec<KeyValue>,
+    pub new_only_samples: Vec<KeyValue>,
+}
+
 /// Errors encountered in key-mode alignment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum KeyJoinError {
@@ -114,8 +123,46 @@ pub fn join_key_maps(old: KeyMap, new: KeyMap) -> Result<Vec<KeyAlignedRow>, Key
         return Err(mismatch);
     }
 
-    let mut keys: Vec<KeyValue> = old.entries.keys().cloned().collect();
+    Ok(join_overlapping_key_maps(old, new).0)
+}
+
+/// Join continuing rows in byte-sorted tuple order; retain bounded membership samples.
+pub fn join_overlapping_key_maps(old: KeyMap, new: KeyMap) -> (Vec<KeyAlignedRow>, KeyMembership) {
+    let mut keys: Vec<KeyValue> = old
+        .entries
+        .keys()
+        .filter(|key| new.entries.contains_key(*key))
+        .cloned()
+        .collect();
     keys.sort();
+
+    let mut old_only_samples: Vec<_> = old
+        .entries
+        .keys()
+        .filter(|key| !new.entries.contains_key(*key))
+        .cloned()
+        .collect();
+    let mut new_only_samples: Vec<_> = new
+        .entries
+        .keys()
+        .filter(|key| !old.entries.contains_key(*key))
+        .cloned()
+        .collect();
+    let membership = KeyMembership {
+        overlap_count: keys.len(),
+        old_only_count: old_only_samples.len(),
+        new_only_count: new_only_samples.len(),
+        old_only_samples: {
+            old_only_samples.sort();
+            truncate_samples(&mut old_only_samples);
+            old_only_samples
+        },
+        new_only_samples: {
+            new_only_samples.sort();
+            truncate_samples(&mut new_only_samples);
+            new_only_samples
+        },
+    };
 
     let mut old_entries = old.entries;
     let mut new_entries = new.entries;
@@ -135,7 +182,7 @@ pub fn join_key_maps(old: KeyMap, new: KeyMap) -> Result<Vec<KeyAlignedRow>, Key
         });
     }
 
-    Ok(aligned)
+    (aligned, membership)
 }
 
 fn compare_key_sets(

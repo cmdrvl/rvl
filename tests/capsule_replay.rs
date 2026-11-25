@@ -109,6 +109,7 @@ fn run_with_capsule(
         old: Some(old.to_path_buf()),
         new: Some(new.to_path_buf()),
         key: key.map(str::to_string),
+        key_mode: Default::default(),
         threshold: 0.95,
         tolerance: 1e-9,
         delimiter: None,
@@ -158,6 +159,7 @@ fn replay_from_manifest(manifest: &Value, capsule_dir: &Path) -> Value {
             .get("key")
             .and_then(Value::as_str)
             .map(str::to_string),
+        key_mode: Default::default(),
         threshold: args_block
             .get("threshold")
             .and_then(Value::as_f64)
