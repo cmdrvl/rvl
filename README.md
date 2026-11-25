@@ -330,6 +330,8 @@ Invalid `--threshold` or `--tolerance` values are CLI argument errors (exit 2).
 
 **`set -e` scripts:** exit `1` on REAL CHANGE aborts a `set -e` shell. Pass `--exit-zero-on-change` (REAL CHANGE then exits `0`, refusals still exit `2`), or guard the call: `rvl a.csv b.csv || [ $? -eq 1 ]`. The flag never changes `doctor`'s exit codes.
 
+**Typos:** a usage error (exit `2`, empty stdout) for an unknown flag or subcommand gets one extra stderr line, ``hint: did you mean `--json`?``, when exactly one flag or subcommand of the command you are inside is one edit away (a swapped pair counts as one). Ties and far misses get no hint, and a hint is never offered for a flag the current command does not have. A single bare word one edit from a subcommand (`rvl witnes`) gets a hint; a word with a `/` or `.` (a file name) or two inputs never does. Same behavior as `assess`.
+
 **Environment:** `NO_COLOR` (any value) and `TERM=dumb` disable ANSI styling, and output is unstyled whenever it is not a TTY. `SOURCE_DATE_EPOCH` replaces the wall clock in the witness record timestamp.
 
 ### Output Routing

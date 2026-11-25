@@ -34,6 +34,9 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
                 _ => 2,
             };
             err.print()?;
+            if let Some(candidate) = cli::typo::did_you_mean::<cli::args::Args>(&err) {
+                eprintln!("{}", cli::typo::hint_line(&candidate));
+            }
             return Ok(code);
         }
     };
@@ -59,9 +62,19 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     }
 
     if args.old.is_none() || args.new.is_none() {
+        // One bare word that is one edit from a subcommand (`rvl witnes`) is a typo, not a file.
+        let subcommand_hint = match (&args.old, &args.new) {
+            (Some(word), None) => word
+                .to_str()
+                .and_then(cli::typo::did_you_mean_subcommand::<cli::args::Args>),
+            _ => None,
+        };
         eprintln!(
             "error: the following required arguments were not provided:\n  <OLD_CSV>\n  <NEW_CSV>\n\nUsage: rvl <OLD_CSV> <NEW_CSV> [OPTIONS]\n       rvl capabilities --json\n       rvl robot-docs guide\n       rvl witness <query|last|count> [OPTIONS]\n       rvl doctor [health|capabilities|triage|robot-docs] [--json]\n\nFor more information, try '--help'."
         );
+        if let Some(candidate) = subcommand_hint {
+            eprintln!("{}", cli::typo::hint_line(&candidate));
+        }
         return Ok(2);
     }
 
