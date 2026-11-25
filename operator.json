@@ -1,7 +1,7 @@
 {
   "schema_version": "operator.v1",
   "name": "rvl",
-  "version": "0.7.1",
+  "tool_version": "0.7.1",
   "contract_version": "1.0.0",
   "description": "Numeric change explainer — finds the smallest set of cell-level changes that account for the difference between two CSV files. Deprecated aliases kept for one release: `rvl --robot-triage` and `rvl doctor --robot-triage` (both now emit the cmdrvl.doctor.v1 triage report), `rvl doctor health`, and `--capsule-out` (use --capsule-dir).",
   "repository": "https://github.com/cmdrvl/rvl",
