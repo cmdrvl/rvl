@@ -1717,6 +1717,31 @@ fn render_refusal_with_context(
     args: &Args,
     context: RefusalContext<'_>,
 ) -> PipelineResult {
+    // Zero retention: without --explicit no refusal prints cell values, key values or data column
+    // names. An unusable RVL_REDACTION_KEY becomes its own data-free refusal, never a fallback.
+    if !args.explicit && refusal.detail.carries_data() {
+        match RedactionKey::from_env() {
+            Ok(key) => {
+                let mut marker = Marker::new(key.as_ref());
+                refusal.detail = refusal.detail.redact(&mut marker);
+            }
+            Err(error) => {
+                let old_path = args.old_path().to_string_lossy().to_string();
+                let new_path = args.new_path().to_string_lossy().to_string();
+                refusal = RefusalPayload::with_default_next(
+                    RefusalCode::RedactionKeyInvalid,
+                    RefusalKind::RedactionKeyInvalid {
+                        reason: error.reason(),
+                    },
+                    RerunPaths {
+                        old: &old_path,
+                        new: &new_path,
+                    },
+                );
+            }
+        }
+    }
+
     let old_display = display_name(args.old_path());
     let new_display = display_name(args.new_path());
 
@@ -3072,7 +3097,7 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
             HeadersIssue::Duplicate { name } => json!({
                 "file": file.as_str(),
                 "issue": "duplicate",
-                "name": encode_identifier_json(name),
+                "name": detail.data_ident_json(name),
             }),
             HeadersIssue::ExtraFields { record } => json!({
                 "file": file.as_str(),
@@ -3099,22 +3124,28 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         } => json!({
             "file": file.as_str(),
             "record": record,
-            "key": encode_key_label_json(key_value),
-            "key_values": encode_key_components_json(key_value),
+            "key": detail.data_key_label_json(key_value),
+            "key_values": detail.data_key_components_json(key_value),
         }),
         RefusalKind::KeyMismatch {
             missing_in_new,
             extra_in_new,
             missing_samples,
             extra_samples,
-        } => json!({
-            "missing_in_new": missing_in_new,
-            "extra_in_new": extra_in_new,
-            "missing_samples": missing_samples.iter().map(|key| encode_key_label_json(key)).collect::<Vec<_>>(),
-            "extra_samples": extra_samples.iter().map(|key| encode_key_label_json(key)).collect::<Vec<_>>(),
-            "missing_key_samples": missing_samples.iter().map(|key| encode_key_components_json(key)).collect::<Vec<_>>(),
-            "extra_key_samples": extra_samples.iter().map(|key| encode_key_components_json(key)).collect::<Vec<_>>(),
-        }),
+        } => {
+            let mut obj = json!({
+                "missing_in_new": missing_in_new,
+                "extra_in_new": extra_in_new,
+                "missing_samples": missing_samples.iter().map(|key| detail.data_key_label_json(key)).collect::<Vec<_>>(),
+                "extra_samples": extra_samples.iter().map(|key| detail.data_key_label_json(key)).collect::<Vec<_>>(),
+                "missing_key_samples": missing_samples.iter().map(|key| detail.data_key_components_json(key)).collect::<Vec<_>>(),
+                "extra_key_samples": extra_samples.iter().map(|key| detail.data_key_components_json(key)).collect::<Vec<_>>(),
+            });
+            if detail.redacted && missing_samples.is_empty() && extra_samples.is_empty() {
+                obj["samples_withheld"] = json!(true);
+            }
+            obj
+        }
         RefusalKind::InputNotLocked { file, path } => json!({
             "file": file.as_str(),
             "path": path,
@@ -3159,10 +3190,10 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         } => json!({
             "rows_old": rows_old,
             "rows_new": rows_new,
-            "suggested_keys": suggested_keys.iter().map(|k| encode_identifier_json(k)).collect::<Vec<_>>(),
+            "suggested_keys": suggested_keys.iter().map(|k| detail.data_ident_json(k)).collect::<Vec<_>>(),
         }),
         RefusalKind::NeedKey { suggested_keys } => json!({
-            "suggested_keys": suggested_keys.iter().map(|k| encode_identifier_json(k)).collect::<Vec<_>>(),
+            "suggested_keys": suggested_keys.iter().map(|k| detail.data_ident_json(k)).collect::<Vec<_>>(),
         }),
         RefusalKind::Dialect {
             file,
@@ -3216,15 +3247,15 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         } => {
             let mut obj = json!({
                 "file": file.as_str(),
-                "column": encode_identifier_json(column),
-                "value": encode_identifier_json(value),
+                "column": detail.data_ident_json(column),
+                "value": detail.data_ident_json(value),
             });
             if let Some(record) = record {
                 obj["record"] = json!(record);
             }
             if let Some(key) = key_value {
-                obj["key"] = json!(encode_key_label_json(key));
-                obj["key_values"] = json!(encode_key_components_json(key));
+                obj["key"] = json!(detail.data_key_label_json(key));
+                obj["key_values"] = json!(detail.data_key_components_json(key));
             }
             obj
         }
@@ -3238,15 +3269,15 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
         } => {
             let mut obj = json!({
                 "file": file.as_str(),
-                "column": encode_identifier_json(column),
-                "value": encode_identifier_json(value),
+                "column": detail.data_ident_json(column),
+                "value": detail.data_ident_json(value),
             });
             if let Some(record) = record {
                 obj["record"] = json!(record);
             }
             if let Some(key) = key_value {
-                obj["key"] = json!(encode_key_label_json(key));
-                obj["key_values"] = json!(encode_key_components_json(key));
+                obj["key"] = json!(detail.data_key_label_json(key));
+                obj["key_values"] = json!(detail.data_key_components_json(key));
             }
             obj
         }

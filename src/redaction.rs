@@ -99,6 +99,18 @@ pub enum Namespace {
     Value,
     /// A row identity (key tuple or row position).
     Row,
+    /// A column name taken from the data (`redacted:ref:c#`).
+    Column,
+}
+
+/// Length-framed bytes of a key tuple, so `("ab","c")` and `("a","bc")` mark differently.
+pub fn frame_components(components: &[Vec<u8>]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    for component in components {
+        bytes.extend_from_slice(&(component.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(component);
+    }
+    bytes
 }
 
 /// Turns raw bytes into markers for one output. Create one per report and mark entries in output order.
@@ -106,6 +118,7 @@ pub struct Marker<'a> {
     key: Option<&'a RedactionKey>,
     values: BTreeMap<Vec<u8>, usize>,
     rows: BTreeMap<Vec<u8>, usize>,
+    columns: BTreeMap<Vec<u8>, usize>,
 }
 
 impl<'a> Marker<'a> {
@@ -114,7 +127,13 @@ impl<'a> Marker<'a> {
             key,
             values: BTreeMap::new(),
             rows: BTreeMap::new(),
+            columns: BTreeMap::new(),
         }
+    }
+
+    /// True when markers are keyed HMACs rather than ordinal refs.
+    pub fn is_keyed(&self) -> bool {
+        self.key.is_some()
     }
 
     pub fn mark(&mut self, namespace: Namespace, bytes: &[u8]) -> String {
@@ -124,6 +143,7 @@ impl<'a> Marker<'a> {
         let (table, letter) = match namespace {
             Namespace::Value => (&mut self.values, 'v'),
             Namespace::Row => (&mut self.rows, 'k'),
+            Namespace::Column => (&mut self.columns, 'c'),
         };
         let next = table.len() + 1;
         let ordinal = *table.entry(bytes.to_vec()).or_insert(next);

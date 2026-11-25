@@ -373,11 +373,17 @@ fn run_comparison(args: cli::args::Args) -> Result<u8, Box<dyn std::error::Error
         cli::exit::OutputStream::Stdout => {
             let mut stdout = io::stdout();
             stdout.write_all(result.output.as_bytes())?;
+            if args.json && !result.output.ends_with('\n') {
+                stdout.write_all(b"\n")?;
+            }
             stdout.flush()?;
         }
         cli::exit::OutputStream::Stderr => {
             let mut stderr = io::stderr();
             stderr.write_all(result.output.as_bytes())?;
+            if args.json && !result.output.ends_with('\n') {
+                stderr.write_all(b"\n")?;
+            }
             stderr.flush()?;
         }
     }

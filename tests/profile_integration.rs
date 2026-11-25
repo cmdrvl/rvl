@@ -206,6 +206,7 @@ fn profile_composite_key_refusals_identify_components_and_tuple_values() {
 
     let mut args = make_args(&old, &new);
     args.profile = Some(profile.clone());
+    args.explicit = true; // asserts the exact failing key values; default output is redacted (bd-ez4)
     let duplicate = run_json(&args);
     assert_eq!(duplicate["refusal"]["code"], "E_KEY_DUP");
     assert_eq!(duplicate["refusal"]["detail"]["key"], "u8:A + u8:East");
@@ -366,6 +367,7 @@ fn profile_column_registry_duplicate_canonical_headers_refuse_as_headers() {
     );
 
     let mut args = make_args(&old, &new);
+    args.explicit = true; // asserts the exact duplicate header name; default output is redacted (bd-ez4)
     args.profile = Some(profile);
     let json = run_json(&args);
 

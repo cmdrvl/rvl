@@ -6,7 +6,9 @@
 //! time.
 
 use crate::alignment::key_join::KeyValue;
+use crate::format::ident_human::render_identifier_human;
 use crate::format::ident_json::encode_identifier_json;
+use crate::redaction::{Marker, Namespace, frame_components};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileSide {
@@ -34,17 +36,138 @@ pub struct RefusalDetail {
     pub kind: RefusalKind,
     /// Next-step remediation or rerun guidance (without "Next:" prefix).
     pub next: String,
+    /// True once [`RefusalDetail::redact`] replaced data-derived fields (cell values, key
+    /// values, data column names) with markers. Marked fields are then rendered verbatim.
+    pub redacted: bool,
 }
 
 impl RefusalDetail {
     pub fn new(kind: RefusalKind, next: String) -> Self {
-        Self { kind, next }
+        Self {
+            kind,
+            next,
+            redacted: false,
+        }
     }
 
     pub fn with_default_next(kind: RefusalKind, paths: RerunPaths<'_>) -> Self {
         let next = kind.default_next(paths);
-        Self { kind, next }
+        Self::new(kind, next)
     }
+
+    /// True when the payload carries cell values, key values or data-derived column names.
+    pub fn carries_data(&self) -> bool {
+        matches!(
+            &self.kind,
+            RefusalKind::Headers {
+                issue: HeadersIssue::Duplicate { .. },
+                ..
+            } | RefusalKind::KeyDup { .. }
+                | RefusalKind::KeyMismatch { .. }
+                | RefusalKind::MixedTypes { .. }
+                | RefusalKind::Missingness { .. }
+                | RefusalKind::RowCount { .. }
+                | RefusalKind::NeedKey { .. }
+        )
+    }
+
+    /// Replaces every data-derived field with a marker (ordinal ref, or keyed HMAC when the
+    /// marker has a key). Fields are marked in a fixed order (column, value, key) and lists in
+    /// their emitted order, so ordinals follow the data, never the byte order of the names or
+    /// values. Operator-typed `--key` names are not data and stay as typed.
+    ///
+    /// Without a key, `KeyMismatch` samples are dropped (counts remain): the sample list is the
+    /// byte-sorted head of each key set, so numbering it would expose sort rank. `--explicit`
+    /// keeps the exact samples.
+    pub fn redact(mut self, marker: &mut Marker<'_>) -> Self {
+        match &mut self.kind {
+            RefusalKind::Headers {
+                issue: HeadersIssue::Duplicate { name },
+                ..
+            } => *name = marker.mark(Namespace::Column, name).into_bytes(),
+            RefusalKind::KeyDup { key_value, .. } => *key_value = mark_key(marker, key_value),
+            RefusalKind::KeyMismatch {
+                missing_samples,
+                extra_samples,
+                ..
+            } => {
+                if marker.is_keyed() {
+                    for key in missing_samples.iter_mut().chain(extra_samples.iter_mut()) {
+                        *key = mark_key(marker, key);
+                    }
+                } else {
+                    missing_samples.clear();
+                    extra_samples.clear();
+                }
+            }
+            RefusalKind::MixedTypes {
+                column,
+                value,
+                key_value,
+                ..
+            }
+            | RefusalKind::Missingness {
+                column,
+                value,
+                key_value,
+                ..
+            } => {
+                *column = marker.mark(Namespace::Column, column).into_bytes();
+                *value = marker.mark(Namespace::Value, value).into_bytes();
+                if let Some(key) = key_value {
+                    *key = mark_key(marker, key);
+                }
+            }
+            RefusalKind::RowCount { suggested_keys, .. }
+            | RefusalKind::NeedKey { suggested_keys } => {
+                for name in suggested_keys.iter_mut() {
+                    *name = marker.mark(Namespace::Column, name).into_bytes();
+                }
+                self.next = "rerun with --key <column>; candidate names are redacted, use --explicit to show them".to_string();
+            }
+            _ => {}
+        }
+        self.redacted = true;
+        self
+    }
+
+    /// A data-derived identifier: verbatim when redacted (it is already a marker), else encoded.
+    pub fn data_ident_json(&self, bytes: &[u8]) -> String {
+        if self.redacted {
+            String::from_utf8_lossy(bytes).into_owned()
+        } else {
+            encode_identifier_json(bytes)
+        }
+    }
+
+    pub fn data_ident_human(&self, bytes: &[u8]) -> String {
+        if self.redacted {
+            String::from_utf8_lossy(bytes).into_owned()
+        } else {
+            render_identifier_human(bytes)
+        }
+    }
+
+    pub fn data_key_label_json(&self, key: &[Vec<u8>]) -> String {
+        self.data_key_components_json(key).join(" + ")
+    }
+
+    pub fn data_key_components_json(&self, key: &[Vec<u8>]) -> Vec<String> {
+        key.iter().map(|part| self.data_ident_json(part)).collect()
+    }
+
+    pub fn data_key_human(&self, key: &[Vec<u8>]) -> String {
+        key.iter()
+            .map(|part| self.data_ident_human(part))
+            .collect::<Vec<_>>()
+            .join(" + ")
+    }
+}
+
+/// One marker for the whole key tuple, so the tuple's arity is not revealed either.
+fn mark_key(marker: &mut Marker<'_>, key: &KeyValue) -> KeyValue {
+    let text = marker.mark(Namespace::Row, &frame_components(key));
+    KeyValue::from(vec![text.into_bytes()])
 }
 
 #[derive(Debug, Clone)]

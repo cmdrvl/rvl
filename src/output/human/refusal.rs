@@ -2,7 +2,6 @@
 
 use crate::alignment::key_join::KeyValue;
 use crate::format::ident_human::render_identifier_human;
-use crate::format::key::render_key_human;
 use crate::format::numbers::{format_int_with_commas, format_percent_one_decimal};
 use crate::refusal::codes::RefusalCode;
 use crate::refusal::details::{EncodingIssue, FileSide, HeadersIssue, RefusalDetail, RefusalKind};
@@ -55,7 +54,7 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
                     format!("Example: {file} has no header row.")
                 }
                 HeadersIssue::Duplicate { name } => {
-                    let name = render_identifier_human(name);
+                    let name = detail.data_ident_human(name);
                     format!("Example: {file} has duplicate header \"{name}\".")
                 }
                 HeadersIssue::ExtraFields { record } => {
@@ -88,7 +87,7 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             key_value,
         } => {
             let file = file_label(*file, old_name, new_name);
-            let value = render_key_human(key_value);
+            let value = detail.data_key_human(key_value);
             format!(
                 "Example: {file} data record {} duplicates key \"{value}\".",
                 format_count_u64(*record)
@@ -102,8 +101,8 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
         } => {
             let missing = format_count_u64(*missing_in_new as u64);
             let extra = format_count_u64(*extra_in_new as u64);
-            let missing_samples = render_key_samples(missing_samples);
-            let extra_samples = render_key_samples(extra_samples);
+            let missing_samples = render_key_samples(detail, missing_samples);
+            let extra_samples = render_key_samples(detail, extra_samples);
             let mut line = format!("Example: missing_in_new={missing} extra_in_new={extra}.");
             if !missing_samples.is_empty() {
                 line.push_str(&format!(" missing samples: [{missing_samples}]."));
@@ -154,14 +153,14 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
                 format_count_u64(*rows_old),
                 format_count_u64(*rows_new)
             );
-            let keys = render_samples(suggested_keys);
+            let keys = render_samples(detail, suggested_keys);
             if !keys.is_empty() {
                 line.push_str(&format!(" suggested keys: [{keys}]."));
             }
             line
         }
         RefusalKind::NeedKey { suggested_keys } => {
-            let keys = render_samples(suggested_keys);
+            let keys = render_samples(detail, suggested_keys);
             if keys.is_empty() {
                 "Example: no key was selected for deterministic alignment.".to_string()
             } else {
@@ -218,10 +217,10 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             value,
             key_value,
         } => {
-            let column = render_identifier_human(column);
-            let value = render_identifier_human(value);
+            let column = detail.data_ident_human(column);
+            let value = detail.data_ident_human(value);
             if let Some(key) = key_value {
-                let key = render_key_human(key);
+                let key = detail.data_key_human(key);
                 format!(
                     "Example: key \"{key}\" column \"{column}\" has non-numeric value \"{value}\"."
                 )
@@ -247,10 +246,10 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             value,
             key_value,
         } => {
-            let column = render_identifier_human(column);
-            let value = render_identifier_human(value);
+            let column = detail.data_ident_human(column);
+            let value = detail.data_ident_human(value);
             if let Some(key) = key_value {
-                let key = render_key_human(key);
+                let key = detail.data_key_human(key);
                 format!(
                     "Example: key \"{key}\" column \"{column}\" has numeric value \"{value}\" while the other side is missing."
                 )
@@ -318,18 +317,18 @@ fn encoding_issue_label(issue: EncodingIssue) -> &'static str {
     }
 }
 
-fn render_samples(samples: &[Vec<u8>]) -> String {
+fn render_samples(detail: &RefusalDetail, samples: &[Vec<u8>]) -> String {
     samples
         .iter()
-        .map(|bytes| render_identifier_human(bytes))
+        .map(|bytes| detail.data_ident_human(bytes))
         .collect::<Vec<_>>()
         .join(", ")
 }
 
-fn render_key_samples(samples: &[KeyValue]) -> String {
+fn render_key_samples(detail: &RefusalDetail, samples: &[KeyValue]) -> String {
     samples
         .iter()
-        .map(|key| render_key_human(key))
+        .map(|key| detail.data_key_human(key))
         .collect::<Vec<_>>()
         .join(", ")
 }
