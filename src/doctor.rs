@@ -157,6 +157,12 @@ pub fn emit_robot_docs(action: Option<&RobotDocsAction>) -> Result<u8, Box<dyn s
     println!(
         "- Use `--explicit` for local non-sensitive runs; omit it for logged, shared, or veil/airlock zero-retention workflows."
     );
+    println!(
+        "- `--non-numeric` default markers are ordinal refs (`redacted:ref:v1..` for values, `redacted:ref:k1..` for rows), deterministic and hash-free."
+    );
+    println!(
+        "- Opt-in stable markers: set RVL_REDACTION_KEY (at least 16 bytes) for `redacted:hmac-sha256:<32 hex>`; an empty or short key refuses with E_REDACTION_KEY_INVALID. The key is never printed, logged or witnessed."
+    );
     println!();
     println!("Composition:");
     println!(

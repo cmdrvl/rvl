@@ -290,6 +290,16 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
         RefusalKind::AuditFieldsRequiresProfile => {
             "Example: --audit-fields requires profile-scoped columns.".to_string()
         }
+        RefusalKind::RedactionKeyInvalid { reason } => format!(
+            "Example: {} is set but {}; it must be at least {} bytes.",
+            crate::redaction::ENV_KEY,
+            if *reason == "empty" {
+                "empty"
+            } else {
+                "too short"
+            },
+            crate::redaction::MIN_KEY_BYTES
+        ),
     }
 }
 

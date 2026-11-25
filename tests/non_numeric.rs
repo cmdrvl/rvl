@@ -16,6 +16,7 @@ fn rvl(old: &str, new: &str, extra: &[&str]) -> Output {
     std::fs::write(&old_path, old).expect("write old");
     std::fs::write(&new_path, new).expect("write new");
     let output = Command::new(env!("CARGO_BIN_EXE_rvl"))
+        .env_remove("RVL_REDACTION_KEY")
         .arg(&old_path)
         .arg(&new_path)
         .args(extra)
@@ -114,8 +115,9 @@ fn string_only_mode_reports_generic_transitions_and_redacts_them() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|row| row.as_str().unwrap().starts_with("blake3:"))
+            .all(|row| row.as_str().unwrap().starts_with("redacted:ref:k"))
     );
+    assert!(!serde_json::to_string(&value).unwrap().contains("blake3:"));
 
     let serialized = serde_json::to_string(&value).unwrap();
     assert!(!serialized.contains("status"));

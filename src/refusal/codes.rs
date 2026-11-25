@@ -30,13 +30,14 @@ pub enum RefusalCode {
     InputNotLocked,
     InputDrift,
     InputFormat,
+    RedactionKeyInvalid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnknownRefusalCode;
 
 impl RefusalCode {
-    pub const ALL: [RefusalCode; 26] = [
+    pub const ALL: [RefusalCode; 27] = [
         RefusalCode::Io,
         RefusalCode::Encoding,
         RefusalCode::CsvParse,
@@ -63,6 +64,7 @@ impl RefusalCode {
         RefusalCode::InputNotLocked,
         RefusalCode::InputDrift,
         RefusalCode::InputFormat,
+        RefusalCode::RedactionKeyInvalid,
     ];
 
     #[inline]
@@ -94,6 +96,7 @@ impl RefusalCode {
             RefusalCode::InputNotLocked => "E_INPUT_NOT_LOCKED",
             RefusalCode::InputDrift => "E_INPUT_DRIFT",
             RefusalCode::InputFormat => "E_INPUT_FORMAT",
+            RefusalCode::RedactionKeyInvalid => "E_REDACTION_KEY_INVALID",
         }
     }
 
@@ -127,6 +130,7 @@ impl RefusalCode {
             RefusalCode::InputNotLocked => "input file is not pinned in the lockfile",
             RefusalCode::InputDrift => "input bytes differ from the lockfile hash",
             RefusalCode::InputFormat => "input could not be read in its file format",
+            RefusalCode::RedactionKeyInvalid => "RVL_REDACTION_KEY is empty or too short",
         }
     }
 }
@@ -176,6 +180,7 @@ impl FromStr for RefusalCode {
             "E_INPUT_NOT_LOCKED" => Ok(RefusalCode::InputNotLocked),
             "E_INPUT_DRIFT" => Ok(RefusalCode::InputDrift),
             "E_INPUT_FORMAT" => Ok(RefusalCode::InputFormat),
+            "E_REDACTION_KEY_INVALID" => Ok(RefusalCode::RedactionKeyInvalid),
             _ => Err(UnknownRefusalCode),
         }
     }

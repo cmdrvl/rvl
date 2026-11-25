@@ -63,6 +63,7 @@ use crate::profile::{
     ColumnRegistryRunInfo, ResolveError, ResolvedProfile, load_profile_from_path,
     resolve_profile_id,
 };
+use crate::redaction::{Marker, Namespace, RedactionKey};
 use crate::refusal::codes::RefusalCode;
 use crate::refusal::details::{
     DelimiterHint, DialectSuggestion, EncodingIssue, FileSide, HeadersIssue, NamedDelimiter,
@@ -127,6 +128,8 @@ struct RunContext<'a> {
     dialect_new: Option<DialectReceipt>,
     rerun_paths: RerunPaths<'a>,
     active_profile: &'a ActiveProfile,
+    /// Operator key for keyed redaction markers (`RVL_REDACTION_KEY`); `None` means ordinal refs.
+    redaction_key: Option<&'a RedactionKey>,
 }
 
 #[derive(Clone, Debug)]
@@ -174,6 +177,33 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
             &ProfileRunInfo::default(),
         ));
     }
+
+    // A set-but-unusable key is refused before any input is read, even with --explicit, and never
+    // falls back to ordinal refs. Only `--non-numeric` output carries redaction markers.
+    let redaction_key = if args.non_numeric {
+        match RedactionKey::from_env() {
+            Ok(key) => key,
+            Err(error) => {
+                let refusal = RefusalPayload::with_default_next(
+                    RefusalCode::RedactionKeyInvalid,
+                    RefusalKind::RedactionKeyInvalid {
+                        reason: error.reason(),
+                    },
+                    rerun_paths,
+                );
+                return Ok(render_refusal(
+                    refusal,
+                    args,
+                    None,
+                    None,
+                    None,
+                    &ProfileRunInfo::default(),
+                ));
+            }
+        }
+    } else {
+        None
+    };
 
     let mut active_profile = match resolve_active_profile(args, rerun_paths) {
         Ok(profile) => profile,
@@ -295,6 +325,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         dialect_new,
         rerun_paths,
         active_profile: &active_profile,
+        redaction_key: redaction_key.as_ref(),
     };
 
     if let Some(keys) = key_columns.as_deref() {
@@ -1177,6 +1208,7 @@ fn run_diff(
                 &field_columns,
                 &active_profile.column_types,
                 args.explicit,
+                context.redaction_key,
             )
         });
         let ctx = json_context_with_field_changes(
@@ -2206,8 +2238,40 @@ fn build_human_field_changes(
 
 /// Old and new raw cell bytes of a changed non-numeric cell.
 type TransitionKey = (Vec<u8>, Vec<u8>);
-/// How many rows made a transition, and which rows (by their key text).
-type TransitionRows = (u64, BTreeSet<String>);
+
+/// How one row is identified inside a transition. Explicit output prints a readable label; the
+/// default keeps the raw identity bytes only in memory until they become a redaction marker.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum RowIdent {
+    Label(String),
+    Opaque(Vec<u8>),
+}
+
+impl RowIdent {
+    fn into_label(self) -> String {
+        match self {
+            Self::Label(label) => label,
+            Self::Opaque(bytes) => encode_identifier_json(&bytes),
+        }
+    }
+}
+
+/// One `(old -> new)` transition in a column: how many rows made it, when it first appeared in
+/// the traversal, and which rows (each with the traversal position where it first appeared).
+struct TransitionStat {
+    count: u64,
+    first_seen: u64,
+    rows: BTreeMap<RowIdent, u64>,
+}
+
+/// A categorical transition waiting for its markers (or explicit labels).
+struct PendingTransition {
+    column: String,
+    old: Vec<u8>,
+    new: Vec<u8>,
+    count: u64,
+    rows: Vec<RowIdent>,
+}
 
 #[derive(Default)]
 struct NonNumericColumnStats {
@@ -2215,7 +2279,7 @@ struct NonNumericColumnStats {
     parsed_date_values: u64,
     distinct_values: BTreeSet<Vec<u8>>,
     date_deltas: BTreeMap<i64, u64>,
-    transitions: BTreeMap<TransitionKey, TransitionRows>,
+    transitions: BTreeMap<TransitionKey, TransitionStat>,
     changed_rows: u64,
     byte_length_delta: i64,
     became_null: u64,
@@ -2227,6 +2291,7 @@ fn build_non_numeric_report(
     columns: &[crate::numeric::columns::CommonColumn],
     column_types: &HashMap<Vec<u8>, String>,
     explicit: bool,
+    redaction_key: Option<&RedactionKey>,
 ) -> NonNumericReport {
     let mut stats = (0..columns.len())
         .map(|_| NonNumericColumnStats::default())
@@ -2234,7 +2299,8 @@ fn build_non_numeric_report(
 
     match alignment {
         AlignmentContext::Key { key_rows, .. } => {
-            for row in key_rows {
+            for (row_seq, row) in key_rows.iter().enumerate() {
+                let row_seq = row_seq as u64;
                 let row_token = non_numeric_row_token(Some(row.key.as_ref()), 0, explicit);
                 for (index, column) in columns.iter().enumerate() {
                     let old_raw = row
@@ -2249,13 +2315,20 @@ fn build_non_numeric_report(
                         .get(column.new_index)
                         .map(|value| value.as_slice())
                         .unwrap_or(b"");
-                    update_non_numeric_stats(&mut stats[index], old_raw, new_raw, &row_token);
+                    update_non_numeric_stats(
+                        &mut stats[index],
+                        old_raw,
+                        new_raw,
+                        &row_token,
+                        row_seq,
+                    );
                 }
             }
         }
         AlignmentContext::RowOrder { old_rows, new_rows } => {
             for (row_index, (old_row, new_row)) in old_rows.iter().zip(new_rows.iter()).enumerate()
             {
+                let row_seq = row_index as u64;
                 let row_token = non_numeric_row_token(None, row_index + 1, explicit);
                 for (index, column) in columns.iter().enumerate() {
                     let old_raw = old_row
@@ -2266,14 +2339,20 @@ fn build_non_numeric_report(
                         .get(column.new_index)
                         .map(|value| value.as_slice())
                         .unwrap_or(b"");
-                    update_non_numeric_stats(&mut stats[index], old_raw, new_raw, &row_token);
+                    update_non_numeric_stats(
+                        &mut stats[index],
+                        old_raw,
+                        new_raw,
+                        &row_token,
+                        row_seq,
+                    );
                 }
             }
         }
     }
 
     let mut date_shifts = Vec::new();
-    let mut categorical_transitions = Vec::new();
+    let mut pending_transitions = Vec::new();
     let mut text_churn = Vec::new();
     let mut nullity_flips = Vec::new();
 
@@ -2317,13 +2396,21 @@ fn build_non_numeric_report(
                 });
             }
         } else if is_categorical {
-            for ((old, new), (count, affected_rows)) in stats.transitions {
-                categorical_transitions.push(CategoricalTransition {
+            // Data order (first appearance), never value order: in the default output the order
+            // decides the ordinal numbers, and sorting by value bytes would leak their ordering.
+            let mut transitions: Vec<_> = stats.transitions.into_iter().collect();
+            transitions.sort_by_key(|(_, stat)| stat.first_seen);
+            for ((old, new), stat) in transitions {
+                let mut rows: Vec<(RowIdent, u64)> = stat.rows.into_iter().collect();
+                if !explicit {
+                    rows.sort_by_key(|(_, seq)| *seq);
+                }
+                pending_transitions.push(PendingTransition {
                     column: column_label.clone(),
-                    old: non_numeric_token(&old, explicit),
-                    new: non_numeric_token(&new, explicit),
-                    count,
-                    affected_rows: affected_rows.into_iter().collect(),
+                    old,
+                    new,
+                    count: stat.count,
+                    rows: rows.into_iter().map(|(row, _)| row).collect(),
                 });
             }
         } else if stats.changed_rows > 0 {
@@ -2354,12 +2441,8 @@ fn build_non_numeric_report(
             .cmp(&right.column)
             .then_with(|| left.delta_days.cmp(&right.delta_days))
     });
-    categorical_transitions.sort_by(|left, right| {
-        left.column
-            .cmp(&right.column)
-            .then_with(|| left.old.cmp(&right.old))
-            .then_with(|| left.new.cmp(&right.new))
-    });
+    let categorical_transitions =
+        finalize_transitions(pending_transitions, explicit, redaction_key);
     text_churn.sort_by(|left, right| left.column.cmp(&right.column));
     nullity_flips.sort_by(|left, right| left.column.cmp(&right.column));
 
@@ -2376,7 +2459,8 @@ fn update_non_numeric_stats(
     stats: &mut NonNumericColumnStats,
     old_raw: &[u8],
     new_raw: &[u8],
-    row_token: &str,
+    row_ident: &RowIdent,
+    row_seq: u64,
 ) {
     let old_missing = is_missing_token(old_raw);
     let new_missing = is_missing_token(new_raw);
@@ -2416,9 +2500,13 @@ fn update_non_numeric_stats(
         let entry = stats
             .transitions
             .entry(key)
-            .or_insert_with(|| (0, BTreeSet::new()));
-        entry.0 = entry.0.saturating_add(1);
-        entry.1.insert(row_token.to_string());
+            .or_insert_with(|| TransitionStat {
+                count: 0,
+                first_seen: row_seq,
+                rows: BTreeMap::new(),
+            });
+        entry.count = entry.count.saturating_add(1);
+        entry.rows.entry(row_ident.clone()).or_insert(row_seq);
     }
 }
 
@@ -2441,32 +2529,80 @@ fn non_numeric_label(column: &[u8], explicit: bool) -> String {
     }
 }
 
-fn non_numeric_token(value: &[u8], explicit: bool) -> String {
+/// Turn pending transitions into report entries.
+///
+/// Explicit output prints the encoded values and row labels, sorted by column, old, new.
+/// Default output never prints a value: entries stay in data order and every value and row
+/// becomes a marker, numbered over exactly the entries emitted here, in this order.
+fn finalize_transitions(
+    pending: Vec<PendingTransition>,
+    explicit: bool,
+    redaction_key: Option<&RedactionKey>,
+) -> Vec<CategoricalTransition> {
     if explicit {
-        encode_identifier_json(value)
-    } else {
-        format!("blake3:{}", blake3::hash(value).to_hex())
+        let mut transitions: Vec<CategoricalTransition> = pending
+            .into_iter()
+            .map(|transition| CategoricalTransition {
+                column: transition.column,
+                old: encode_identifier_json(&transition.old),
+                new: encode_identifier_json(&transition.new),
+                count: transition.count,
+                affected_rows: transition
+                    .rows
+                    .into_iter()
+                    .map(RowIdent::into_label)
+                    .collect(),
+            })
+            .collect();
+        transitions.sort_by(|left, right| {
+            left.column
+                .cmp(&right.column)
+                .then_with(|| left.old.cmp(&right.old))
+                .then_with(|| left.new.cmp(&right.new))
+        });
+        return transitions;
     }
+
+    let mut marker = Marker::new(redaction_key);
+    pending
+        .into_iter()
+        .map(|transition| {
+            let old = marker.mark(Namespace::Value, &transition.old);
+            let new = marker.mark(Namespace::Value, &transition.new);
+            let affected_rows = transition
+                .rows
+                .into_iter()
+                .map(|row| match row {
+                    RowIdent::Opaque(bytes) => marker.mark(Namespace::Row, &bytes),
+                    RowIdent::Label(label) => marker.mark(Namespace::Row, label.as_bytes()),
+                })
+                .collect();
+            CategoricalTransition {
+                column: transition.column,
+                old,
+                new,
+                count: transition.count,
+                affected_rows,
+            }
+        })
+        .collect()
 }
 
-fn non_numeric_row_token(key: Option<&[Vec<u8>]>, row_index: usize, explicit: bool) -> String {
+/// Identity of one aligned row: a readable label for `--explicit`, otherwise the raw identity
+/// bytes (length-framed key components, or the row position) kept only until marked.
+fn non_numeric_row_token(key: Option<&[Vec<u8>]>, row_index: usize, explicit: bool) -> RowIdent {
     match key {
-        Some(key) if explicit => encode_key_label_json(key),
+        Some(key) if explicit => RowIdent::Label(encode_key_label_json(key)),
         Some(key) => {
             let mut bytes = Vec::new();
             for component in key {
                 bytes.extend_from_slice(&(component.len() as u64).to_le_bytes());
                 bytes.extend_from_slice(component);
             }
-            non_numeric_token(&bytes, false)
+            RowIdent::Opaque(bytes)
         }
-        None => {
-            if explicit {
-                format!("row:{row_index}")
-            } else {
-                non_numeric_token(row_index.to_string().as_bytes(), false)
-            }
-        }
+        None if explicit => RowIdent::Label(format!("row:{row_index}")),
+        None => RowIdent::Opaque(row_index.to_string().into_bytes()),
     }
 }
 
@@ -3129,6 +3265,11 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
             "max_audit_changes": max_audit_changes,
         }),
         RefusalKind::AuditFieldsRequiresExhaustive => json!({}),
+        RefusalKind::RedactionKeyInvalid { reason } => json!({
+            "env_var": crate::redaction::ENV_KEY,
+            "reason": reason,
+            "min_bytes": crate::redaction::MIN_KEY_BYTES,
+        }),
         RefusalKind::AuditFieldsRequiresProfile => json!({}),
     }
 }

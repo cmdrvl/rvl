@@ -170,6 +170,11 @@ pub enum RefusalKind {
     },
     AuditFieldsRequiresExhaustive,
     AuditFieldsRequiresProfile,
+    /// `RVL_REDACTION_KEY` is set but empty or shorter than 16 bytes. Carries the reason only,
+    /// never the key or its length.
+    RedactionKeyInvalid {
+        reason: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -355,6 +360,10 @@ impl RefusalKind {
             }
             RefusalKind::AuditFieldsRequiresProfile => {
                 "rerun with --exhaustive --audit-fields and an explicit --profile <path> or --profile-id <id>".to_string()
+            }
+            RefusalKind::RedactionKeyInvalid { .. } => {
+                "set RVL_REDACTION_KEY to at least 16 bytes, or unset it to use ordinal refs"
+                    .to_string()
             }
         }
     }

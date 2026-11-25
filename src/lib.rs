@@ -14,6 +14,7 @@ pub mod orchestrator;
 pub mod output;
 pub(crate) mod paths;
 pub mod profile;
+pub mod redaction;
 pub mod refusal;
 pub mod repro;
 pub mod tabular_input;

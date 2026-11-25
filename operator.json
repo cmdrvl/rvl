@@ -42,7 +42,7 @@
     { "name": "delimiter", "flag": "--delimiter", "type": "string", "description": "Force CSV delimiter (comma/tab/semicolon/pipe/caret, 0xNN, or single ASCII byte)" },
     { "name": "exhaustive", "flag": "--exhaustive", "type": "flag", "description": "Emit every changed numeric cell above tolerance instead of the smallest explanation prefix" },
     { "name": "audit_fields", "flag": "--audit-fields", "type": "flag", "description": "With --exhaustive and an active profile, emit exact changes in profile-scoped non-numeric fields" },
-    { "name": "non_numeric", "flag": "--non-numeric", "type": "flag", "description": "Compare common non-numeric columns without a profile: deterministic date shifts, categorical transitions with affected-row tokens, text churn, nullity flips and row churn" },
+    { "name": "non_numeric", "flag": "--non-numeric", "type": "flag", "description": "Compare common non-numeric columns without a profile: deterministic date shifts, categorical transitions with affected-row refs, text churn, nullity flips and row churn" },
     { "name": "max_audit_changes", "flag": "--max-audit-changes", "type": "integer", "default": 10000, "description": "Maximum changed cells to emit in audit modes" },
     { "name": "profile", "flag": "--profile", "type": "file_path", "description": "Use profile YAML at this path for key derivation and column scoping" },
     { "name": "profile_id", "flag": "--profile-id", "type": "string", "description": "Resolve profile by ID from ~/.cmdrvl/config/profile/profiles/*.yaml; legacy ~/.epistemic/profiles is copied on first default use" },
@@ -171,10 +171,12 @@
     { "code": "E_AUDIT_FIELDS_REQUIRES_PROFILE", "message": "Field audit requires an active profile", "action": "retry_with_flag", "flag": "--profile" },
     { "code": "E_INPUT_NOT_LOCKED", "message": "Input file is not pinned in the --lock lockfile(s)", "action": "retry_with_flag", "flag": "--lock" },
     { "code": "E_INPUT_DRIFT", "message": "Input bytes differ from the hash pinned in the lockfile", "action": "escalate" },
-    { "code": "E_INPUT_FORMAT", "message": "A JSONL, Parquet or XLSX input was refused by the shared reader; detail.tabular_code carries its typed code (E_AMBIGUOUS_SHEET, E_SHEET_NOT_FOUND, E_UNSUPPORTED_VALUE, E_FORMAT, ...)", "action": "retry_with_flag", "flag": "--sheet" }
+    { "code": "E_INPUT_FORMAT", "message": "A JSONL, Parquet or XLSX input was refused by the shared reader; detail.tabular_code carries its typed code (E_AMBIGUOUS_SHEET, E_SHEET_NOT_FOUND, E_UNSUPPORTED_VALUE, E_FORMAT, ...)", "action": "retry_with_flag", "flag": "--sheet" },
+    { "code": "E_REDACTION_KEY_INVALID", "message": "RVL_REDACTION_KEY is set but empty or shorter than 16 bytes (checked for --non-numeric runs; never falls back to ordinal refs)", "action": "escalate" }
   ],
 
   "env_vars": [
+    { "name": "RVL_REDACTION_KEY", "description": "Optional operator-held key (at least 16 bytes) for --non-numeric. When set, redacted values and row identities become stable HMAC-SHA256 markers (redacted:hmac-sha256:<32 hex>) instead of per-output ordinal refs (redacted:ref:v1.., redacted:ref:k1..). Set but empty or too short refuses with E_REDACTION_KEY_INVALID. The value is never printed, logged or written to the witness ledger." },
     { "name": "EPISTEMIC_WITNESS", "description": "Overrides the witness ledger path for comparison runs; doctor commands do not write it." },
     { "name": "HOME", "description": "Used to resolve ~/.cmdrvl default state and config paths; doctor commands do not write them." },
     { "name": "NO_COLOR", "description": "Any value disables ANSI styling in clap help and error output." },
