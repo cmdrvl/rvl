@@ -38,7 +38,7 @@ use crate::format::key::{encode_key_components_json, encode_key_label_json, rend
 use crate::lock::{LockFailure, LockReceipt, LockSet, LockfileError, merge_receipts};
 use crate::normalize::headers::normalize_headers_with_aliases;
 use crate::numeric::columns::{
-    ColumnIntersection, ColumnTypingError, Side as ColumnSide, detect_numeric_columns,
+    ColumnIntersection, ColumnTypingError, Side as ColumnSide, detect_numeric_columns_with,
     intersect_headers,
 };
 use crate::numeric::missing::is_missing_token;
@@ -882,7 +882,7 @@ fn run_diff(
                     row.new.fields.as_slice(),
                 )
             });
-            match detect_numeric_columns(&intersection.common, rows) {
+            match detect_numeric_columns_with(&intersection.common, rows, args.non_numeric) {
                 Ok(columns) => columns,
                 Err(err) => {
                     let refusal = map_column_error(err, rerun_paths);
@@ -912,7 +912,7 @@ fn run_diff(
                     )
                 },
             );
-            match detect_numeric_columns(&intersection.common, rows) {
+            match detect_numeric_columns_with(&intersection.common, rows, args.non_numeric) {
                 Ok(columns) => columns,
                 Err(err) => {
                     let refusal = map_column_error(err, rerun_paths);
@@ -1091,6 +1091,16 @@ fn run_diff(
     } else {
         FieldChangeAudit::default()
     };
+    let numeric_nullity_flips = if args.non_numeric {
+        scan_numeric_nullity(
+            &alignment,
+            &numeric_columns,
+            args.max_audit_changes,
+            &mut field_audit,
+        )
+    } else {
+        Vec::new()
+    };
     let audit_changes = numeric_cells_changed.saturating_add(field_audit.changed);
 
     let mut top = accumulator.top.into_vec();
@@ -1203,13 +1213,24 @@ fn run_diff(
             None
         };
         let non_numeric = args.non_numeric.then(|| {
-            build_non_numeric_report(
+            let mut report = build_non_numeric_report(
                 &alignment,
                 &field_columns,
                 &active_profile.column_types,
                 args.explicit,
                 context.redaction_key,
-            )
+            );
+            for (name, became_null, became_non_null) in numeric_nullity_flips {
+                report.nullity_flips.push(NullityFlip {
+                    column: non_numeric_label(&name, args.explicit),
+                    became_null,
+                    became_non_null,
+                });
+            }
+            report
+                .nullity_flips
+                .sort_by(|left, right| left.column.cmp(&right.column));
+            report
         });
         let ctx = json_context_with_field_changes(
             args,
@@ -2960,6 +2981,71 @@ fn collect_field_changes(
     }
 
     audit
+}
+
+/// `--non-numeric` only: blank<->numeric transitions in numeric columns. They cannot be numeric
+/// contributions (one side has no number), so they are recorded as nullity flips and, within the
+/// audit limit, as field changes. Returns `(column, became_null, became_non_null)` in column
+/// order for the columns that flipped.
+fn scan_numeric_nullity(
+    alignment: &AlignmentContext,
+    numeric_columns: &[crate::numeric::columns::CommonColumn],
+    max_details: u64,
+    audit: &mut FieldChangeAudit,
+) -> Vec<(Vec<u8>, u64, u64)> {
+    let mut counts = vec![(0u64, 0u64); numeric_columns.len()];
+    let mut observe = |row_id: &RowId, index: usize, old_raw: &[u8], new_raw: &[u8]| {
+        let old_missing = is_missing_token(old_raw);
+        let new_missing = is_missing_token(new_raw);
+        if old_missing == new_missing {
+            return;
+        }
+        if old_missing {
+            counts[index].1 += 1;
+        } else {
+            counts[index].0 += 1;
+        }
+        audit.changed = audit.changed.saturating_add(1);
+        if audit.details.len() < max_details as usize {
+            audit.details.push(FieldChangeDetail {
+                id: CellId::new(row_id.clone(), numeric_columns[index].name.clone()),
+                old: old_raw.to_vec(),
+                new: new_raw.to_vec(),
+            });
+        }
+    };
+
+    match alignment {
+        AlignmentContext::Key { key_rows, .. } => {
+            for row in key_rows {
+                let row_id = RowId::key(row.key.clone());
+                for (index, column) in numeric_columns.iter().enumerate() {
+                    let old_raw = row.old.fields.get(column.old_index).map_or(&b""[..], |v| v);
+                    let new_raw = row.new.fields.get(column.new_index).map_or(&b""[..], |v| v);
+                    observe(&row_id, index, old_raw, new_raw);
+                }
+            }
+        }
+        AlignmentContext::RowOrder { old_rows, new_rows } => {
+            for (idx, (old_row, new_row)) in old_rows.iter().zip(new_rows.iter()).enumerate() {
+                let row_id = RowId::row_index(idx + 1);
+                for (index, column) in numeric_columns.iter().enumerate() {
+                    let old_raw = old_row.get(column.old_index).map_or(&b""[..], |v| v);
+                    let new_raw = new_row.get(column.new_index).map_or(&b""[..], |v| v);
+                    observe(&row_id, index, old_raw, new_raw);
+                }
+            }
+        }
+    }
+
+    numeric_columns
+        .iter()
+        .zip(counts)
+        .filter(|(_, (became_null, became_non_null))| *became_null > 0 || *became_non_null > 0)
+        .map(|(column, (became_null, became_non_null))| {
+            (column.name.clone(), became_null, became_non_null)
+        })
+        .collect()
 }
 
 fn collect_details(

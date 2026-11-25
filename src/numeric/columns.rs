@@ -132,10 +132,29 @@ pub fn intersect_headers(
     }
 }
 
-/// Determine numeric columns and refuse mixed/missingness cases.
+/// Determine numeric columns and refuse mixed/missingness cases (the default numeric contract:
+/// a numeric value against a blank is `E_MISSINGNESS`).
 pub fn detect_numeric_columns<RowId, Old, New, I>(
     columns: &[CommonColumn],
     rows: I,
+) -> Result<Vec<CommonColumn>, ColumnTypingError<RowId>>
+where
+    RowId: Clone,
+    Old: FieldAccess,
+    New: FieldAccess,
+    I: IntoIterator<Item = (RowId, Old, New)>,
+{
+    detect_numeric_columns_with(columns, rows, false)
+}
+
+/// Like [`detect_numeric_columns`]. With `tolerate_nullity` (`--non-numeric`), a blank on one
+/// side against a numeric value on the other is a nullity flip that counts as numeric evidence
+/// instead of a refusal; the flip itself is reported under `non_numeric.nullity_flips`. Mixed
+/// types are still refused.
+pub fn detect_numeric_columns_with<RowId, Old, New, I>(
+    columns: &[CommonColumn],
+    rows: I,
+    tolerate_nullity: bool,
 ) -> Result<Vec<CommonColumn>, ColumnTypingError<RowId>>
 where
     RowId: Clone,
@@ -169,6 +188,18 @@ where
                 };
 
                 if parse_numeric(present_raw).is_some() {
+                    if tolerate_nullity {
+                        if let Some(non_numeric) = state.first_non_numeric.take() {
+                            return Err(ColumnTypingError::MixedTypes(MixedTypesError {
+                                row_id: non_numeric.row_id,
+                                column: state.column.name.clone(),
+                                side: non_numeric.side,
+                                value: non_numeric.value,
+                            }));
+                        }
+                        state.saw_numeric = true;
+                        continue;
+                    }
                     return Err(ColumnTypingError::Missingness(MissingnessError {
                         row_id: row_id.clone(),
                         column: state.column.name.clone(),
