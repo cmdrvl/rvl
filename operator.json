@@ -1,7 +1,7 @@
 {
   "schema_version": "operator.v1",
   "name": "rvl",
-  "tool_version": "0.8.0",
+  "tool_version": "0.9.0",
   "contract_version": "1.0.0",
   "description": "Numeric and domain-agnostic non-numeric change explainer — finds the smallest set of cell-level changes or deterministic structural transitions that account for the difference between two tabular files (CSV, TSV, JSONL, Parquet, XLSX; the two may differ in format). Deprecated aliases kept for one release: `rvl --robot-triage` and `rvl doctor --robot-triage` (both now emit the cmdrvl.doctor.v1 triage report), `rvl doctor health`, and `--capsule-out` (use --capsule-dir).",
   "repository": "https://github.com/cmdrvl/rvl",
