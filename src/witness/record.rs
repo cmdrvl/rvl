@@ -1,9 +1,11 @@
+use cmdrvl_core::hash::{Algorithm, hash_bytes as prefixed_hash};
+use cmdrvl_core::sorted_compact;
 use serde::{Deserialize, Serialize};
 
 use crate::cli::args::Args;
 use crate::cli::exit::{self, Outcome};
 use crate::orchestrator::PipelineResult;
-use crate::witness::hash::{hash_bytes, hash_self};
+use crate::witness::hash::hash_self;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WitnessRecord {
@@ -30,34 +32,18 @@ pub struct WitnessInput {
 ///
 /// serde_json does NOT sort keys when serializing structs directly — it
 /// preserves declaration order. We roundtrip through `serde_json::Value` and
-/// sort every object explicitly. Do not rely on `Map` being a `BTreeMap`: that
-/// is a cargo-feature accident (`preserve_order`, which a dependency such as
-/// cmdrvl-tabular enables for the whole build, turns it into insertion order).
+/// write it with `cmdrvl_core::sorted_compact`, which sorts every object
+/// explicitly. Do not rely on `Map` being a `BTreeMap`: that is a cargo-feature
+/// accident (`preserve_order`, which a dependency such as cmdrvl-tabular enables
+/// for the whole build, turns it into insertion order). This is not RFC 8785:
+/// `cmdrvl_core::jcs` writes other bytes and would change record ids.
 ///
 /// This function is the ONLY serialization path for witness records. Both
 /// `compute_id()` and `LedgerWriter::append()` must use it so that
 /// `hash(line_with_id_blanked) == record.id` always holds.
 pub fn canonical_json(record: &WitnessRecord) -> String {
     let value = serde_json::to_value(record).expect("WitnessRecord is always serializable");
-    serde_json::to_string(&sort_keys(value)).expect("Value is always serializable")
-}
-
-fn sort_keys(value: serde_json::Value) -> serde_json::Value {
-    use serde_json::Value;
-    match value {
-        Value::Object(map) => {
-            let mut entries: Vec<(String, Value)> = map.into_iter().collect();
-            entries.sort_by(|a, b| a.0.cmp(&b.0));
-            Value::Object(
-                entries
-                    .into_iter()
-                    .map(|(k, v)| (k, sort_keys(v)))
-                    .collect(),
-            )
-        }
-        Value::Array(items) => Value::Array(items.into_iter().map(sort_keys).collect()),
-        other => other,
-    }
+    sorted_compact::to_string(&value)
 }
 
 impl WitnessRecord {
@@ -80,12 +66,12 @@ impl WitnessRecord {
         let inputs = vec![
             WitnessInput {
                 path: old_path.to_string(),
-                hash: format!("blake3:{}", hash_bytes(old_bytes)),
+                hash: prefixed_hash(Algorithm::Blake3, old_bytes),
                 bytes: old_bytes.len() as u64,
             },
             WitnessInput {
                 path: new_path.to_string(),
-                hash: format!("blake3:{}", hash_bytes(new_bytes)),
+                hash: prefixed_hash(Algorithm::Blake3, new_bytes),
                 bytes: new_bytes.len() as u64,
             },
         ];
@@ -219,7 +205,7 @@ impl WitnessRecord {
             params,
             outcome: outcome_str.to_string(),
             exit_code: exit::exit_code(result.outcome),
-            output_hash: format!("blake3:{}", hash_bytes(result.output.as_bytes())),
+            output_hash: prefixed_hash(Algorithm::Blake3, result.output.as_bytes()),
             ts,
         }
     }
@@ -229,7 +215,7 @@ impl WitnessRecord {
     pub fn compute_id(&mut self) {
         self.id = String::new();
         let canonical = canonical_json(self);
-        self.id = format!("blake3:{}", hash_bytes(canonical.as_bytes()));
+        self.id = prefixed_hash(Algorithm::Blake3, canonical.as_bytes());
     }
 }
 

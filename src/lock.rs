@@ -8,8 +8,8 @@
 
 use std::path::{Path, PathBuf};
 
+use cmdrvl_core::hash::{Algorithm, hash_bytes};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 #[derive(Debug, Deserialize)]
 struct Lockfile {
@@ -158,12 +158,10 @@ impl LockSet {
 }
 
 /// Hash `bytes` with the algorithm named by the prefix of `expected`. `None` if unsupported.
+/// Only the hashing comes from cmdrvl-core; member matching stays here, because
+/// `cmdrvl_core::lockfile` matches differently (for example it strips a leading `./`).
 fn hash_like(bytes: &[u8], expected: &str) -> Option<String> {
-    match expected.split_once(':')?.0 {
-        "sha256" => Some(format!("sha256:{:x}", Sha256::digest(bytes))),
-        "blake3" => Some(format!("blake3:{}", blake3::hash(bytes).to_hex())),
-        _ => None,
-    }
+    Algorithm::of(expected).map(|algorithm| hash_bytes(algorithm, bytes))
 }
 
 fn check_matches(bytes: &[u8], matches: &[Candidate<'_>]) -> Result<Vec<LockReceipt>, LockFailure> {

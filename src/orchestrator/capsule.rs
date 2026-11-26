@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use cmdrvl_core::hash::{Algorithm, hash_bytes as prefixed_hash};
 use serde::Serialize;
 
 use crate::cli::args::Args;
@@ -145,9 +146,9 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
         Err(_) => return,
     };
 
-    let old_hash = format!("blake3:{}", hash_bytes(&old_bytes));
-    let new_hash = format!("blake3:{}", hash_bytes(&new_bytes));
-    let output_hash = format!("blake3:{}", hash_bytes(result.output.as_bytes()));
+    let old_hash = prefixed_hash(Algorithm::Blake3, &old_bytes);
+    let new_hash = prefixed_hash(Algorithm::Blake3, &new_bytes);
+    let output_hash = prefixed_hash(Algorithm::Blake3, result.output.as_bytes());
     let capsule_registry = result
         .profile
         .capsule_profile
@@ -184,7 +185,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
 
     let replay_command = build_replay_command(args, profile_bytes.is_some());
     let replay_script = format!("#!/usr/bin/env bash\nset -euo pipefail\n{replay_command}\n");
-    let replay_hash = format!("blake3:{}", hash_bytes(replay_script.as_bytes()));
+    let replay_hash = prefixed_hash(Algorithm::Blake3, replay_script.as_bytes());
 
     let capsule_seed = serde_json::json!({
         "old_hash": old_hash,
@@ -202,17 +203,17 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
 
     let old_artifact = CapsuleArtifact {
         path: "old.csv".to_string(),
-        hash: format!("blake3:{}", hash_bytes(&old_bytes)),
+        hash: prefixed_hash(Algorithm::Blake3, &old_bytes),
         bytes: old_bytes.len() as u64,
     };
     let new_artifact = CapsuleArtifact {
         path: "new.csv".to_string(),
-        hash: format!("blake3:{}", hash_bytes(&new_bytes)),
+        hash: prefixed_hash(Algorithm::Blake3, &new_bytes),
         bytes: new_bytes.len() as u64,
     };
     let output_artifact = CapsuleArtifact {
         path: "output.txt".to_string(),
-        hash: format!("blake3:{}", hash_bytes(result.output.as_bytes())),
+        hash: prefixed_hash(Algorithm::Blake3, result.output.as_bytes()),
         bytes: result.output.len() as u64,
     };
     let replay_artifact = CapsuleArtifact {
@@ -222,7 +223,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
     };
     let profile_artifact = profile_bytes.as_ref().map(|bytes| CapsuleArtifact {
         path: PROFILE_ARTIFACT_PATH.to_string(),
-        hash: format!("blake3:{}", hash_bytes(bytes)),
+        hash: prefixed_hash(Algorithm::Blake3, bytes),
         bytes: bytes.len() as u64,
     });
     let registry_artifacts = capsule_registry.map(|registry| {
@@ -231,7 +232,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
             .iter()
             .map(|file| CapsuleArtifact {
                 path: format!("{REGISTRY_ARTIFACT_DIR}/{}", file.relative_path),
-                hash: format!("blake3:{}", hash_bytes(&file.bytes)),
+                hash: prefixed_hash(Algorithm::Blake3, &file.bytes),
                 bytes: file.bytes.len() as u64,
             })
             .collect::<Vec<_>>()

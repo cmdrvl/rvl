@@ -648,6 +648,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmdrvl-core"
+version = "0.1.0"
+source = "git+https://github.com/cmdrvl/core?rev=a3dad0b1af2eeb8036625b25f3d9ff94c3a1ef0e#a3dad0b1af2eeb8036625b25f3d9ff94c3a1ef0e"
+dependencies = [
+ "blake3",
+ "hmac",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
 name = "cmdrvl-tabular"
 version = "0.0.1"
 source = "git+https://github.com/cmdrvl/tabular?rev=f461f34#f461f34d221cbce098857706afe51adbee0872f4"
@@ -3123,9 +3135,9 @@ dependencies = [
  "arrow-schema",
  "blake3",
  "clap",
+ "cmdrvl-core",
  "cmdrvl-tabular",
  "csv",
- "hmac",
  "jsonschema",
  "polars",
  "serde",

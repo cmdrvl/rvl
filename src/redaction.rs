@@ -17,37 +17,23 @@
 //!   refused (`E_REDACTION_KEY_INVALID`), never silently downgraded to ordinal refs.
 //!
 //! There is deliberately no random per-run salt: it would make the output non-reproducible.
+//!
+//! The key rule, the HMAC, the ref numbering and the tuple framing are `cmdrvl_core::redact`
+//! (its `Raw` scheme: HMAC over the bytes as given, no namespace tag). This module keeps rvl's
+//! names and owns the environment: only `RVL_REDACTION_KEY` is read. Core's family-wide
+//! fallback variable (`select_key`) is deliberately not used.
 
-use std::collections::BTreeMap;
 use std::ffi::OsString;
 
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
+use cmdrvl_core::redact as core;
+
+pub use cmdrvl_core::redact::{HMAC_PREFIX, KeyError, MIN_KEY_BYTES, REF_PREFIX, frame_components};
 
 pub const ENV_KEY: &str = "RVL_REDACTION_KEY";
-pub const MIN_KEY_BYTES: usize = 16;
-pub const REF_PREFIX: &str = "redacted:ref:";
-pub const HMAC_PREFIX: &str = "redacted:hmac-sha256:";
-
-/// Why `RVL_REDACTION_KEY` was refused. Never carries the key or its length.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum KeyError {
-    Empty,
-    TooShort,
-}
-
-impl KeyError {
-    pub const fn reason(self) -> &'static str {
-        match self {
-            Self::Empty => "empty",
-            Self::TooShort => "too_short",
-        }
-    }
-}
 
 /// An operator-held redaction key. `Debug` never prints the bytes.
 #[derive(Clone)]
-pub struct RedactionKey(Vec<u8>);
+pub struct RedactionKey(core::RedactionKey);
 
 impl std::fmt::Debug for RedactionKey {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -66,13 +52,7 @@ impl RedactionKey {
         let bytes = std::os::unix::ffi::OsStringExt::into_vec(value);
         #[cfg(not(unix))]
         let bytes = value.to_string_lossy().into_owned().into_bytes();
-        if bytes.is_empty() {
-            return Err(KeyError::Empty);
-        }
-        if bytes.len() < MIN_KEY_BYTES {
-            return Err(KeyError::TooShort);
-        }
-        Ok(Some(Self(bytes)))
+        core::RedactionKey::new(bytes).map(|key| Some(Self(key)))
     }
 
     pub fn from_env() -> Result<Option<Self>, KeyError> {
@@ -81,15 +61,7 @@ impl RedactionKey {
 
     /// `redacted:hmac-sha256:<32 hex>` over `bytes`.
     pub fn marker(&self, bytes: &[u8]) -> String {
-        let mut mac =
-            Hmac::<Sha256>::new_from_slice(&self.0).expect("HMAC accepts a key of any length");
-        mac.update(bytes);
-        let digest = mac.finalize().into_bytes();
-        let mut hex = String::with_capacity(32);
-        for byte in &digest[..16] {
-            hex.push_str(&format!("{byte:02x}"));
-        }
-        format!("{HMAC_PREFIX}{hex}")
+        self.0.marker_raw(bytes)
     }
 }
 
@@ -103,51 +75,31 @@ pub enum Namespace {
     Column,
 }
 
-/// Length-framed bytes of a key tuple, so `("ab","c")` and `("a","bc")` mark differently.
-pub fn frame_components(components: &[Vec<u8>]) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for component in components {
-        bytes.extend_from_slice(&(component.len() as u64).to_le_bytes());
-        bytes.extend_from_slice(component);
+impl Namespace {
+    const fn core(self) -> core::Namespace {
+        match self {
+            Self::Value => core::Namespace::VALUE,
+            Self::Row => core::Namespace::ROW,
+            Self::Column => core::Namespace::COLUMN,
+        }
     }
-    bytes
 }
 
 /// Turns raw bytes into markers for one output. Create one per report and mark entries in output order.
-pub struct Marker<'a> {
-    key: Option<&'a RedactionKey>,
-    values: BTreeMap<Vec<u8>, usize>,
-    rows: BTreeMap<Vec<u8>, usize>,
-    columns: BTreeMap<Vec<u8>, usize>,
-}
+pub struct Marker<'a>(core::Marker<'a>);
 
 impl<'a> Marker<'a> {
     pub fn new(key: Option<&'a RedactionKey>) -> Self {
-        Self {
-            key,
-            values: BTreeMap::new(),
-            rows: BTreeMap::new(),
-            columns: BTreeMap::new(),
-        }
+        Self(core::Marker::new(key.map(|key| &key.0), core::Scheme::Raw))
     }
 
     /// True when markers are keyed HMACs rather than ordinal refs.
     pub fn is_keyed(&self) -> bool {
-        self.key.is_some()
+        self.0.is_keyed()
     }
 
     pub fn mark(&mut self, namespace: Namespace, bytes: &[u8]) -> String {
-        if let Some(key) = self.key {
-            return key.marker(bytes);
-        }
-        let (table, letter) = match namespace {
-            Namespace::Value => (&mut self.values, 'v'),
-            Namespace::Row => (&mut self.rows, 'k'),
-            Namespace::Column => (&mut self.columns, 'c'),
-        };
-        let next = table.len() + 1;
-        let ordinal = *table.entry(bytes.to_vec()).or_insert(next);
-        format!("{REF_PREFIX}{letter}{ordinal}")
+        self.0.mark(namespace.core(), bytes)
     }
 }
 
