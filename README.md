@@ -230,6 +230,8 @@ Absolute noise floor applied per-cell. If `abs(new - old) <= tolerance`, the del
 
 If the top 25 contributors can't reach the threshold, rvl refuses with `E_DIFFUSE` rather than printing an incomplete explanation. Lower the threshold explicitly if needed: `--threshold 0.80`.
 
+**No verdict on overflow.** Two finite numbers can differ by more than a 64-bit float can hold (`1e308` against `-1e308`), and finite differences can add up past that range. rvl then refuses with `E_NUMERIC_OVERFLOW` (exit 2) in every mode. It names the column and key of the first cell where this happened (redacted unless `--explicit`). Express both files in a larger unit (the same factor in both), or scope columns with `--profile`, and rerun. Releases up to 0.9.1 reported `NO REAL CHANGE` for such inputs.
+
 ### Contributor Ranking
 
 Contributors are ranked by `abs(delta)` descending (unscaled — large-magnitude columns dominate by design). Ties are broken by row ID ascending, then column name ascending (byte order). rvl prints only the smallest prefix of contributors whose cumulative coverage reaches the threshold.

@@ -544,7 +544,7 @@ fn tolerance_boundary_is_inclusive_and_spelling_does_not_matter() {
 /// ordinary numbers: never a panic or an unmatched exit code, never `null`-or-number confusion in
 /// the verdict, and never NO_REAL_CHANGE while a pair of finite numbers differs. A non-finite
 /// spelling against a number is a refusal. Magnitudes whose difference or sum overflows f64 are
-/// NOT generated here (see the rvl bead).
+/// the subject of the next-but-one property in this section (bd-9ss).
 #[test]
 fn nan_and_non_finite_tokens_refuse_or_are_missing_never_a_false_no_change() {
     const SEED: u64 = 0xB001;
@@ -684,6 +684,116 @@ fn non_finite_or_out_of_range_numeric_flags_are_argument_errors() {
         }
     }
     assert_eq!(cases, 18);
+}
+
+/// The overflow domain (bd-9ss), mixed with ordinary values: rvl refuses with
+/// E_NUMERIC_OVERFLOW exactly when, walking the cells in key then header order, a difference or
+/// the running total of contributions is not finite; otherwise it never says NO_REAL_CHANGE
+/// while a pair differs by more than the tolerance. No case may panic.
+#[test]
+fn overflow_is_refused_exactly_when_a_delta_or_the_total_leaves_f64() {
+    const SEED: u64 = 0xB003;
+    const CASES: usize = 200;
+    const VALUES: &[&str] = &[
+        "0",
+        "1",
+        "-1",
+        "250",
+        "1e300",
+        "-1e300",
+        "4e307",
+        "-4e307",
+        "1e308",
+        "-1e308",
+        "1.7976931348623157e308",
+        "-1.7976931348623157e308",
+    ];
+    let scratch = Scratch::new("overflow");
+    let mut rng = Rng::new(SEED);
+    let (mut overflowed, mut verdicts, mut unchanged) = (0, 0, 0);
+    for case in 0..CASES {
+        let rows = rng.between(1, 4) as usize;
+        let columns = rng.between(1, 3) as usize;
+        // Draw mostly-small tables often enough that finite verdicts are well covered.
+        let small = rng.below(3) == 0;
+        let pool: &[&str] = if small { &VALUES[..6] } else { VALUES };
+        let header: Vec<String> = (0..columns).map(|c| format!("c{c}")).collect();
+        let mut old = format!("id,{}\n", header.join(","));
+        let mut new = old.clone();
+        let (mut total, mut overflow, mut differs) = (0.0f64, false, false);
+        for row in 0..rows {
+            old.push_str(&format!("k{row}"));
+            new.push_str(&format!("k{row}"));
+            for _ in 0..columns {
+                let a = *rng.pick(pool);
+                // Unchanged cells are common, so some tables have no change at all.
+                let b = if rng.below(3) == 0 {
+                    a
+                } else {
+                    *rng.pick(pool)
+                };
+                old.push_str(&format!(",{a}"));
+                new.push_str(&format!(",{b}"));
+                let delta =
+                    b.parse::<f64>().expect("new value") - a.parse::<f64>().expect("old value");
+                let contribution = if delta.abs() <= 1e-9 {
+                    0.0
+                } else {
+                    delta.abs()
+                };
+                differs |= contribution != 0.0;
+                total += contribution;
+                overflow |= !delta.is_finite() || !total.is_finite();
+            }
+            old.push('\n');
+            new.push('\n');
+        }
+        let context = format!("seed={SEED:#x} case={case}");
+        let mut extra = vec!["--key", "id", "--explicit"];
+        if rng.below(4) == 0 {
+            extra.push("--exhaustive");
+        }
+        let run = rvl(&scratch.0, &old, &new, &extra, &context);
+        assert!(
+            !run.stderr.contains("panicked"),
+            "{context}: {}",
+            run.stderr
+        );
+        let value = verdict(&run, &context);
+        let code = value["refusal"]["code"].as_str().unwrap_or("");
+        if overflow {
+            assert_eq!(
+                code, "E_NUMERIC_OVERFLOW",
+                "{context} {extra:?}\n{old}{new}{value}"
+            );
+            overflowed += 1;
+        } else {
+            assert_ne!(code, "E_NUMERIC_OVERFLOW", "{context}\n{old}{new}{value}");
+            if differs {
+                assert_ne!(
+                    value["outcome"], "NO_REAL_CHANGE",
+                    "{context}\n{old}{new}{value}"
+                );
+                verdicts += 1;
+            } else {
+                assert_eq!(
+                    value["outcome"], "NO_REAL_CHANGE",
+                    "{context}\n{old}{new}{value}"
+                );
+                unchanged += 1;
+            }
+            assert!(
+                value["metrics"]["total_change"]
+                    .as_f64()
+                    .is_some_and(f64::is_finite),
+                "{context}: {value}"
+            );
+        }
+    }
+    assert!(
+        overflowed > 20 && verdicts > 20 && unchanged > 0,
+        "seed={SEED:#x}: overflow={overflowed} verdicts={verdicts} unchanged={unchanged}"
+    );
 }
 
 // ── (c) zero variance and all-equal data ───────────────────────────────

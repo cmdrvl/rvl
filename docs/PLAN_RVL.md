@@ -341,6 +341,11 @@ Streaming strategy (blazing fast)
 - Maintain `total_change` (sum of contributions across all aligned cells in common numeric columns).
 - Maintain a min-heap of the top `MAX_CONTRIBUTORS` contributors by contribution.
 
+Overflow gate (before any verdict)
+- Finite inputs can still give a non-finite result: `new - old` for one cell, or the sum of contributions (`total_change`, or the top-25 sum), can exceed the f64 range.
+- That is never a verdict: REFUSAL (`E_NUMERIC_OVERFLOW`), in every alignment and output mode. It is never NO REAL CHANGE, and no non-finite number is ever printed as a metric.
+- `detail`: `quantity` (`delta` | `total_change`) plus the column and key (or data row) of the first cell, in observation order, at which it happened; redacted unless `--explicit`.
+
 Decision
 - If `total_change == 0` => NO REAL CHANGE
 - Else compute coverage from the top contributors:
@@ -348,7 +353,7 @@ Decision
   - Else REAL CHANGE and print the smallest prefix of sorted contributors whose cumulative coverage >= threshold
 
 Row-order gate
-- In row-order mode, if shuffle-detection detects a reorder under a perfect key candidate, emit `E_NEED_KEY` before emitting REAL CHANGE or `E_DIFFUSE`.
+- In row-order mode, if shuffle-detection detects a reorder under a perfect key candidate, emit `E_NEED_KEY` before emitting REAL CHANGE or `E_DIFFUSE` (and before `E_NUMERIC_OVERFLOW`: misaligned rows are the likelier cause of an overflow there).
 
 No models. No probabilistic scoring. Just arithmetic + a hard readability cap.
 
@@ -500,6 +505,7 @@ Keep these coarse and stable:
 - `E_NO_NUMERIC`: no numeric overlap after filtering
 - `E_MISSINGNESS`: numeric value vs missing token (cannot compute)
 - `E_DIFFUSE`: top `MAX_CONTRIBUTORS` cannot reach `threshold`
+- `E_NUMERIC_OVERFLOW`: finite inputs whose difference or total exceeds the f64 range (no verdict)
 
 ### Domain-agnostic non-numeric mode
 

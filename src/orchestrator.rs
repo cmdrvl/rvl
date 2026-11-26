@@ -29,7 +29,7 @@ use crate::csv::parser::{EscapeMode, build_reader, detect_escape_mode};
 use crate::csv::records::normalize_record;
 use crate::csv::sep::{SepScan, scan_first_non_blank_line};
 use crate::diff::coverage::{CoverageDecision, evaluate_coverage};
-use crate::diff::heap::DiffAccumulator;
+use crate::diff::heap::{DiffAccumulator, OverflowQuantity};
 use crate::diff::order::{CellId, RowId, TieBreaker, sort_contributors};
 use crate::diff::tolerance::ToleranceTracker;
 use crate::format::ident_human::render_identifier_human;
@@ -1179,6 +1179,33 @@ fn run_diff(
 
     let alignment_label = alignment_key_columns.map(render_key_human);
 
+    // Finite inputs whose difference or sum leaves the f64 range have no verdict (bd-9ss). This
+    // sits after the E_NEED_KEY gate (a reordered row-order file is the likelier cause there) and
+    // before the audit-limit, audit and coverage branches, so none can see a non-finite total.
+    let coverage = evaluate_coverage(&contributions, accumulator.total_change, args.threshold);
+    let overflow = accumulator.overflow.take();
+    if overflow.is_some() || coverage == CoverageDecision::Overflow {
+        // With no overflowing cell on record only the top-k sum overflowed: name its largest cell.
+        let overflow = overflow.or_else(|| {
+            top.first()
+                .map(|cell| (cell.id.clone(), OverflowQuantity::TotalChange))
+        });
+        let refusal = numeric_overflow_refusal(overflow, rerun_paths);
+        let mut counts = counts.clone();
+        counts.numeric_cells_checked = None;
+        counts.numeric_cells_changed = None;
+        let context = RefusalContext {
+            key: alignment_key_columns,
+            dialect_old,
+            dialect_new,
+            alignment: alignment_mode,
+            profile: active_profile.info.clone(),
+            counts,
+            metrics: Metrics::default(),
+        };
+        return Ok(render_refusal_with_context(refusal, args, context));
+    }
+
     if audit_mode && audit_changes > args.max_audit_changes {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::AuditLimit,
@@ -1264,9 +1291,24 @@ fn run_diff(
         ));
     }
 
-    let coverage = evaluate_coverage(&contributions, accumulator.total_change, args.threshold);
-
     match coverage {
+        // Already refused above. If that ever changes, this still refuses: never a verdict.
+        CoverageDecision::Overflow => {
+            let context = RefusalContext {
+                key: alignment_key_columns,
+                dialect_old,
+                dialect_new,
+                alignment: alignment_mode,
+                profile: active_profile.info.clone(),
+                counts,
+                metrics: Metrics::default(),
+            };
+            Ok(render_refusal_with_context(
+                numeric_overflow_refusal(None, rerun_paths),
+                args,
+                context,
+            ))
+        }
         CoverageDecision::NoChange => {
             let ctx = json_context(
                 args,
@@ -1655,6 +1697,32 @@ fn map_key_join_error(
             paths,
         ),
     }
+}
+
+fn numeric_overflow_refusal(
+    overflow: Option<(CellId, OverflowQuantity)>,
+    paths: RerunPaths<'_>,
+) -> RefusalPayload {
+    let (column, key_value, record, quantity) = match overflow {
+        Some((cell, quantity)) => {
+            let (key_value, record) = match cell.row_id {
+                RowId::Key(components) => (Some(components), None),
+                RowId::RowIndex(index) => (None, Some(index as u64)),
+            };
+            (Some(cell.column), key_value, record, quantity)
+        }
+        None => (None, None, None, OverflowQuantity::TotalChange),
+    };
+    RefusalPayload::with_default_next(
+        RefusalCode::NumericOverflow,
+        RefusalKind::NumericOverflow {
+            quantity,
+            column,
+            key_value,
+            record,
+        },
+        paths,
+    )
 }
 
 fn map_column_error(err: ColumnTypingError<RowRef>, paths: RerunPaths<'_>) -> RefusalPayload {
@@ -3410,6 +3478,25 @@ fn refusal_detail_json(detail: &RefusalDetail) -> Value {
             "top_k_coverage": top_k_coverage,
             "threshold": threshold,
         }),
+        RefusalKind::NumericOverflow {
+            quantity,
+            column,
+            key_value,
+            record,
+        } => {
+            let mut obj = json!({ "quantity": quantity.as_str() });
+            if let Some(column) = column {
+                obj["column"] = json!(detail.data_ident_json(column));
+            }
+            if let Some(key) = key_value {
+                obj["key"] = json!(detail.data_key_label_json(key));
+                obj["key_values"] = json!(detail.data_key_components_json(key));
+            }
+            if let Some(record) = record {
+                obj["record"] = json!(record);
+            }
+            obj
+        }
         RefusalKind::AuditLimit {
             changed_cells,
             max_audit_changes,

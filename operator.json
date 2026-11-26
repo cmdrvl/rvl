@@ -174,7 +174,8 @@
     { "code": "E_INPUT_NOT_LOCKED", "message": "Input file is not pinned in the --lock lockfile(s)", "action": "retry_with_flag", "flag": "--lock" },
     { "code": "E_INPUT_DRIFT", "message": "Input bytes differ from the hash pinned in the lockfile", "action": "escalate" },
     { "code": "E_INPUT_FORMAT", "message": "A JSONL, Parquet or XLSX input was refused by the shared reader; detail.tabular_code carries its typed code (E_AMBIGUOUS_SHEET, E_SHEET_NOT_FOUND, E_UNSUPPORTED_VALUE, E_FORMAT, ...)", "action": "retry_with_flag", "flag": "--sheet" },
-    { "code": "E_REDACTION_KEY_INVALID", "message": "RVL_REDACTION_KEY is set but empty or shorter than 16 bytes (checked for --non-numeric runs; never falls back to ordinal refs)", "action": "escalate" }
+    { "code": "E_REDACTION_KEY_INVALID", "message": "RVL_REDACTION_KEY is set but empty or shorter than 16 bytes (checked for --non-numeric runs; never falls back to ordinal refs)", "action": "escalate" },
+    { "code": "E_NUMERIC_OVERFLOW", "message": "Both inputs are finite but a difference or the total change exceeds the f64 range; there is no verdict. detail.quantity is delta or total_change, with the column and key (redacted unless --explicit) of the first cell at which it happened", "action": "adjust_input" }
   ],
 
   "env_vars": [

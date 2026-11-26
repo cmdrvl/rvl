@@ -6,6 +6,7 @@
 //! time.
 
 use crate::alignment::key_join::KeyValue;
+use crate::diff::heap::OverflowQuantity;
 use crate::format::ident_human::render_identifier_human;
 use crate::format::ident_json::encode_identifier_json;
 use crate::redaction::{Marker, Namespace, frame_components};
@@ -68,6 +69,7 @@ impl RefusalDetail {
                 | RefusalKind::Missingness { .. }
                 | RefusalKind::RowCount { .. }
                 | RefusalKind::NeedKey { .. }
+                | RefusalKind::NumericOverflow { .. }
         )
     }
 
@@ -124,6 +126,16 @@ impl RefusalDetail {
                     *name = marker.mark(Namespace::Column, name).into_bytes();
                 }
                 self.next = "rerun with --key <column>; candidate names are redacted, use --explicit to show them".to_string();
+            }
+            RefusalKind::NumericOverflow {
+                column, key_value, ..
+            } => {
+                if let Some(column) = column {
+                    *column = marker.mark(Namespace::Column, column).into_bytes();
+                }
+                if let Some(key) = key_value {
+                    *key = mark_key(marker, key);
+                }
             }
             _ => {}
         }
@@ -286,6 +298,16 @@ pub enum RefusalKind {
     Diffuse {
         top_k_coverage: f64,
         threshold: f64,
+    },
+    /// Both inputs are finite but a difference or the total is not, so there is no verdict.
+    /// Carries no numbers: the non-finite result is not printable and the values are data.
+    NumericOverflow {
+        quantity: OverflowQuantity,
+        /// Raw column bytes of the first cell at which the overflow appeared.
+        column: Option<Vec<u8>>,
+        key_value: Option<KeyValue>,
+        /// 1-based aligned data row, in row-order mode.
+        record: Option<u64>,
     },
     AuditLimit {
         changed_cells: u64,
@@ -471,6 +493,9 @@ impl RefusalKind {
             }
             RefusalKind::Diffuse { .. } => {
                 format!("rvl {} {} --threshold 0.80", paths.old, paths.new)
+            }
+            RefusalKind::NumericOverflow { .. } => {
+                "express the values in a larger unit (divide both files by the same factor), or scope columns with --profile, then rerun".to_string()
             }
             RefusalKind::AuditLimit { changed_cells, .. } => {
                 format!(

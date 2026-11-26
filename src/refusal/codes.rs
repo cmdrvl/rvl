@@ -31,13 +31,14 @@ pub enum RefusalCode {
     InputDrift,
     InputFormat,
     RedactionKeyInvalid,
+    NumericOverflow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnknownRefusalCode;
 
 impl RefusalCode {
-    pub const ALL: [RefusalCode; 27] = [
+    pub const ALL: [RefusalCode; 28] = [
         RefusalCode::Io,
         RefusalCode::Encoding,
         RefusalCode::CsvParse,
@@ -65,6 +66,7 @@ impl RefusalCode {
         RefusalCode::InputDrift,
         RefusalCode::InputFormat,
         RefusalCode::RedactionKeyInvalid,
+        RefusalCode::NumericOverflow,
     ];
 
     #[inline]
@@ -97,6 +99,7 @@ impl RefusalCode {
             RefusalCode::InputDrift => "E_INPUT_DRIFT",
             RefusalCode::InputFormat => "E_INPUT_FORMAT",
             RefusalCode::RedactionKeyInvalid => "E_REDACTION_KEY_INVALID",
+            RefusalCode::NumericOverflow => "E_NUMERIC_OVERFLOW",
         }
     }
 
@@ -131,6 +134,9 @@ impl RefusalCode {
             RefusalCode::InputDrift => "input bytes differ from the lockfile hash",
             RefusalCode::InputFormat => "input could not be read in its file format",
             RefusalCode::RedactionKeyInvalid => "RVL_REDACTION_KEY is empty or too short",
+            RefusalCode::NumericOverflow => {
+                "numeric overflow: a difference or total is too large to compute"
+            }
         }
     }
 }
@@ -181,6 +187,7 @@ impl FromStr for RefusalCode {
             "E_INPUT_DRIFT" => Ok(RefusalCode::InputDrift),
             "E_INPUT_FORMAT" => Ok(RefusalCode::InputFormat),
             "E_REDACTION_KEY_INVALID" => Ok(RefusalCode::RedactionKeyInvalid),
+            "E_NUMERIC_OVERFLOW" => Ok(RefusalCode::NumericOverflow),
             _ => Err(UnknownRefusalCode),
         }
     }

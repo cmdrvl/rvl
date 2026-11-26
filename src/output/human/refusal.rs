@@ -1,6 +1,7 @@
 // Human REFUSAL output formatting (bd-bk0)
 
 use crate::alignment::key_join::KeyValue;
+use crate::diff::heap::OverflowQuantity;
 use crate::format::ident_human::render_identifier_human;
 use crate::format::numbers::{format_int_with_commas, format_percent_one_decimal};
 use crate::refusal::codes::RefusalCode;
@@ -275,6 +276,27 @@ fn render_example_line(detail: &RefusalDetail, old_name: &str, new_name: &str) -
             format_percent_one_decimal(*top_k_coverage),
             format_percent_one_decimal(*threshold)
         ),
+        RefusalKind::NumericOverflow {
+            quantity,
+            column,
+            key_value,
+            record,
+        } => {
+            let what = match quantity {
+                OverflowQuantity::Delta => "the difference between the two values",
+                OverflowQuantity::TotalChange => "the total change",
+            };
+            let mut place = String::new();
+            if let Some(key) = key_value {
+                place.push_str(&format!(" at key \"{}\"", detail.data_key_human(key)));
+            } else if let Some(record) = record {
+                place.push_str(&format!(" at data row {}", format_count_u64(*record)));
+            }
+            if let Some(column) = column {
+                place.push_str(&format!(" column \"{}\"", detail.data_ident_human(column)));
+            }
+            format!("Example: {what} exceeds the f64 range{place}.")
+        }
         RefusalKind::AuditLimit {
             changed_cells,
             max_audit_changes,

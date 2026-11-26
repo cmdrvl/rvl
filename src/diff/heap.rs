@@ -29,11 +29,32 @@ impl<T> Contributor<T> {
     }
 }
 
+/// Which computed quantity left the f64 range although both input values were finite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OverflowQuantity {
+    /// `new - old` for one cell.
+    Delta,
+    /// The running sum of contributions.
+    TotalChange,
+}
+
+impl OverflowQuantity {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Delta => "delta",
+            Self::TotalChange => "total_change",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct DiffAccumulator<T> {
     pub total_change: f64,
     pub max_abs_delta: f64,
     pub top: TopContributors<T>,
+    /// The first cell, in observation order, at which a delta or the running total stopped being
+    /// finite. When set there is no verdict: the caller must refuse.
+    pub overflow: Option<(T, OverflowQuantity)>,
 }
 
 impl<T> DiffAccumulator<T> {
@@ -42,6 +63,7 @@ impl<T> DiffAccumulator<T> {
             total_change: 0.0,
             max_abs_delta: 0.0,
             top: TopContributors::new(max),
+            overflow: None,
         }
     }
 
@@ -58,8 +80,8 @@ impl<T> DiffAccumulator<T> {
         contribution: f64,
         tie_break: u64,
     ) {
-        debug_assert!(delta.is_finite(), "delta must be finite");
-        debug_assert!(contribution.is_finite(), "contribution must be finite");
+        // Finite inputs can still give an infinite delta or sum: that is recorded below, in
+        // every build profile, and is never asserted away.
         debug_assert!(contribution >= 0.0, "contribution must be non-negative");
 
         let abs_delta = delta.abs();
@@ -68,6 +90,16 @@ impl<T> DiffAccumulator<T> {
         }
 
         self.total_change += contribution;
+
+        if self.overflow.is_none() && (!delta.is_finite() || !self.total_change.is_finite()) {
+            let quantity = if delta.is_finite() {
+                OverflowQuantity::TotalChange
+            } else {
+                OverflowQuantity::Delta
+            };
+            self.overflow = Some((id, quantity));
+            return;
+        }
 
         if contribution > 0.0 {
             self.top.push(Contributor::new(

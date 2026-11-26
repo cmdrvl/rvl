@@ -11,6 +11,9 @@ pub enum CoverageDecision {
     Diffuse { top_k_coverage: f64 },
     /// Smallest prefix reaching threshold.
     Explainable { cutoff: usize, coverage: f64 },
+    /// A total is not a finite number, so there is no verdict (`E_NUMERIC_OVERFLOW`). This is
+    /// never `NoChange`: finite inputs whose differences or sum exceed the f64 range did change.
+    Overflow,
 }
 
 /// Evaluate coverage against a threshold.
@@ -22,11 +25,19 @@ pub fn evaluate_coverage(
     total_change: f64,
     threshold: f64,
 ) -> CoverageDecision {
-    if !total_change.is_finite() || total_change <= 0.0 {
+    if !total_change.is_finite() {
+        return CoverageDecision::Overflow;
+    }
+    if total_change <= 0.0 {
         return CoverageDecision::NoChange;
     }
 
+    // Summed in a different order than `total_change` (a descending subset), so check it too:
+    // at the edge of the f64 range one order can overflow where the other did not.
     let top_k_total: f64 = contributions_desc.iter().copied().sum();
+    if !top_k_total.is_finite() {
+        return CoverageDecision::Overflow;
+    }
     let top_k_coverage = top_k_total / total_change;
 
     if top_k_coverage < threshold {
@@ -59,6 +70,25 @@ mod tests {
     fn no_change_when_total_is_zero() {
         let decision = evaluate_coverage(&[1.0, 2.0], 0.0, 0.95);
         assert_eq!(decision, CoverageDecision::NoChange);
+    }
+
+    #[test]
+    fn a_non_finite_total_is_overflow_never_no_change() {
+        for total in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
+            assert_eq!(
+                evaluate_coverage(&[1.0], total, 0.95),
+                CoverageDecision::Overflow,
+                "total={total}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_top_k_sum_that_overflows_is_overflow_even_with_a_finite_total() {
+        assert_eq!(
+            evaluate_coverage(&[f64::MAX, f64::MAX], f64::MAX, 0.95),
+            CoverageDecision::Overflow
+        );
     }
 
     #[test]
