@@ -138,6 +138,109 @@ fn huge_finite_values_never_produce_a_false_no_change() {
     );
 }
 
+// ── bd-fyj: ties at the top-25 cap ──
+
+fn tie_table(order: &[usize], value: u32) -> String {
+    let header: Vec<String> = order.iter().map(|c| format!("c{c:02}")).collect();
+    let row = vec![value.to_string(); order.len()];
+    format!("id,{}\nk,{}\n", header.join(","), row.join(","))
+}
+
+fn contributor_columns(order: &[usize]) -> Vec<String> {
+    let scratch = Scratch::new("ties");
+    let output = rvl(
+        &scratch.0,
+        &tie_table(order, 0),
+        &tie_table(order, 1),
+        &["--key", "id", "--explicit"],
+    );
+    let value: Value = serde_json::from_slice(&output.stdout).expect("json");
+    assert_eq!(value["outcome"], "REAL_CHANGE", "{value}");
+    value["contributors"]
+        .as_array()
+        .expect("contributors")
+        .iter()
+        .map(|c| c["column"].as_str().expect("column").to_owned())
+        .collect()
+}
+
+/// Minimized: one row, 26 equal changes, default settings. PLAN_RVL.md "Determinism": top-K
+/// selection uses the ordering contribution desc, row_id asc, raw column bytes asc, so the 25
+/// reported columns are c00..c24 whatever order the header lists them in.
+#[test]
+fn tied_cells_at_the_top_25_cap_are_chosen_by_column_bytes_not_header_order() {
+    let expected: Vec<String> = (0..25).map(|c| format!("u8:c{c:02}")).collect();
+    let in_byte_order: Vec<usize> = (0..26).collect();
+    assert_eq!(contributor_columns(&in_byte_order), expected, "control");
+    let reversed: Vec<usize> = (0..26).rev().collect();
+    assert_eq!(contributor_columns(&reversed), expected, "reversed header");
+}
+
+/// 40 tied cells over two rows, 24 reported: row id comes before column bytes, in key mode and
+/// in row-order mode, for several header orders (old and new files ordered differently too).
+#[test]
+fn ties_across_rows_and_columns_follow_row_id_then_column_bytes() {
+    let forward: Vec<usize> = (0..20).collect();
+    let reversed: Vec<usize> = (0..20).rev().collect();
+    // 7 is coprime with 20, so this visits every column once in a scattered order.
+    let scattered: Vec<usize> = (0..20).map(|i| (i * 7) % 20).collect();
+    let table = |order: &[usize], value: u32, keyed: bool| {
+        let header: Vec<String> = order.iter().map(|c| format!("c{c:02}")).collect();
+        let row = vec![value.to_string(); order.len()].join(",");
+        if keyed {
+            format!("id,{}\nr1,{row}\nr2,{row}\n", header.join(","))
+        } else {
+            format!("{}\n{row}\n{row}\n", header.join(","))
+        }
+    };
+    for keyed in [true, false] {
+        let (first, second) = if keyed {
+            ("u8:r1", "u8:r2")
+        } else {
+            ("u8:1", "u8:2")
+        };
+        let expected: Vec<(String, String)> = (0..20)
+            .map(|c| (first.to_owned(), format!("u8:c{c:02}")))
+            .chain((0..4).map(|c| (second.to_owned(), format!("u8:c{c:02}"))))
+            .collect();
+        for (old_order, new_order) in [
+            (&forward, &forward),
+            (&reversed, &reversed),
+            (&scattered, &forward),
+            (&forward, &scattered),
+        ] {
+            let scratch = Scratch::new("crossties");
+            let mut args = vec!["--explicit", "--threshold", "0.6"];
+            if keyed {
+                args.extend(["--key", "id"]);
+            }
+            let output = rvl(
+                &scratch.0,
+                &table(old_order, 0, keyed),
+                &table(new_order, 1, keyed),
+                &args,
+            );
+            let value: Value = serde_json::from_slice(&output.stdout).expect("json");
+            assert_eq!(value["outcome"], "REAL_CHANGE", "{value}");
+            let got: Vec<(String, String)> = value["contributors"]
+                .as_array()
+                .expect("contributors")
+                .iter()
+                .map(|c| {
+                    (
+                        c["row_id"].as_str().expect("row").to_owned(),
+                        c["column"].as_str().expect("column").to_owned(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                got, expected,
+                "keyed={keyed} old={old_order:?} new={new_order:?}"
+            );
+        }
+    }
+}
+
 // ── bd-9ss: the chosen behaviour is a typed refusal, E_NUMERIC_OVERFLOW ──
 
 fn refusal(old: &str, new: &str, args: &[&str]) -> Value {

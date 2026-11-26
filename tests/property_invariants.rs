@@ -222,6 +222,17 @@ impl Table {
         out
     }
 
+    /// Reorders the columns (names and every row's values together).
+    fn permute_columns(&mut self, permutation: &[usize]) {
+        let reorder = |row: &Vec<i64>| permutation.iter().map(|&c| row[c]).collect();
+        self.columns = permutation
+            .iter()
+            .map(|&c| self.columns[c].clone())
+            .collect();
+        self.old = self.old.iter().map(reorder).collect();
+        self.new = self.new.iter().map(reorder).collect();
+    }
+
     fn natural(&self) -> Vec<usize> {
         (0..self.keys.len()).collect()
     }
@@ -247,6 +258,10 @@ struct Oracle {
     total: i64,
     changed: u64,
     max_abs: i64,
+    /// True when the last REPORTED contributor is in the same row, with the same contribution,
+    /// as the first cell the top-25 cap left out: the report reaches into the group of tied
+    /// cells that the cap cuts, where picking the wrong survivors can show.
+    cap_tie_is_reported: bool,
 }
 
 fn oracle(table: &Table, tolerance: i64, threshold: f64) -> Oracle {
@@ -269,6 +284,9 @@ fn oracle(table: &Table, tolerance: i64, threshold: f64) -> Oracle {
     });
     let total: i64 = cells.iter().map(|cell| cell.2.abs()).sum();
     let changed = cells.len() as u64;
+    let first_evicted = cells
+        .get(MAX_CONTRIBUTORS)
+        .map(|cell| (cell.0.clone(), cell.2.abs()));
     let expected = if total == 0 {
         Expected::NoRealChange
     } else {
@@ -289,12 +307,41 @@ fn oracle(table: &Table, tolerance: i64, threshold: f64) -> Oracle {
             Expected::RealChange(prefix)
         }
     };
+    let cap_tie_is_reported = match &expected {
+        Expected::RealChange(reported) => reported.last().is_some_and(|cell| {
+            first_evicted
+                .as_ref()
+                .is_some_and(|(row, size)| *row == cell.0 && *size == cell.2.abs())
+        }),
+        _ => false,
+    };
     Oracle {
         expected,
         total,
         changed,
         max_abs,
+        cap_tie_is_reported,
     }
+}
+
+/// Between 26 and 28 changed cells, almost all by exactly one unit: the cap cuts through a tie,
+/// and a threshold near 0.9 needs nearly all 25 survivors in the report.
+fn tie_heavy_table(rng: &mut Rng) -> Table {
+    let rows = rng.between(7, 9) as usize;
+    let columns = rng.between(4, 5) as usize;
+    let mut table = Table::random(rng, rows, columns, 3);
+    table.new = table.old.clone();
+    let mut positions: Vec<(usize, usize)> = (0..rows)
+        .flat_map(|row| (0..columns).map(move |column| (row, column)))
+        .collect();
+    rng.shuffle(&mut positions);
+    let changed = (rng.between(26, 28) as usize).min(positions.len());
+    for &(row, column) in &positions[..changed] {
+        let size = if rng.below(8) == 0 { 2 } else { 1 };
+        let sign = if rng.below(2) == 0 { 1 } else { -1 };
+        table.new[row][column] += size * sign;
+    }
+    table
 }
 
 fn observed(value: &Value, context: &str) -> Expected {
@@ -434,30 +481,48 @@ fn ranking_matches_the_oracle_and_ignores_row_order() {
     assert_eq!(diffuse, 0, "seed={SEED:#x}: {kinds:?}");
 }
 
-/// More than 25 cells, with the header columns in BYTE order (the order in which rvl observes
-/// cells then matches the spec's tie order): the same oracle holds, including which tied cells
-/// survive the top-25 cap. Column orders that differ from byte order are the subject of a
-/// separate rvl bead and are not generated here.
+/// More than 25 cells, header columns in random order: the same oracle holds, including which
+/// tied cells survive the top-25 cap (bd-fyj), and the whole output is byte-identical when the
+/// columns of both files are permuted (integer data, so float summation order cannot differ).
 #[test]
-fn top_25_cap_matches_the_oracle_when_headers_are_in_byte_order() {
+fn top_25_cap_matches_the_oracle_in_any_header_order() {
     const SEED: u64 = 0xA002;
-    const CASES: usize = 60;
+    const CASES: usize = 120;
     let scratch = Scratch::new("cap");
     let mut rng = Rng::new(SEED);
     let mut evicting = 0;
-    let (mut diffuse, mut explained) = (0, 0);
+    let (mut diffuse, mut explained, mut boundary) = (0, 0, 0);
     for case in 0..CASES {
-        let rows = rng.between(9, 20) as usize;
-        let columns = rng.between(3, 5) as usize;
-        let spread = *rng.pick(&[1, 2, 40]);
-        let mut table = Table::random(&mut rng, rows, columns, spread);
-        // Sorting the NAMES only is enough: cell values are random per position.
-        table.columns.sort_by(|a, b| a.as_bytes().cmp(b.as_bytes()));
-        let threshold = *rng.pick(THRESHOLDS);
+        // Half the cases are broad random tables (they reach E_DIFFUSE); half are built so the
+        // cap cuts through a tie and the threshold reports cells from that tie.
+        let (mut table, threshold) = if case % 2 == 0 {
+            let rows = rng.between(9, 20) as usize;
+            let columns = rng.between(3, 5) as usize;
+            let spread = *rng.pick(&[1, 2, 40]);
+            let table = Table::random(&mut rng, rows, columns, spread);
+            (table, *rng.pick(THRESHOLDS))
+        } else {
+            let table = tie_heavy_table(&mut rng);
+            (table, *rng.pick(&["0.88", "0.9", "0.92"]))
+        };
+        let columns = table.columns.len();
+        boundary += usize::from(
+            oracle(&table, 0, threshold.parse().expect("threshold")).cap_tie_is_reported,
+        );
         let context = format!("seed={SEED:#x} case={case}");
         let (old_order, new_order) = (table.shuffled(&mut rng), table.shuffled(&mut rng));
-        let (_, kind) = check_against_oracle(
+        let (first, kind) = check_against_oracle(
             &scratch, &table, &old_order, &new_order, 0, threshold, &context,
+        );
+        let mut permutation: Vec<usize> = (0..columns).collect();
+        rng.shuffle(&mut permutation);
+        table.permute_columns(&permutation);
+        let (second, _) = check_against_oracle(
+            &scratch, &table, &old_order, &new_order, 0, threshold, &context,
+        );
+        assert_eq!(
+            first, second,
+            "{context}: output changed under column permutation {permutation:?}"
         );
         diffuse += usize::from(kind == "diffuse");
         explained += usize::from(kind == "real_change");
@@ -472,6 +537,11 @@ fn top_25_cap_matches_the_oracle_when_headers_are_in_byte_order() {
     assert!(
         diffuse > 0 && explained > 0,
         "seed={SEED:#x}: diffuse={diffuse} real_change={explained}"
+    );
+    // Without cases like these the property cannot tell which tied cells survive the cap.
+    assert!(
+        boundary >= CASES / 6,
+        "seed={SEED:#x}: only {boundary} cases report a tie at the cap"
     );
 }
 

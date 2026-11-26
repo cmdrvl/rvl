@@ -57,7 +57,7 @@ pub struct DiffAccumulator<T> {
     pub overflow: Option<(T, OverflowQuantity)>,
 }
 
-impl<T> DiffAccumulator<T> {
+impl<T: Ord> DiffAccumulator<T> {
     pub fn new(max: usize) -> Self {
         Self {
             total_change: 0.0,
@@ -120,7 +120,7 @@ pub struct TopContributors<T> {
     heap: BinaryHeap<Reverse<HeapItem<T>>>,
 }
 
-impl<T> TopContributors<T> {
+impl<T: Ord> TopContributors<T> {
     pub fn new(max: usize) -> Self {
         Self {
             max,
@@ -170,31 +170,31 @@ struct HeapItem<T> {
     contributor: Contributor<T>,
 }
 
-impl<T> PartialEq for HeapItem<T> {
+impl<T: Ord> PartialEq for HeapItem<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.contributor.contribution.to_bits() == other.contributor.contribution.to_bits()
-            && self.contributor.tie_break == other.contributor.tie_break
+        self.cmp(other) == Ordering::Equal
     }
 }
 
-impl<T> Eq for HeapItem<T> {}
+impl<T: Ord> Eq for HeapItem<T> {}
 
-impl<T> PartialOrd for HeapItem<T> {
+impl<T: Ord> PartialOrd for HeapItem<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T> Ord for HeapItem<T> {
+/// Greater means "kept longer": the larger contribution, then, for ties, the SMALLER id. For
+/// cells that is PLAN_RVL.md's total order (row_id asc, then raw column bytes asc), the same one
+/// used for display, so which tied cells survive the top-K cap does not depend on the order
+/// they were observed in (the header's column order). `tie_break` only separates equal ids.
+impl<T: Ord> Ord for HeapItem<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self
-            .contributor
+        self.contributor
             .contribution
             .total_cmp(&other.contributor.contribution)
-        {
-            Ordering::Equal => other.contributor.tie_break.cmp(&self.contributor.tie_break),
-            ord => ord,
-        }
+            .then_with(|| other.contributor.id.cmp(&self.contributor.id))
+            .then_with(|| other.contributor.tie_break.cmp(&self.contributor.tie_break))
     }
 }
 
@@ -234,6 +234,20 @@ mod tests {
         let kept = top.into_vec();
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].id, "first");
+    }
+
+    #[test]
+    fn topk_ties_keep_the_smallest_ids_whatever_the_observation_order() {
+        // Observed in an order that contradicts id order: the survivors still follow the ids.
+        for order in [["c", "b", "a"], ["b", "c", "a"], ["a", "b", "c"]] {
+            let mut top = TopContributors::new(2);
+            for (seen, id) in order.iter().enumerate() {
+                top.push(contributor(id, 0.0, 2.0, 2.0, 2.0, seen as u64));
+            }
+            let mut kept: Vec<&str> = top.into_vec().into_iter().map(|c| c.id).collect();
+            kept.sort_unstable();
+            assert_eq!(kept, ["a", "b"], "observed {order:?}");
+        }
     }
 
     #[test]
