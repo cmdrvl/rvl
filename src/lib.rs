@@ -399,7 +399,8 @@ fn run_comparison(args: cli::args::Args) -> Result<u8, Box<dyn std::error::Error
 }
 
 /// Run witness subcommand (query/last/count).
-/// Exit codes: 0 = success, 1 = no record for `last`, 2 = error.
+/// Exit codes: 0 = success (including an empty or absent ledger), 2 = error (including an
+/// unreadable ledger).
 fn run_witness(action: &cli::args::WitnessAction) -> Result<u8, Box<dyn std::error::Error>> {
     use std::io::{self, Write};
 
@@ -407,7 +408,7 @@ fn run_witness(action: &cli::args::WitnessAction) -> Result<u8, Box<dyn std::err
 
     match action {
         cli::args::WitnessAction::Last(last_args) => {
-            let record = reader.last_record();
+            let record = reader.last_record().map_err(witness_read_error)?;
             match record {
                 Some(rec) => {
                     let output = if last_args.json {
@@ -422,14 +423,21 @@ fn run_witness(action: &cli::args::WitnessAction) -> Result<u8, Box<dyn std::err
                     Ok(0)
                 }
                 None => {
+                    // An empty or absent ledger is a valid read that found nothing: exit 0
+                    // with `null` (JSON), like query's `[]` and count's `{"count":0}`.
+                    if last_args.json {
+                        let mut stdout = io::stdout();
+                        stdout.write_all(b"null\n")?;
+                        stdout.flush()?;
+                    }
                     eprintln!("rvl: witness ledger is empty");
-                    Ok(1)
+                    Ok(0)
                 }
             }
         }
         cli::args::WitnessAction::Query(query_args) => {
             let filter = build_filter(query_args);
-            let all_records = reader.records();
+            let all_records = reader.records().map_err(witness_read_error)?;
             let matched: Vec<_> = all_records
                 .into_iter()
                 .filter(|r| filter.matches(r))
@@ -449,7 +457,7 @@ fn run_witness(action: &cli::args::WitnessAction) -> Result<u8, Box<dyn std::err
         }
         cli::args::WitnessAction::Count(query_args) => {
             let filter = build_filter(query_args);
-            let all_records = reader.records();
+            let all_records = reader.records().map_err(witness_read_error)?;
             let count = all_records.iter().filter(|r| filter.matches(r)).count();
 
             let output = if query_args.json {
@@ -464,6 +472,10 @@ fn run_witness(action: &cli::args::WitnessAction) -> Result<u8, Box<dyn std::err
             Ok(0)
         }
     }
+}
+
+fn witness_read_error(error: std::io::Error) -> String {
+    format!("witness: failed to read ledger {error}")
 }
 
 fn build_filter(args: &cli::args::WitnessQueryArgs) -> witness::query::QueryFilter {

@@ -20,38 +20,51 @@ impl LedgerReader {
         Self { path }
     }
 
-    /// Read all valid records from the ledger. Skips malformed lines.
-    /// Returns an empty vec if the file doesn't exist.
-    pub fn records(&self) -> Vec<WitnessRecord> {
-        let file = match File::open(&self.path) {
-            Ok(f) => f,
-            Err(_) => return Vec::new(),
-        };
-        let reader = io::BufReader::new(file);
-        reader
-            .lines()
-            .map_while(Result::ok)
-            .filter(|line| !line.trim().is_empty())
-            .filter_map(|line| serde_json::from_str::<WitnessRecord>(&line).ok())
-            .collect()
+    /// Read all valid records from the ledger. Skips malformed lines and lines that are not
+    /// valid UTF-8. An absent file is an empty ledger. Any other read failure (a directory, a
+    /// permission error) is returned with the path, never swallowed.
+    pub fn records(&self) -> io::Result<Vec<WitnessRecord>> {
+        let mut records = Vec::new();
+        self.for_each_line(|line| {
+            if let Ok(record) = serde_json::from_str::<WitnessRecord>(line) {
+                records.push(record);
+            }
+        })?;
+        Ok(records)
     }
 
-    /// Read only the last valid record. Returns None if ledger is empty or
-    /// doesn't exist.
-    pub fn last_record(&self) -> Option<WitnessRecord> {
-        let file = File::open(&self.path).ok()?;
-        let reader = io::BufReader::new(file);
+    /// Read only the last valid record. `Ok(None)` if the ledger is empty or absent; an
+    /// unreadable ledger is an error.
+    pub fn last_record(&self) -> io::Result<Option<WitnessRecord>> {
         let mut last = None;
-        for line in reader.lines().map_while(Result::ok) {
-            let trimmed = line.trim().to_string();
-            if trimmed.is_empty() {
-                continue;
+        self.for_each_line(|line| {
+            if let Ok(record) = serde_json::from_str::<WitnessRecord>(line) {
+                last = Some(record);
             }
-            if let Ok(rec) = serde_json::from_str::<WitnessRecord>(&trimmed) {
-                last = Some(rec);
+        })?;
+        Ok(last)
+    }
+
+    fn for_each_line(&self, mut visit: impl FnMut(&str)) -> io::Result<()> {
+        let with_path = |error: io::Error| {
+            io::Error::new(error.kind(), format!("{}: {error}", self.path.display()))
+        };
+        let file = match File::open(&self.path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(with_path(error)),
+        };
+        for line in io::BufReader::new(file).lines() {
+            match line {
+                Ok(line) if line.trim().is_empty() => {}
+                Ok(line) => visit(line.trim()),
+                // A non-UTF-8 line is consumed by the reader: skip it like a malformed line.
+                // Any other error repeats on every read, so it must be returned.
+                Err(error) if error.kind() == io::ErrorKind::InvalidData => {}
+                Err(error) => return Err(with_path(error)),
             }
         }
-        last
+        Ok(())
     }
 }
 
@@ -121,14 +134,14 @@ mod tests {
     fn records_on_nonexistent_file_returns_empty() {
         let path = temp_ledger_path();
         let reader = LedgerReader::with_path(path);
-        assert!(reader.records().is_empty());
+        assert!(reader.records().unwrap().is_empty());
     }
 
     #[test]
     fn last_record_on_nonexistent_file_returns_none() {
         let path = temp_ledger_path();
         let reader = LedgerReader::with_path(path);
-        assert!(reader.last_record().is_none());
+        assert!(reader.last_record().unwrap().is_none());
     }
 
     #[test]
@@ -137,7 +150,7 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, "").unwrap();
         let reader = LedgerReader::with_path(path.clone());
-        assert!(reader.records().is_empty());
+        assert!(reader.records().unwrap().is_empty());
         cleanup(&path);
     }
 
@@ -149,7 +162,7 @@ mod tests {
         write_records(&path, &[rec1.clone(), rec2.clone()]);
 
         let reader = LedgerReader::with_path(path.clone());
-        let records = reader.records();
+        let records = reader.records().unwrap();
         assert_eq!(records.len(), 2);
         assert_eq!(records[0].id, rec1.id);
         assert_eq!(records[1].id, rec2.id);
@@ -171,7 +184,7 @@ mod tests {
         writeln!(file, "not valid json").unwrap();
 
         let reader = LedgerReader::with_path(path.clone());
-        let records = reader.records();
+        let records = reader.records().unwrap();
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].id, rec.id);
         cleanup(&path);
@@ -185,7 +198,7 @@ mod tests {
         write_records(&path, &[rec1, rec2.clone()]);
 
         let reader = LedgerReader::with_path(path.clone());
-        let last = reader.last_record().unwrap();
+        let last = reader.last_record().unwrap().unwrap();
         assert_eq!(last.id, rec2.id);
         cleanup(&path);
     }
@@ -196,7 +209,7 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, "").unwrap();
         let reader = LedgerReader::with_path(path.clone());
-        assert!(reader.last_record().is_none());
+        assert!(reader.last_record().unwrap().is_none());
         cleanup(&path);
     }
 }

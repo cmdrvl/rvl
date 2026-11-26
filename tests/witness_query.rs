@@ -161,7 +161,8 @@ fn witness_last_json() {
 }
 
 #[test]
-fn witness_last_empty_ledger_exits_1() {
+fn witness_last_empty_ledger_exits_0() {
+    // bd-yoi: was exits_1 (a pre-ADR contract); an empty ledger is a successful empty read.
     let dir = temp_dir();
     let ledger = dir.join("witness.jsonl");
     std::fs::create_dir_all(ledger.parent().unwrap()).unwrap();
@@ -173,7 +174,12 @@ fn witness_last_empty_ledger_exits_1() {
         .output()
         .expect("failed to run rvl witness last");
 
-    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stdout.is_empty(),
+        "human last prints its note on stderr"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("empty"));
 
     cleanup(&dir);
 }

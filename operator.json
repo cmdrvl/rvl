@@ -106,7 +106,9 @@
       "current_runtime_behavior": {
         "success_exit_code": 0,
         "query_empty_result": "exit 0, prints []",
-        "last_on_empty_ledger_exit_code": 1,
+        "last_on_empty_ledger_exit_code": 0,
+        "last_on_empty_ledger": "exit 0, prints null with --json",
+        "unreadable_ledger": "exit 2, empty stdout, one stderr line naming the path",
         "error_exit_code": 2,
         "ledger_path_resolution": [
           "EPISTEMIC_WITNESS",
