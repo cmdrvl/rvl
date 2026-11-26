@@ -63,7 +63,7 @@ use crate::profile::{
     ColumnRegistryRunInfo, ResolveError, ResolvedProfile, load_profile_from_path,
     resolve_profile_id,
 };
-use crate::redaction::{Marker, Namespace, RedactionKey};
+use crate::redaction::{Marker, Namespace, RedactionKey, frame_components};
 use crate::refusal::codes::RefusalCode;
 use crate::refusal::details::{
     DelimiterHint, DialectSuggestion, EncodingIssue, FileSide, HeadersIssue, NamedDelimiter,
@@ -179,8 +179,9 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     }
 
     // A set-but-unusable key is refused before any input is read, even with --explicit, and never
-    // falls back to ordinal refs. Only `--non-numeric` output carries redaction markers.
-    let redaction_key = if args.non_numeric {
+    // falls back to ordinal refs. `--non-numeric` output and, without `--explicit`, numeric
+    // contributors (bd-u7n) carry redaction markers.
+    let redaction_key = if args.non_numeric || !args.explicit {
         match RedactionKey::from_env() {
             Ok(key) => key,
             Err(error) => {
@@ -1259,6 +1260,7 @@ fn run_diff(
             1.0,
             alignment_label.as_deref(),
             &field_audit.details,
+            context.redaction_key,
         ));
     }
 
@@ -1316,6 +1318,7 @@ fn run_diff(
                 coverage,
                 alignment_label.as_deref(),
                 &[],
+                context.redaction_key,
             ))
         }
     }
@@ -1904,6 +1907,7 @@ fn render_real_change(
     coverage: f64,
     alignment_label: Option<&str>,
     field_details: &[FieldChangeDetail],
+    redaction_key: Option<&RedactionKey>,
 ) -> PipelineResult {
     let run_profile = profile_from_json_context(&ctx);
     let total_change = ctx.metrics.total_change.unwrap_or(0.0);
@@ -1914,7 +1918,8 @@ fn render_real_change(
     let contributor_summary = build_capsule_contributor_summary(details, total_change, coverage);
 
     let result = if args.json {
-        let contributors = build_json_contributors(details, total_change, args.explicit);
+        let contributors =
+            build_json_contributors(details, total_change, args.explicit, redaction_key);
         let output = JsonOutput::real_change(ctx, contributors)
             .to_string()
             .unwrap_or_else(|_| "{}".to_string());
@@ -1940,7 +1945,8 @@ fn render_real_change(
             &new_display,
         ));
         lines.push(String::new());
-        let contributors = build_human_contributors(details, total_change);
+        let contributors =
+            build_human_contributors(details, total_change, args.explicit, redaction_key);
         let field_changes =
             build_human_field_changes(field_details, args.explicit, args.non_numeric);
         let body = RealChangeBody {
@@ -2168,11 +2174,27 @@ fn to_human_profile<'a>(profile: &'a ProfileRunInfo) -> Option<HumanProfile<'a>>
     }
 }
 
+/// Without `--explicit`, the marker of a contributor's row identity (one ref per key TUPLE, the
+/// length-framed components; or the row position) and of its column name. Called once per
+/// contributor in rank (emission) order, so ordinals never follow value or name bytes (bd-u7n).
+fn mark_contributor(marker: &mut Marker<'_>, id: &CellId) -> (String, String) {
+    let row_bytes = match &id.row_id {
+        RowId::RowIndex(index) => index.to_string().into_bytes(),
+        RowId::Key(components) => frame_components(components),
+    };
+    let row = marker.mark(Namespace::Row, &row_bytes);
+    let column = marker.mark(Namespace::Column, &id.column);
+    (row, column)
+}
+
 fn build_human_contributors(
     details: &[ContributionDetail],
     total_change: f64,
+    explicit: bool,
+    redaction_key: Option<&RedactionKey>,
 ) -> Vec<RealChangeContributor> {
     let mut cumulative = 0.0;
+    let mut marker = Marker::new(redaction_key);
     details
         .iter()
         .map(|detail| {
@@ -2183,7 +2205,12 @@ fn build_human_contributors(
             };
             cumulative += share;
             RealChangeContributor {
-                label: render_cell_label(&detail.id),
+                label: if explicit {
+                    render_cell_label(&detail.id)
+                } else {
+                    let (row, column) = mark_contributor(&mut marker, &detail.id);
+                    format!("{row}.{column}")
+                },
                 old: detail.old,
                 new: detail.new,
                 delta: detail.delta,
@@ -2197,9 +2224,11 @@ fn build_json_contributors(
     details: &[ContributionDetail],
     total_change: f64,
     explicit: bool,
+    redaction_key: Option<&RedactionKey>,
 ) -> Vec<crate::output::json::Contributor> {
     let mut contributors = Vec::with_capacity(details.len());
     let mut cumulative = 0.0;
+    let mut marker = Marker::new(redaction_key);
     for detail in details {
         let share = if total_change > 0.0 {
             detail.contribution / total_change
@@ -2207,6 +2236,13 @@ fn build_json_contributors(
             0.0
         };
         cumulative += share;
+        if !explicit {
+            let (row, column) = mark_contributor(&mut marker, &detail.id);
+            contributors.push(crate::output::json::Contributor::redacted(
+                row, column, share, cumulative,
+            ));
+            continue;
+        }
         let (row_id, row_key) = encode_row_id_json(&detail.id.row_id);
         contributors.push(crate::output::json::Contributor::new(
             row_id,

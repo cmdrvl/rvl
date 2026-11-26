@@ -104,9 +104,19 @@ fn exhaustive_key_mode_emits_all_numeric_changes_with_json_shape_and_redaction()
     assert_eq!(json["audit"]["truncated"], false);
     assert_eq!(json["metrics"]["top_k_coverage"], 1.0);
     assert_eq!(json["contributors"].as_array().unwrap().len(), 4);
-    assert_eq!(json["contributors"][0]["row_id"], "u8:A");
-    assert_eq!(json["contributors"][0]["column"], "u8:a");
+    // bd-u7n: by default the identity is an ordinal ref (row tuple k#, column c#) and no value.
+    assert_eq!(json["contributors"][0]["row_id"], "redacted:ref:k1");
+    assert_eq!(json["contributors"][0]["column"], "redacted:ref:c1");
     assert!(json["contributors"][0]["old"].is_null());
+    assert!(json["contributors"][0].get("row_key").is_none());
+    // --explicit shows the raw identity.
+    let mut explicit_args = make_args(&old, &new);
+    explicit_args.key = Some("id".to_string());
+    explicit_args.exhaustive = true;
+    explicit_args.explicit = true;
+    let explicit_json = run_json(&explicit_args);
+    assert_eq!(explicit_json["contributors"][0]["row_id"], "u8:A");
+    assert_eq!(explicit_json["contributors"][0]["column"], "u8:a");
 
     let witness = WitnessRecord::from_run(
         &args,
@@ -169,6 +179,7 @@ fn exhaustive_row_order_mode_uses_row_indices() {
 
     let mut args = make_args(&old, &new);
     args.exhaustive = true;
+    args.explicit = true; // bd-u7n: raw row indices and column names need --explicit
     let json = run_json(&args);
 
     assert_eq!(json["outcome"], "REAL_CHANGE");
@@ -426,6 +437,8 @@ fn audit_fields_mixed_numeric_and_field_changes_emit_separate_sections() {
     let mut args = make_args(&old, &new);
     args.exhaustive = true;
     args.audit_fields = true;
+    // bd-u7n: raw contributor column names need --explicit.
+    args.explicit = true;
     args.profile = Some(profile);
     let json = run_json(&args);
 

@@ -45,7 +45,7 @@ rvl reads CSV, TSV, JSONL / NDJSON, Parquet and XLSX/XLS, chosen by file extensi
 
 ## Quick Example
 
-> **Redacted by default.** rvl is zero-retention safe out of the box: without `--explicit`, human and JSON output show cell labels and shares of total change but **no raw data values** (no old/new/delta numbers, no key samples, no changed-field text). Add `--explicit` to see the values. The examples below use `--explicit`; the redacted form follows.
+> **Redacted by default.** rvl is zero-retention safe out of the box: without `--explicit`, human and JSON output show contributor refs and shares of total change but **no raw data values and no raw contributor identity** (no old/new/delta numbers, no key values, no data column names in contributors, no changed-field text). Add `--explicit` to see the values. The examples below use `--explicit`; the redacted form follows.
 
 ```bash
 $ rvl old.csv new.csv --key id --explicit
@@ -76,7 +76,7 @@ Everything else in common numeric columns is <= tolerance or in the tail (not re
 
 Out of 50,196 cells, **3 cells** explain 95.2% of all numeric change. That's the whole answer.
 
-The same run **without** `--explicit` (the default) keeps the verdict, labels and shares, and drops the values:
+The same run **without** `--explicit` (the default) keeps the verdict and shares, replaces each contributor's row and column with ordinal refs, and drops the values:
 
 ```bash
 $ rvl old.csv new.csv --key id
@@ -85,10 +85,10 @@ $ rvl old.csv new.csv --key id
 ```
 1 cell explain 100.0% of total numeric change (threshold 95.0%):
 
-1. NVDA.market_value  +100.0% of total change
+1. redacted:ref:k1.redacted:ref:c1  +100.0% of total change
 ```
 
-Use `--explicit` for local, non-sensitive runs where you want the numbers. Keep the default when output may be logged, pasted, or retained (for example `veil`/`airlock` zero-retention workflows). In `--json`, redacted contributors omit `old`, `new`, `delta` and `contribution`; `--explicit` adds them.
+Use `--explicit` for local, non-sensitive runs where you want the numbers. Keep the default when output may be logged, pasted, or retained (for example `veil`/`airlock` zero-retention workflows). In `--json`, redacted contributors omit `old`, `new`, `delta`, `contribution` and `row_key`, and `row_id` / `column` are refs (see **Redacted contributor identity** below); `--explicit` adds the raw identity and the values.
 
 ```bash
 # No change? Proof:
@@ -136,7 +136,7 @@ Settings: threshold=95.0% tolerance=1e-9
 Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold).
 ```
 
-*(Shown with `--explicit`; by default the signed delta and `(old -> new)` values are replaced by each cell's share of total change.)*
+*(Shown with `--explicit`; by default the cell label is a pair of refs and the signed delta and `(old -> new)` values are replaced by each cell's share of total change.)*
 
 **How to read this:**
 - **3 cells explain 95.2%** — only 3 numeric cells (out of 50,196) account for 95.2% of all numeric change.
@@ -437,7 +437,9 @@ The `non_numeric` report contains deterministic `date_shifts[]`, low-cardinality
 
 **Ordinal refs (default).** Categorical old and new values become `redacted:ref:v1`, `redacted:ref:v2`, ... (one value namespace for the whole output) and affected rows become `redacted:ref:k1`, `redacted:ref:k2`, ... (their own namespace, so a value and a key holding equal bytes do not share a ref). Numbers follow first appearance over the entries printed, in data order (never sorted by value, which would leak value order), so the same inputs give byte-identical output. No hash of any value is computed. A ref reveals which printed entries share a value and how many distinct values there are, never the content; refs are not comparable across different inputs.
 
-**Stable markers (opt-in).** Set `RVL_REDACTION_KEY` to a secret of at least 16 bytes with `--non-numeric` and values and rows become `redacted:hmac-sha256:<32 hex>`: HMAC-SHA256 (RustCrypto `hmac` 0.12 with `sha2` 0.10) of the raw value bytes (rows: the length-framed key components), truncated to 128 bits. Markers are stable across runs and inputs for the key holder and cannot be guessed without the key. A set-but-empty or shorter key refuses with `E_REDACTION_KEY_INVALID` (exit 2) before any input is read, even with `--explicit`, and never falls back to ordinal refs; the key is never printed, logged or written to the witness ledger. There is deliberately no random per-run salt: it would make output non-reproducible.
+**Redacted contributor identity (numeric mode, bd-u7n).** Without `--explicit`, the numeric `contributors` (JSON and the human "N cells explain ..." lines) never print a key value, a row position or a data column name. `row_id` is one ordinal ref per key TUPLE (`redacted:ref:k1`, `k2`, ...; a composite key is one ref, `row_key` is omitted) and `column` is `redacted:ref:c1`, `c2`, ...; the human label is `<row ref>.<column ref>`. Refs are numbered in contribution-rank (emission) order, never by value or name bytes, equal tuples or columns share a ref, and reruns are byte-identical. With `RVL_REDACTION_KEY` they become the `redacted:hmac-sha256:` markers described below (a row marker is the HMAC of the length-framed key components, a column marker the HMAC of the raw column bytes). `--explicit` prints the raw `row_id`, `row_key` and `column` and the values. An unusable key refuses `E_REDACTION_KEY_INVALID` (exit 2) in default numeric runs too; with `--explicit` numeric runs ignore the key. Not covered by this change: the `alignment` block and the human `Alignment: key=...` line still name the key COLUMNS, and `--capsule-dir` artifacts (input copies, manifest) keep real identifiers.
+
+**Stable markers (opt-in).** Set `RVL_REDACTION_KEY` to a secret of at least 16 bytes (always in default numeric runs, and with `--non-numeric`) and values and rows become `redacted:hmac-sha256:<32 hex>`: HMAC-SHA256 (RustCrypto `hmac` 0.12 with `sha2` 0.10) of the raw value bytes (rows: the length-framed key components), truncated to 128 bits. Markers are stable across runs and inputs for the key holder and cannot be guessed without the key. A set-but-empty or shorter key refuses with `E_REDACTION_KEY_INVALID` (exit 2) before any input is read, even with `--explicit`, and never falls back to ordinal refs; the key is never printed, logged or written to the witness ledger. There is deliberately no random per-run salt: it would make output non-reproducible.
 
 Changed in this release: the earlier default tokens `blake3:<16 hex>` (an unsalted hash of each value, reversible by dictionary) are gone from `categorical_transitions[].old`, `.new` and `affected_rows[]`. The JSON shape is unchanged (still strings). Other `blake3:` strings in rvl output (witness and capsule hashes of whole files) are unrelated. Numeric columns remain available to the ordinary numeric explanation in the same run.
 

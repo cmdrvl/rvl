@@ -458,8 +458,10 @@ fn the_key_never_appears_in_any_channel_including_the_witness_ledger_and_doctor(
 }
 
 #[test]
-fn numeric_mode_is_untouched_by_the_key_variable() {
-    // The key only matters for --non-numeric output; a numeric run with a junk key still works.
+fn numeric_explicit_mode_is_untouched_by_the_key_variable() {
+    // bd-u7n: without --explicit numeric contributors carry markers, so an unusable key now refuses
+    // there (see tests/numeric_redaction.rs). With --explicit no marker is printed and a junk key
+    // is still ignored, as before.
     let scratch = Scratch::new("numeric");
     let old = scratch.write("old.csv", "id,v\nA,1\nB,2\n");
     let new = scratch.write("new.csv", "id,v\nA,1\nB,3\n");
@@ -467,7 +469,7 @@ fn numeric_mode_is_untouched_by_the_key_variable() {
         .env(KEY_ENV, "short")
         .arg(&old)
         .arg(&new)
-        .args(["--key", "id", "--json", "--no-witness"])
+        .args(["--key", "id", "--json", "--no-witness", "--explicit"])
         .output()
         .expect("run rvl");
     assert_eq!(output.status.code(), Some(1), "{}", text(&output));

@@ -163,6 +163,28 @@ pub struct Contributor {
 }
 
 impl Contributor {
+    /// A contributor whose identity is a redaction marker: `row_id` is the ordinal ref or keyed
+    /// marker of the whole key tuple (or row position) and `column` that of the column name.
+    /// No raw key component, no raw column name and no value is carried (bd-u7n).
+    pub fn redacted(
+        row_ref: String,
+        column_ref: String,
+        share: f64,
+        cumulative_share: f64,
+    ) -> Self {
+        Self {
+            row_id: row_ref,
+            row_key: None,
+            column: column_ref,
+            old: None,
+            new: None,
+            delta: None,
+            contribution: None,
+            share,
+            cumulative_share,
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         row_id: String,

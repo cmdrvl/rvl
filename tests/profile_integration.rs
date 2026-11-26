@@ -148,6 +148,8 @@ fn profile_composite_key_aligns_reordered_rows_and_excludes_every_key_column() {
 
     let mut args = make_args(&old, &new);
     args.profile = Some(profile);
+    // bd-u7n: raw contributor row_id, row_key and column need --explicit.
+    args.explicit = true;
     let json = run_json(&args);
 
     assert_eq!(json["outcome"], "REAL_CHANGE");
@@ -294,6 +296,7 @@ fn profile_column_registry_canonicalizes_headers_before_key_scope_and_output() {
 
     let mut args = make_args(&old, &new);
     args.profile = Some(profile);
+    args.explicit = true; // bd-u7n: raw contributor column names need --explicit
     let result = run(&args);
     let json: serde_json::Value = serde_json::from_str(&result.output).unwrap();
 
