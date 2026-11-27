@@ -60,6 +60,7 @@ fn golden_real_change_human_output() {
             delta: 5.0,
             share: 1.0,
         }],
+        column_changes: &[],
         field_changes: &[],
         coverage: 0.95,
         threshold: 0.95,
@@ -270,6 +271,7 @@ fn golden_json_real_change_output() {
             max_abs_delta: Some(5.0),
             top_k_coverage: Some(1.0),
         },
+        column_changes: Vec::new(),
         field_changes: None,
         non_numeric: None,
     };
@@ -327,6 +329,7 @@ fn golden_json_real_change_output() {
             "share": 1.0,
             "cumulative_share": 1.0
         }],
+        "column_changes": [],
         "refusal": null
     });
 
@@ -374,6 +377,7 @@ fn golden_json_no_real_change_output() {
             max_abs_delta: Some(7e-10),
             top_k_coverage: None,
         },
+        column_changes: Vec::new(),
         field_changes: None,
         non_numeric: None,
     };
@@ -410,6 +414,7 @@ fn golden_json_no_real_change_output() {
         "metrics": { "total_change": 0.0, "max_abs_delta": 7e-10, "top_k_coverage": null },
         "limits": { "max_contributors": 25 },
         "contributors": [],
+        "column_changes": [],
         "refusal": null
     });
 
@@ -440,6 +445,7 @@ fn golden_json_refusal_output() {
         tolerance: 1e-9,
         counts: Counts::default(),
         metrics: Metrics::default(),
+        column_changes: Vec::new(),
         field_changes: None,
         non_numeric: None,
     };
@@ -486,6 +492,7 @@ fn golden_json_refusal_output() {
         "metrics": { "total_change": null, "max_abs_delta": null, "top_k_coverage": null },
         "limits": { "max_contributors": 25 },
         "contributors": [],
+        "column_changes": [],
         "refusal": {
             "code": "E_KEY_DUP",
             "message": "duplicate key values",

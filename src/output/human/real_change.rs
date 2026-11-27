@@ -20,9 +20,17 @@ pub struct RealChangeFieldChange {
     pub new: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct RealChangeColumnChange {
+    pub label: String,
+    pub changed_cells: u64,
+    pub max_abs_delta: Option<f64>,
+}
+
 #[derive(Debug)]
 pub struct RealChangeBody<'a> {
     pub contributors: &'a [RealChangeContributor],
+    pub column_changes: &'a [RealChangeColumnChange],
     pub field_changes: &'a [RealChangeFieldChange],
     pub coverage: f64,
     pub threshold: f64,
@@ -78,6 +86,39 @@ pub fn render_real_change_body(ctx: &RealChangeBody<'_>) -> Vec<String> {
                 direction,
                 format_percent_one_decimal(contributor.share)
             ));
+        }
+    }
+    if !ctx.column_changes.is_empty() {
+        lines.push(String::new());
+        lines.push("Changed numeric columns (columns may use different units):".to_string());
+        for (idx, column) in ctx.column_changes.iter().enumerate() {
+            let cells_word = if column.changed_cells == 1 {
+                "cell"
+            } else {
+                "cells"
+            };
+            if ctx.explicit {
+                let largest = column
+                    .max_abs_delta
+                    .map(format_value)
+                    .unwrap_or_else(|| "0".to_string());
+                lines.push(format!(
+                    "{}. {}: {} changed {} (largest abs delta {})",
+                    idx + 1,
+                    column.label,
+                    column.changed_cells,
+                    cells_word,
+                    largest
+                ));
+            } else {
+                lines.push(format!(
+                    "{}. {}: {} changed {}",
+                    idx + 1,
+                    column.label,
+                    column.changed_cells,
+                    cells_word
+                ));
+            }
         }
     }
     lines.push(String::new());
@@ -144,6 +185,7 @@ mod tests {
         }];
         let ctx = RealChangeBody {
             contributors: &contributors,
+            column_changes: &[],
             field_changes: &[],
             coverage: 0.952,
             threshold: 0.95,
@@ -174,6 +216,7 @@ mod tests {
         }];
         let ctx = RealChangeBody {
             contributors: &contributors,
+            column_changes: &[],
             field_changes: &[],
             coverage: 0.952,
             threshold: 0.95,
@@ -196,6 +239,7 @@ mod tests {
         }];
         let ctx = RealChangeBody {
             contributors: &contributors,
+            column_changes: &[],
             field_changes: &[],
             coverage: 1.0,
             threshold: 0.95,

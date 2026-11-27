@@ -50,14 +50,15 @@ use crate::output::human::header::{
 };
 use crate::output::human::no_real::{NoRealBody, render_no_real_body};
 use crate::output::human::real_change::{
-    RealChangeBody, RealChangeContributor, RealChangeFieldChange, render_real_change_body,
+    RealChangeBody, RealChangeColumnChange, RealChangeContributor, RealChangeFieldChange,
+    render_real_change_body,
 };
 use crate::output::human::refusal::{RefusalBody, render_refusal_body};
 use crate::output::json::{
-    Alignment as JsonAlignment, Audit as JsonAudit, CategoricalTransition, Counts, DateShift,
-    Dialect, DialectSide, FieldChange as JsonFieldChange, Files, JsonContext, JsonOutput, Metrics,
-    NonNumericReport, NullityFlip, OutputMode as JsonOutputMode, Refusal as JsonRefusal, RowChurn,
-    TextChurn,
+    Alignment as JsonAlignment, Audit as JsonAudit, CategoricalTransition, ColumnChange, Counts,
+    DateShift, Dialect, DialectSide, FieldChange as JsonFieldChange, Files, JsonContext,
+    JsonOutput, Metrics, NonNumericReport, NullityFlip, OutputMode as JsonOutputMode,
+    Refusal as JsonRefusal, RowChurn, TextChurn,
 };
 use crate::profile::{
     ColumnRegistryRunInfo, ResolveError, ResolvedProfile, load_profile_from_path,
@@ -69,12 +70,15 @@ use crate::refusal::details::{
     DelimiterHint, DialectSuggestion, EncodingIssue, FileSide, HeadersIssue, NamedDelimiter,
     RefusalDetail, RefusalKind, RerunPaths,
 };
-use capsule::{CapsuleContributor, CapsuleContributorSummary, CapsuleRunSummary};
+use capsule::{
+    CapsuleColumnChange, CapsuleContributor, CapsuleContributorSummary, CapsuleRunSummary,
+};
 
 pub struct PipelineResult {
     pub outcome: Outcome,
     pub output: String,
     pub profile: ProfileRunInfo,
+    pub column_changes: Vec<ColumnChange>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -130,6 +134,15 @@ struct RunContext<'a> {
     rerun_paths: RerunPaths<'a>,
     active_profile: &'a ActiveProfile,
     /// Operator key for keyed redaction markers (`RVL_REDACTION_KEY`); `None` means ordinal refs.
+    redaction_key: Option<&'a RedactionKey>,
+}
+
+struct RealChangeRenderContext<'a> {
+    details: &'a [ContributionDetail],
+    column_change_stats: &'a BTreeMap<Vec<u8>, ColumnChangeStats>,
+    coverage: f64,
+    alignment_label: Option<&'a str>,
+    field_details: &'a [FieldChangeDetail],
     redaction_key: Option<&'a RedactionKey>,
 }
 
@@ -994,6 +1007,7 @@ fn run_diff(
     let mut tolerance = ToleranceTracker::new(args.tolerance);
     let mut numeric_cells_changed = 0u64;
     let mut exhaustive_details = Vec::new();
+    let mut column_change_stats = BTreeMap::new();
 
     match &alignment {
         AlignmentContext::Key { key_rows, .. } => {
@@ -1024,6 +1038,7 @@ fn run_diff(
                     let cell_id = CellId::new(row_id.clone(), column.name.clone());
                     if contribution > 0.0 {
                         numeric_cells_changed += 1;
+                        record_column_change(&mut column_change_stats, &column.name, delta);
                         if args.exhaustive && numeric_cells_changed <= args.max_audit_changes {
                             exhaustive_details.push(ContributionDetail {
                                 id: cell_id.clone(),
@@ -1069,6 +1084,7 @@ fn run_diff(
                     let cell_id = CellId::new(row_id.clone(), column.name.clone());
                     if contribution > 0.0 {
                         numeric_cells_changed += 1;
+                        record_column_change(&mut column_change_stats, &column.name, delta);
                         if args.exhaustive && numeric_cells_changed <= args.max_audit_changes {
                             exhaustive_details.push(ContributionDetail {
                                 id: cell_id.clone(),
@@ -1289,11 +1305,14 @@ fn run_diff(
         return Ok(render_real_change(
             args,
             ctx,
-            &exhaustive_details,
-            1.0,
-            alignment_label.as_deref(),
-            &field_audit.details,
-            context.redaction_key,
+            RealChangeRenderContext {
+                details: &exhaustive_details,
+                column_change_stats: &column_change_stats,
+                coverage: 1.0,
+                alignment_label: alignment_label.as_deref(),
+                field_details: &field_audit.details,
+                redaction_key: context.redaction_key,
+            },
         ));
     }
 
@@ -1362,11 +1381,14 @@ fn run_diff(
             Ok(render_real_change(
                 args,
                 ctx,
-                &details,
-                coverage,
-                alignment_label.as_deref(),
-                &[],
-                context.redaction_key,
+                RealChangeRenderContext {
+                    details: &details,
+                    column_change_stats: &column_change_stats,
+                    coverage,
+                    alignment_label: alignment_label.as_deref(),
+                    field_details: &[],
+                    redaction_key: context.redaction_key,
+                },
             ))
         }
     }
@@ -1881,6 +1903,7 @@ fn render_refusal_with_context(
             outcome: Outcome::Refusal,
             output,
             profile: context.profile.clone(),
+            column_changes: Vec::new(),
         }
     } else {
         let mut lines = Vec::new();
@@ -1915,6 +1938,7 @@ fn render_refusal_with_context(
             outcome: Outcome::Refusal,
             output: lines.join("\n"),
             profile: context.profile.clone(),
+            column_changes: Vec::new(),
         }
     };
 
@@ -1940,6 +1964,7 @@ fn render_no_real_change(
             outcome: Outcome::NoRealChange,
             output,
             profile: run_profile.clone(),
+            column_changes: Vec::new(),
         }
     } else {
         let old_display = display_name(args.old_path());
@@ -1967,6 +1992,7 @@ fn render_no_real_change(
             outcome: Outcome::NoRealChange,
             output: lines.join("\n"),
             profile: run_profile.clone(),
+            column_changes: Vec::new(),
         }
     };
 
@@ -1977,12 +2003,16 @@ fn render_no_real_change(
 fn render_real_change(
     args: &Args,
     ctx: JsonContext,
-    details: &[ContributionDetail],
-    coverage: f64,
-    alignment_label: Option<&str>,
-    field_details: &[FieldChangeDetail],
-    redaction_key: Option<&RedactionKey>,
+    render_context: RealChangeRenderContext<'_>,
 ) -> PipelineResult {
+    let RealChangeRenderContext {
+        details,
+        column_change_stats,
+        coverage,
+        alignment_label,
+        field_details,
+        redaction_key,
+    } = render_context;
     let run_profile = profile_from_json_context(&ctx);
     let total_change = ctx.metrics.total_change.unwrap_or(0.0);
     let audit_mode = matches!(
@@ -1992,8 +2022,13 @@ fn render_real_change(
     let contributor_summary = build_capsule_contributor_summary(details, total_change, coverage);
 
     let result = if args.json {
+        let mut marker = Marker::new(redaction_key);
         let contributors =
-            build_json_contributors(details, total_change, args.explicit, redaction_key);
+            build_json_contributors(details, total_change, args.explicit, &mut marker);
+        let column_changes =
+            build_json_column_changes(column_change_stats, args.explicit, &mut marker);
+        let mut ctx = ctx;
+        ctx.column_changes = column_changes.clone();
         let output = JsonOutput::real_change(ctx, contributors)
             .to_string()
             .unwrap_or_else(|_| "{}".to_string());
@@ -2001,6 +2036,7 @@ fn render_real_change(
             outcome: Outcome::RealChange,
             output,
             profile: run_profile.clone(),
+            column_changes,
         }
     } else {
         let old_display = display_name(args.old_path());
@@ -2019,12 +2055,16 @@ fn render_real_change(
             &new_display,
         ));
         lines.push(String::new());
+        let mut marker = Marker::new(redaction_key);
         let contributors =
-            build_human_contributors(details, total_change, args.explicit, redaction_key);
+            build_human_contributors(details, total_change, args.explicit, &mut marker);
+        let column_changes =
+            build_human_column_changes(column_change_stats, args.explicit, &mut marker);
         let field_changes =
             build_human_field_changes(field_details, args.explicit, args.non_numeric);
         let body = RealChangeBody {
             contributors: &contributors,
+            column_changes: &column_changes,
             field_changes: &field_changes,
             coverage,
             threshold: args.threshold,
@@ -2037,13 +2077,24 @@ fn render_real_change(
             outcome: Outcome::RealChange,
             output: lines.join("\n"),
             profile: run_profile.clone(),
+            column_changes: column_changes
+                .iter()
+                .map(|change| ColumnChange {
+                    column: change.label.clone(),
+                    changed_cells: change.changed_cells,
+                    max_abs_delta: change.max_abs_delta,
+                })
+                .collect(),
         }
     };
 
     capsule::write_capsule(
         args,
         &result,
-        &CapsuleRunSummary::real_change(contributor_summary),
+        &CapsuleRunSummary::real_change(
+            contributor_summary,
+            build_capsule_column_changes(column_change_stats, args.explicit, redaction_key),
+        ),
     );
     result
 }
@@ -2219,6 +2270,7 @@ fn json_context_with_field_changes(
         tolerance: args.tolerance,
         counts,
         metrics,
+        column_changes: Vec::new(),
         field_changes,
         non_numeric,
     }
@@ -2265,10 +2317,9 @@ fn build_human_contributors(
     details: &[ContributionDetail],
     total_change: f64,
     explicit: bool,
-    redaction_key: Option<&RedactionKey>,
+    marker: &mut Marker<'_>,
 ) -> Vec<RealChangeContributor> {
     let mut cumulative = 0.0;
-    let mut marker = Marker::new(redaction_key);
     details
         .iter()
         .map(|detail| {
@@ -2282,7 +2333,7 @@ fn build_human_contributors(
                 label: if explicit {
                     render_cell_label(&detail.id)
                 } else {
-                    let (row, column) = mark_contributor(&mut marker, &detail.id);
+                    let (row, column) = mark_contributor(marker, &detail.id);
                     format!("{row}.{column}")
                 },
                 old: detail.old,
@@ -2298,11 +2349,10 @@ fn build_json_contributors(
     details: &[ContributionDetail],
     total_change: f64,
     explicit: bool,
-    redaction_key: Option<&RedactionKey>,
+    marker: &mut Marker<'_>,
 ) -> Vec<crate::output::json::Contributor> {
     let mut contributors = Vec::with_capacity(details.len());
     let mut cumulative = 0.0;
-    let mut marker = Marker::new(redaction_key);
     for detail in details {
         let share = if total_change > 0.0 {
             detail.contribution / total_change
@@ -2311,7 +2361,7 @@ fn build_json_contributors(
         };
         cumulative += share;
         if !explicit {
-            let (row, column) = mark_contributor(&mut marker, &detail.id);
+            let (row, column) = mark_contributor(marker, &detail.id);
             contributors.push(crate::output::json::Contributor::redacted(
                 row, column, share, cumulative,
             ));
@@ -2332,6 +2382,64 @@ fn build_json_contributors(
         ));
     }
     contributors
+}
+
+fn build_human_column_changes(
+    stats: &BTreeMap<Vec<u8>, ColumnChangeStats>,
+    explicit: bool,
+    marker: &mut Marker<'_>,
+) -> Vec<RealChangeColumnChange> {
+    stats
+        .iter()
+        .map(|(column, stats)| RealChangeColumnChange {
+            label: if explicit {
+                render_identifier_human(column)
+            } else {
+                marker.mark(Namespace::Column, column)
+            },
+            changed_cells: stats.changed_cells,
+            max_abs_delta: explicit.then_some(stats.max_abs_delta),
+        })
+        .collect()
+}
+
+fn build_json_column_changes(
+    stats: &BTreeMap<Vec<u8>, ColumnChangeStats>,
+    explicit: bool,
+    marker: &mut Marker<'_>,
+) -> Vec<ColumnChange> {
+    stats
+        .iter()
+        .map(|(column, stats)| ColumnChange {
+            column: if explicit {
+                encode_identifier_json(column)
+            } else {
+                marker.mark(Namespace::Column, column)
+            },
+            changed_cells: stats.changed_cells,
+            max_abs_delta: explicit.then_some(stats.max_abs_delta),
+        })
+        .collect()
+}
+
+fn build_capsule_column_changes(
+    stats: &BTreeMap<Vec<u8>, ColumnChangeStats>,
+    explicit: bool,
+    redaction_key: Option<&RedactionKey>,
+) -> Vec<CapsuleColumnChange> {
+    let mut marker = Marker::new(redaction_key);
+    stats
+        .iter()
+        .map(|(column, stats)| CapsuleColumnChange {
+            column: if explicit {
+                encode_identifier_json(column)
+            } else {
+                marker.mark(Namespace::Column, column)
+            },
+            changed_cells: stats.changed_cells,
+            max_abs_delta: explicit.then_some(stats.max_abs_delta),
+        })
+        .collect()
 }
 
 fn build_json_field_changes(
@@ -2965,6 +3073,22 @@ struct ContributionDetail {
     new: f64,
     delta: f64,
     contribution: f64,
+}
+
+#[derive(Clone, Copy, Default)]
+struct ColumnChangeStats {
+    changed_cells: u64,
+    max_abs_delta: f64,
+}
+
+fn record_column_change(
+    stats: &mut BTreeMap<Vec<u8>, ColumnChangeStats>,
+    column: &[u8],
+    delta: f64,
+) {
+    let entry = stats.entry(column.to_vec()).or_default();
+    entry.changed_cells += 1;
+    entry.max_abs_delta = entry.max_abs_delta.max(delta.abs());
 }
 
 #[derive(Clone, Default)]

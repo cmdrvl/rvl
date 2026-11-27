@@ -59,5 +59,12 @@
       "cumulative_share": 1.0
     }
   ],
+  "column_changes": [
+    {
+      "column": "u8:amount",
+      "changed_cells": 1,
+      "max_abs_delta": 60.0
+    }
+  ],
   "refusal": null
 }

@@ -230,6 +230,7 @@ fn witness_parameters_record_non_numeric_mode() {
         outcome: Outcome::RealChange,
         output: "{}".to_string(),
         profile: ProfileRunInfo::default(),
+        column_changes: Vec::new(),
     };
     let witness = WitnessRecord::from_run(
         &args,

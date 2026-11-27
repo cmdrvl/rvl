@@ -110,6 +110,7 @@ mod tests {
             outcome: pipeline_outcome,
             output: "test output".to_string(),
             profile: crate::orchestrator::ProfileRunInfo::default(),
+            column_changes: Vec::new(),
         };
         let mut rec = WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv");
         rec.ts = ts.to_string();

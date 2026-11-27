@@ -71,6 +71,7 @@ mod tests {
             outcome: Outcome::NoRealChange,
             output: "test output".to_string(),
             profile: crate::orchestrator::ProfileRunInfo::default(),
+            column_changes: Vec::new(),
         };
         let mut rec = WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv");
         rec.ts = "2026-01-01T00:00:00Z".to_string();

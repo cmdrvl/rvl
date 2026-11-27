@@ -79,6 +79,7 @@ mod tests {
             outcome,
             output: "test output".to_string(),
             profile: crate::orchestrator::ProfileRunInfo::default(),
+            column_changes: Vec::new(),
         }
     }
 
@@ -334,6 +335,7 @@ mod tests {
             outcome: Outcome::RealChange,
             output: output_text.to_string(),
             profile: crate::orchestrator::ProfileRunInfo::default(),
+            column_changes: Vec::new(),
         };
         record_run_with_writer(&args, &result, &writer).unwrap();
 

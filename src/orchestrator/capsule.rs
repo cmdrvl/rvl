@@ -19,6 +19,7 @@ const REGISTRY_ARTIFACT_DIR: &str = "registries/column_registry";
 pub(super) struct CapsuleRunSummary {
     pub refusal_code: Option<String>,
     pub contributors: Option<CapsuleContributorSummary>,
+    pub column_changes: Vec<CapsuleColumnChange>,
 }
 
 impl CapsuleRunSummary {
@@ -26,6 +27,7 @@ impl CapsuleRunSummary {
         Self {
             refusal_code: Some(code),
             contributors: None,
+            column_changes: Vec::new(),
         }
     }
 
@@ -37,13 +39,18 @@ impl CapsuleRunSummary {
                 coverage: 0.0,
                 top: Vec::new(),
             }),
+            column_changes: Vec::new(),
         }
     }
 
-    pub(super) fn real_change(contributors: CapsuleContributorSummary) -> Self {
+    pub(super) fn real_change(
+        contributors: CapsuleContributorSummary,
+        column_changes: Vec<CapsuleColumnChange>,
+    ) -> Self {
         Self {
             refusal_code: None,
             contributors: Some(contributors),
+            column_changes,
         }
     }
 }
@@ -66,6 +73,14 @@ pub(super) struct CapsuleContributor {
     pub share: f64,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct CapsuleColumnChange {
+    pub column: String,
+    pub changed_cells: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_abs_delta: Option<f64>,
+}
+
 #[derive(Debug, Serialize)]
 struct CapsuleManifest {
     version: &'static str,
@@ -75,6 +90,7 @@ struct CapsuleManifest {
     outcome: String,
     refusal_code: Option<String>,
     contributor_summary: ContributorSummary,
+    column_changes: Vec<CapsuleColumnChange>,
     replay_command: String,
     artifacts: CapsuleArtifacts,
 }
@@ -314,6 +330,7 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
             coverage: contributor_summary.coverage,
             top: contributor_summary.top,
         },
+        column_changes: summary.column_changes.clone(),
         replay_command,
         artifacts: CapsuleArtifacts {
             old_csv: old_artifact,

@@ -15,4 +15,7 @@ Settings: threshold=95.0% tolerance=1e-9
 
 1. B.value  +3  (2 -> 5)
 
+Changed numeric columns (columns may use different units):
+1. value: 1 changed cell (largest abs delta 3)
+
 Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold).

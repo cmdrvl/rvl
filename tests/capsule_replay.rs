@@ -232,6 +232,7 @@ fn assert_manifest_shape(manifest: &Value) {
         "outcome",
         "refusal_code",
         "contributor_summary",
+        "column_changes",
         "replay_command",
         "artifacts",
     ];

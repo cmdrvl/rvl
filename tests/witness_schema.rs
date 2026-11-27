@@ -40,6 +40,7 @@ fn make_record(outcome: Outcome) -> WitnessRecord {
         outcome,
         output: "test output".to_string(),
         profile: rvl::orchestrator::ProfileRunInfo::default(),
+        column_changes: Vec::new(),
     };
     let mut rec = WitnessRecord::from_run(
         &args,
@@ -95,6 +96,7 @@ fn schema_validates_record_with_all_params() {
         outcome: Outcome::RealChange,
         output: "json output".to_string(),
         profile: rvl::orchestrator::ProfileRunInfo::default(),
+        column_changes: Vec::new(),
     };
     let mut rec = WitnessRecord::from_run(&args, &result, b"old", b"new", "old.csv", "new.csv");
     rec.ts = "2026-01-15T12:00:00Z".to_string();

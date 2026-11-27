@@ -148,7 +148,7 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                     }
                 },
                 "type": "object",
-                "required": ["version", "outcome", "files", "alignment", "dialect", "threshold", "tolerance", "counts", "metrics", "limits", "contributors"],
+                "required": ["version", "outcome", "files", "alignment", "dialect", "threshold", "tolerance", "counts", "metrics", "limits", "contributors", "column_changes"],
                 "properties": {
                     "version": { "type": "string", "const": "rvl.v0" },
                     "outcome": { "type": "string", "enum": ["REAL_CHANGE", "NO_REAL_CHANGE", "REFUSAL"] },
@@ -249,6 +249,18 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                                 "cumulative_share": { "type": "number" }
                             },
                             "required": ["row_id", "column", "share", "cumulative_share"]
+                        }
+                    },
+                    "column_changes": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "column": { "type": "string" },
+                                "changed_cells": { "type": "integer", "minimum": 0 },
+                                "max_abs_delta": { "type": "number" }
+                            },
+                            "required": ["column", "changed_cells"]
                         }
                     },
                     "field_changes": {

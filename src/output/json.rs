@@ -125,6 +125,14 @@ pub struct Metrics {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ColumnChange {
+    pub column: String,
+    pub changed_cells: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_abs_delta: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct Audit {
     pub numeric_changes_emitted: u64,
     pub field_changes_emitted: u64,
@@ -351,6 +359,7 @@ pub struct JsonContext {
     pub tolerance: f64,
     pub counts: Counts,
     pub metrics: Metrics,
+    pub column_changes: Vec<ColumnChange>,
     pub field_changes: Option<Vec<FieldChange>>,
     pub non_numeric: Option<NonNumericReport>,
 }
@@ -377,6 +386,7 @@ pub struct JsonOutput {
     pub audit: Option<Audit>,
     pub limits: Limits,
     pub contributors: Vec<Contributor>,
+    pub column_changes: Vec<ColumnChange>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub field_changes: Option<Vec<FieldChange>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -411,6 +421,7 @@ impl JsonOutput {
             audit: ctx.audit,
             limits: Limits::default(),
             contributors,
+            column_changes: ctx.column_changes,
             field_changes: ctx.field_changes,
             non_numeric: ctx.non_numeric,
             refusal: None,
@@ -443,6 +454,7 @@ impl JsonOutput {
             audit: ctx.audit,
             limits: Limits::default(),
             contributors: Vec::new(),
+            column_changes: ctx.column_changes,
             field_changes: ctx.field_changes,
             non_numeric: ctx.non_numeric,
             refusal: None,
@@ -475,6 +487,7 @@ impl JsonOutput {
             audit: ctx.audit,
             limits: Limits::default(),
             contributors: Vec::new(),
+            column_changes: ctx.column_changes,
             field_changes: ctx.field_changes,
             non_numeric: ctx.non_numeric,
             refusal: Some(refusal),
@@ -547,6 +560,7 @@ mod tests {
                 max_abs_delta: Some(5.0),
                 top_k_coverage: Some(0.95),
             },
+            column_changes: Vec::new(),
             field_changes: None,
             non_numeric: None,
         }
