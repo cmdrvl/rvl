@@ -168,11 +168,6 @@ impl WitnessRecord {
         );
         params.insert("threshold".to_string(), serde_json::json!(args.threshold));
         params.insert("tolerance".to_string(), serde_json::json!(args.tolerance));
-        params.insert(
-            "column_changes".to_string(),
-            serde_json::to_value(&result.column_changes)
-                .expect("column change summary is serializable"),
-        );
         let params = serde_json::Value::Object(params);
 
         let ts = {
@@ -444,7 +439,6 @@ mod tests {
             keys.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
             vec![
                 "audit_fields",
-                "column_changes",
                 "delimiter",
                 "exhaustive",
                 "json",

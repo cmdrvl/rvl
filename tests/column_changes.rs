@@ -60,6 +60,24 @@ fn run_keyed(old: &Path, new: &Path, extra: &[&str]) -> Output {
         .expect("run keyed rvl")
 }
 
+fn run_with_witness(old: &Path, new: &Path, witness: &Path, extra: &[&str], keyed: bool) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_rvl"));
+    if keyed {
+        command.env("RVL_REDACTION_KEY", REDACTION_KEY);
+    } else {
+        command.env_remove("RVL_REDACTION_KEY");
+    }
+    command
+        .env("EPISTEMIC_WITNESS", witness)
+        .arg(old)
+        .arg(new)
+        .arg("--key")
+        .arg("id")
+        .args(extra)
+        .output()
+        .expect("run rvl with witness")
+}
+
 fn json(output: &Output) -> Value {
     let parsed = serde_json::from_slice(&output.stdout);
     assert!(
@@ -270,7 +288,7 @@ fn shared_tabular_inputs_emit_the_same_explicit_column_summary() {
 }
 
 #[test]
-fn capsule_and_witness_carry_redacted_column_additions() {
+fn capsule_columns_are_redacted_and_witness_params_stay_invocation_only() {
     let scratch = Scratch::new("artifacts");
     let (old, new) = write_pair(&scratch, "id,balance,rate", "A,100,5", "A,200,0");
     let capsule_root = scratch.0.join("capsules");
@@ -316,17 +334,38 @@ fn capsule_and_witness_carry_redacted_column_additions() {
 
     let witness_text = std::fs::read_to_string(witness).expect("witness");
     assert!(witness_text.contains("output_hash"));
+    assert!(!witness_text.contains("column_changes"));
     assert!(!witness_text.contains("balance"));
-    let witness_record: Value = serde_json::from_str(witness_text.trim()).expect("witness json");
-    let witness_columns = witness_record["params"]["column_changes"]
-        .as_array()
-        .expect("witness column changes");
-    assert!(!witness_columns.is_empty());
-    assert!(witness_columns.iter().all(|entry| {
-        entry["column"]
-            .as_str()
-            .unwrap()
-            .starts_with("redacted:ref:")
-            && entry["max_abs_delta"].is_null()
-    }));
+}
+
+#[test]
+fn witness_params_never_retain_column_names_or_deltas() {
+    let scratch = Scratch::new("witness-redaction");
+    let (old, new) = write_pair(
+        &scratch,
+        "id,ORCHH_balance,ORCHH_rate",
+        "A,1000000,5.0",
+        "A,1048213,0.0",
+    );
+    let cases: [(&str, &[&str], bool); 8] = [
+        ("human-default", &[], false),
+        ("json-default", &["--json"], false),
+        ("human-explicit", &["--explicit"], false),
+        ("json-explicit", &["--json", "--explicit"], false),
+        ("human-keyed", &[], true),
+        ("json-keyed", &["--json"], true),
+        ("human-keyed-explicit", &["--explicit"], true),
+        ("json-keyed-explicit", &["--json", "--explicit"], true),
+    ];
+
+    for (name, extra, keyed) in cases {
+        let witness = scratch.0.join(format!("{name}.jsonl"));
+        let output = run_with_witness(&old, &new, &witness, extra, keyed);
+        assert_eq!(output.status.code(), Some(1), "{name}");
+        let text = std::fs::read_to_string(&witness).expect("witness");
+        let record: Value = serde_json::from_str(text.trim()).expect("witness json");
+        assert!(record["params"].get("column_changes").is_none(), "{name}");
+        assert!(!record["params"].to_string().contains("ORCHH_"), "{name}");
+        assert!(!record["params"].to_string().contains("48213"), "{name}");
+    }
 }
