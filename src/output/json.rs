@@ -388,6 +388,8 @@ pub struct JsonOutput {
     pub contributors: Vec<Contributor>,
     pub column_changes: Vec<ColumnChange>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub column_changes_note: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub field_changes: Option<Vec<FieldChange>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub non_numeric: Option<NonNumericReport>,
@@ -422,6 +424,7 @@ impl JsonOutput {
             limits: Limits::default(),
             contributors,
             column_changes: ctx.column_changes,
+            column_changes_note: Some("Columns may use different units."),
             field_changes: ctx.field_changes,
             non_numeric: ctx.non_numeric,
             refusal: None,
@@ -455,6 +458,7 @@ impl JsonOutput {
             limits: Limits::default(),
             contributors: Vec::new(),
             column_changes: ctx.column_changes,
+            column_changes_note: None,
             field_changes: ctx.field_changes,
             non_numeric: ctx.non_numeric,
             refusal: None,
@@ -488,6 +492,7 @@ impl JsonOutput {
             limits: Limits::default(),
             contributors: Vec::new(),
             column_changes: ctx.column_changes,
+            column_changes_note: None,
             field_changes: ctx.field_changes,
             non_numeric: ctx.non_numeric,
             refusal: Some(refusal),

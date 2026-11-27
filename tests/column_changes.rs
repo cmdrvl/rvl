@@ -94,6 +94,10 @@ fn bead_example_lists_tail_rate_in_human_and_json_without_raw_defaults() {
     assert_eq!(report["outcome"], "REAL_CHANGE");
     assert_eq!(report["metrics"]["total_change"], 106.0);
     let columns = report["column_changes"].as_array().expect("column section");
+    assert_eq!(
+        report["column_changes_note"],
+        "Columns may use different units."
+    );
     assert_eq!(columns.len(), 3);
     assert_eq!(
         columns

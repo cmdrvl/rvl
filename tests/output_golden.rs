@@ -330,6 +330,7 @@ fn golden_json_real_change_output() {
             "cumulative_share": 1.0
         }],
         "column_changes": [],
+        "column_changes_note": "Columns may use different units.",
         "refusal": null
     });
 

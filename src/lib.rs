@@ -263,6 +263,7 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
                             "required": ["column", "changed_cells"]
                         }
                     },
+                    "column_changes_note": { "type": "string", "const": "Columns may use different units." },
                     "field_changes": {
                         "type": "array",
                         "items": {

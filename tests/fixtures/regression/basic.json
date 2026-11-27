@@ -66,5 +66,6 @@
       "max_abs_delta": 60.0
     }
   ],
+  "column_changes_note": "Columns may use different units.",
   "refusal": null
 }
