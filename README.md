@@ -22,7 +22,7 @@ brew install cmdrvl/tap/rvl
 
 Two CSV exports. 50,000 numeric cells. Your boss wants to know what changed and whether it matters — by end of day. You could open Excel and start scrolling. You could write a pandas script and spend the afternoon debugging edge cases. Or you could ask for the answer.
 
-**rvl finds the smallest set of numeric changes that explain the difference.** Three cells out of 50,000, ranked by magnitude, accounting for 95.2% of all numeric change. That's the whole answer — not a diff of every row, not a spreadsheet full of deltas, just the cells that matter. If nothing changed, rvl proves it: every cell checked, max delta below tolerance, deterministic guarantee.
+**rvl finds the smallest set of numeric changes that explain the difference.** Three cells out of thousands, ranked by unscaled `abs(delta)`, accounting for 95.2% of total numeric change. That's the whole answer — not a diff of every row, not a spreadsheet full of deltas. (Because ranking sums unscaled `abs(delta)` across common numeric columns, use single-unit tables or scope columns with `--profile` when mixing dollars with rates or ratios.) If nothing changed, rvl proves it: every cell checked, max delta below tolerance, deterministic guarantee.
 
 ### What makes this different
 
@@ -58,8 +58,8 @@ REAL CHANGE
 
 Compared: old.csv -> new.csv
 Alignment: key=id
-Columns: common=15 old_only=2 new_only=1
-Checked: 4,183 rows, 12 numeric columns (50,196 cells)
+Columns: common=3 old_only=0 new_only=0
+Checked: 1,003 rows, 3 numeric columns (3,009 cells)
 Dialect(old): delimiter=, quote=" escape=none
 Dialect(new): delimiter=, quote=" escape=none
 Ranking: abs(delta) (unscaled)
@@ -67,14 +67,14 @@ Settings: threshold=95.0% tolerance=1e-9
 
 3 cells explain 95.2% of total numeric change (threshold 95.0%):
 
-1. NVDA.market_value  +1842100  (123 -> 1842223)
-2. UST10Y.price       -0.37     (4.21 -> 3.84)
-3. EURUSD.fx_rate     +0.0013   (1.0842 -> 1.0855)
+1. NVDA.market_value_usd  +1.12e6  (4,250,000 -> 5,370,000)
+2. MSFT.market_value_usd  -5.1e5  (3,890,000 -> 3,380,000)
+3. AAPL.cost_basis_usd  +274000  (1,920,000 -> 2,194,000)
 
 Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold).
 ```
 
-Out of 50,196 cells, **3 cells** explain 95.2% of all numeric change. That's the whole answer.
+Out of 3,009 cells (all USD columns), **3 cells** explain 95.2% of total numeric change (`$1,904,000` of `$2,000,000`, with `$96,000` across 12 smaller positions in the tail). That's the whole answer.
 
 The same run **without** `--explicit` (the default) keeps the verdict and shares, replaces each contributor's row and column with ordinal refs, and drops the values:
 
@@ -83,9 +83,11 @@ $ rvl old.csv new.csv --key id
 ```
 
 ```
-1 cell explain 100.0% of total numeric change (threshold 95.0%):
+3 cells explain 95.2% of total numeric change (threshold 95.0%):
 
-1. redacted:ref:k1.redacted:ref:c1  +100.0% of total change
+1. redacted:ref:k1.redacted:ref:c1  +56.0% of total change
+2. redacted:ref:k2.redacted:ref:c1  -25.5% of total change
+3. redacted:ref:k3.redacted:ref:c2  +13.7% of total change
 ```
 
 Use `--explicit` for local, non-sensitive runs where you want the numbers. Keep the default when output may be logged, pasted, or retained (for example `veil`/`airlock` zero-retention workflows). In `--json`, redacted contributors omit `old`, `new`, `delta`, `contribution` and `row_key`, and `row_id` / `column` are refs (see **Redacted contributor identity** below); `--explicit` adds the raw identity and the values.
@@ -120,8 +122,8 @@ REAL CHANGE
 
 Compared: old.csv -> new.csv
 Alignment: key=id
-Columns: common=15 old_only=2 new_only=1
-Checked: 4,183 rows, 12 numeric columns (50,196 cells)
+Columns: common=3 old_only=0 new_only=0
+Checked: 1,003 rows, 3 numeric columns (3,009 cells)
 Dialect(old): delimiter=, quote=" escape=none
 Dialect(new): delimiter=, quote=" escape=none
 Ranking: abs(delta) (unscaled)
@@ -129,9 +131,9 @@ Settings: threshold=95.0% tolerance=1e-9
 
 3 cells explain 95.2% of total numeric change (threshold 95.0%):
 
-1. NVDA.market_value  +1842100  (123 -> 1842223)
-2. UST10Y.price       -0.37     (4.21 -> 3.84)
-3. EURUSD.fx_rate     +0.0013   (1.0842 -> 1.0855)
+1. NVDA.market_value_usd  +1.12e6  (4,250,000 -> 5,370,000)
+2. MSFT.market_value_usd  -5.1e5  (3,890,000 -> 3,380,000)
+3. AAPL.cost_basis_usd  +274000  (1,920,000 -> 2,194,000)
 
 Everything else in common numeric columns is <= tolerance or in the tail (not required to reach threshold).
 ```
@@ -139,7 +141,7 @@ Everything else in common numeric columns is <= tolerance or in the tail (not re
 *(Shown with `--explicit`; by default the cell label is a pair of refs and the signed delta and `(old -> new)` values are replaced by each cell's share of total change.)*
 
 **How to read this:**
-- **3 cells explain 95.2%** — only 3 numeric cells (out of 50,196) account for 95.2% of all numeric change.
+- **3 cells explain 95.2%** — only 3 numeric cells (out of 3,009) account for 95.2% of total numeric change.
 - **Contributors** — ranked by `abs(delta)`, largest first. Each shows the cell label (`row_id.column`), signed delta, and old → new values.
 - **Coverage** — cumulative share of total change (L1 distance). rvl prints the smallest prefix of contributors whose cumulative coverage reaches the threshold.
 - **Threshold** — if the top 25 contributors can't reach 95%, rvl refuses (`E_DIFFUSE`) instead of printing a misleading partial list.
@@ -709,22 +711,22 @@ A single JSON object on stdout. If the process fails before domain evaluation (e
   "threshold": 0.95,
   "tolerance": 1e-9,
   "counts": {
-    "rows_old": 4183,
-    "rows_new": 4183,
-    "rows_aligned": 4183,
-    "columns_old": 17,
-    "columns_new": 16,
-    "columns_common": 15,
-    "columns_old_only": 2,
-    "columns_new_only": 1,
-    "numeric_columns": 12,
-    "numeric_cells_checked": 50196,
-    "numeric_cells_changed": 3
+    "rows_old": 1003,
+    "rows_new": 1003,
+    "rows_aligned": 1003,
+    "columns_old": 3,
+    "columns_new": 3,
+    "columns_common": 3,
+    "columns_old_only": 0,
+    "columns_new_only": 0,
+    "numeric_columns": 3,
+    "numeric_cells_checked": 3009,
+    "numeric_cells_changed": 15
   },
   "metrics": {
-    "total_change": 1842100.3713,       // L1 distance (sum of abs deltas above tolerance)
-    "max_abs_delta": 1842100.0,         // largest abs(delta) observed (pre-zeroing)
-    "top_k_coverage": 0.952             // coverage of top MAX_CONTRIBUTORS
+    "total_change": 2000000.0,          // L1 distance (sum of abs deltas above tolerance)
+    "max_abs_delta": 1120000.0,         // largest abs(delta) observed (pre-zeroing)
+    "top_k_coverage": 1.0               // coverage of top MAX_CONTRIBUTORS
   },
   "limits": {
     "max_contributors": 25
@@ -733,14 +735,14 @@ A single JSON object on stdout. If the process fails before domain evaluation (e
     {
       "row_id": "u8:NVDA",
       "row_key": ["u8:NVDA"],           // present in key mode; composite values remain separate
-      "column": "u8:market_value",
+      "column": "u8:market_value_usd",
       // old/new/delta/contribution appear ONLY with --explicit (default output is redacted)
-      "old": 123.0,
-      "new": 1842223.0,
-      "delta": 1842100.0,
-      "contribution": 1842100.0,
-      "share": 0.9998,                  // contribution / total_change
-      "cumulative_share": 0.9998
+      "old": 4250000.0,
+      "new": 5370000.0,
+      "delta": 1120000.0,
+      "contribution": 1120000.0,
+      "share": 0.56,                    // contribution / total_change
+      "cumulative_share": 0.56
     }
     // ... more contributors, ranked by contribution desc
   ],
