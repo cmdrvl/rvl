@@ -322,3 +322,36 @@ fn profile_date_override_accepts_excel_serials() {
     assert_eq!(value["outcome"], "REAL_CHANGE");
     assert_eq!(value["non_numeric"]["date_shifts"][0]["delta_days"], 1);
 }
+
+#[test]
+fn frozen_profile_date_override_still_applies() {
+    let output = rvl_with_profile(
+        "id,as_of,status\nA,45292,open\n",
+        "id,as_of,status\nA,45293,open\n",
+        "schema_version: 1\nstatus: frozen\nprofile_id: e2e.dates.v0\nprofile_sha256: sha256:fixture\ninclude_columns: [id, as_of, status]\nkey: [id]\ncolumns:\n  as_of:\n    type: date\n  id:\n    type: text\n  status:\n    type: text\n",
+        &["--non-numeric", "--json"],
+    );
+    let value = json(&output);
+    assert_eq!(value["outcome"], "REAL_CHANGE");
+    assert_eq!(value["non_numeric"]["date_shifts"][0]["delta_days"], 1);
+    assert_eq!(value["non_numeric"]["text_churn"], serde_json::json!([]));
+}
+
+#[test]
+fn frozen_profile_categorical_override_still_applies_when_present() {
+    let output = rvl_with_profile(
+        "id,status\nA,open\n",
+        "id,status\nA,closed\n",
+        "schema_version: 1\nstatus: frozen\nprofile_id: e2e.categories.v0\nprofile_sha256: sha256:fixture\ninclude_columns: [id, status]\nkey: [id]\ncolumns:\n  id:\n    type: text\n  status:\n    type: categorical\n",
+        &["--non-numeric", "--json"],
+    );
+    let value = json(&output);
+    assert_eq!(value["outcome"], "REAL_CHANGE");
+    assert_eq!(value["non_numeric"]["text_churn"], serde_json::json!([]));
+    assert_eq!(
+        value["non_numeric"]["categorical_transitions"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+}

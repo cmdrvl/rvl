@@ -397,6 +397,67 @@ fn capsule_replay_script_is_self_contained_for_relative_profile_path() {
 }
 
 #[test]
+fn frozen_profile_non_numeric_capsule_replays_the_same_redacted_result() {
+    let dir = temp_dir();
+    let capsule_root = dir.join("capsules");
+    std::fs::create_dir_all(&capsule_root).unwrap();
+    write_file(
+        &dir,
+        "old.csv",
+        "loan_id,balance,status\nL1,100.0,watchlist\nL2,200.0,watchlist\n",
+    );
+    write_file(
+        &dir,
+        "new.csv",
+        "loan_id,balance,status\nL1,101.0,watchlist\nL2,200.0,delinquent\n",
+    );
+    write_file(
+        &dir,
+        "profile.yaml",
+        "schema_version: 1\nstatus: frozen\nprofile_id: e2e.loans.v0\nprofile_sha256: sha256:fixture\ninclude_columns: [loan_id, balance, status]\nkey: [loan_id]\ncolumns:\n  balance:\n    type: number\n  loan_id:\n    type: text\n  status:\n    type: text\n",
+    );
+
+    let first = run_rvl_binary(
+        &dir,
+        None,
+        &[
+            "old.csv",
+            "new.csv",
+            "--profile",
+            "profile.yaml",
+            "--non-numeric",
+            "--json",
+            "--capsule-dir",
+            "capsules",
+            "--no-witness",
+        ],
+    );
+    assert_eq!(first.status.code(), Some(1));
+    let first_json: Value = serde_json::from_slice(&first.stdout).expect("first output json");
+    let first_text = String::from_utf8_lossy(&first.stdout);
+    assert!(!first_text.contains("100.0"));
+    assert!(!first_text.contains("101.0"));
+    assert!(!first_text.contains("watchlist"));
+    assert!(!first_text.contains("delinquent"));
+    assert!(!first_text.contains("balance"));
+    assert!(!first_text.contains("status"));
+
+    let capsule_dir = only_capsule_dir(&capsule_root);
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(capsule_dir.join("manifest.json")).expect("manifest"),
+    )
+    .expect("manifest json");
+    assert!(manifest["args"]["non_numeric"].as_bool().unwrap_or(false));
+
+    let replay = run_replay_script(&capsule_dir, None);
+    assert_eq!(replay.status.code(), Some(1));
+    let replay_json: Value = serde_json::from_slice(&replay.stdout).expect("replay output json");
+    assert_eq!(replay_json["non_numeric"], first_json["non_numeric"]);
+
+    cleanup(&dir);
+}
+
+#[test]
 fn capsule_replay_script_is_self_contained_for_profile_id_runs() {
     let dir = temp_dir();
     let capsule_root = dir.join("capsules");

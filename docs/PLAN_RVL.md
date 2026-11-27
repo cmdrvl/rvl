@@ -510,7 +510,7 @@ Keep these coarse and stable:
 ### Domain-agnostic non-numeric mode
 
 `--non-numeric` is an opt-in comparison path for common non-numeric columns and does not require a profile or numeric overlap. It emits deterministic `non_numeric` JSON fields for date shifts (exact signed civil-day deltas when at least 95% of values parse), low-cardinality transitions with affected-row tokens, high-cardinality text churn, nullity flips, and row churn. Default output retains no column names, cell values, or keys: labels are `[REDACTED]` and value/row tokens are BLAKE3 digests; `--explicit` reveals encoded identifiers. The mode is domain-agnostic and does not reserve or recognize field names.
-An active profile may override a column's inferred class with `columns.<column>.type: date`, `categorical`, or `text`; capsule replay preserves these overrides.
+An active hand-written profile may override a column's inferred class with `columns.<column>.type: date`, `categorical`, or `text`; capsule replay preserves these overrides. Frozen profiles carrying both `profile_id` and `profile_sha256` use `text` as observed data-type metadata and infer date, low-cardinality categorical, or high-cardinality text behavior from the values. Frozen `date` and `categorical` entries remain explicit overrides when present. The released profile 0.13.0 schema can emit `date` but not `categorical`, so a profile produced by that release has no frozen setting for "never categorical". This is a deliberate frozen-profile behavior change.
 
 ---
 

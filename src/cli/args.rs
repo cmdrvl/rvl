@@ -98,11 +98,14 @@ pub struct Args {
     )]
     pub max_audit_changes: u64,
 
-    /// Use profile YAML at this path for key derivation and column scoping.
+    /// Use profile YAML at this path for key derivation and column scoping. Hand-written profiles
+    /// keep date, categorical, and text override meanings; frozen profiles with profile_id and
+    /// profile_sha256 infer classification for type:text while date and categorical remain explicit.
     #[arg(long, value_name = "PATH")]
     pub profile: Option<PathBuf>,
 
-    /// Resolve profile by ID from ~/.cmdrvl/config/profile/profiles/*.yaml (or from a direct path).
+    /// Resolve a profile by ID. Frozen type:text metadata is inferred; date and categorical remain
+    /// explicit overrides.
     #[arg(long = "profile-id", value_name = "ID")]
     pub profile_id: Option<String>,
 
