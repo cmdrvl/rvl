@@ -260,6 +260,57 @@ fn profile_type_override_controls_non_numeric_classification() {
 }
 
 #[test]
+fn frozen_number_profile_keeps_numeric_columns_out_of_non_numeric_report() {
+    let old =
+        "loan_id,balance,status\nL1,100.0,watchlist\nL2,200.0,watchlist\nL3,300.0,watchlist\n";
+    let new =
+        "loan_id,balance,status\nL1,101.0,watchlist\nL2,201.0,watchlist\nL3,300.0,delinquent\n";
+    let profile = "schema_version: 1\nstatus: frozen\nprofile_id: e2e.loans.v0\nprofile_sha256: sha256:fixture\nformat: csv\ninclude_columns: [loan_id, balance, status]\nkey: [loan_id]\ncolumns:\n  balance:\n    type: number\n  loan_id:\n    type: text\n  status:\n    type: text\n";
+
+    let without_profile = json(&rvl(
+        old,
+        new,
+        &["--key", "loan_id", "--non-numeric", "--json"],
+    ));
+    let with_profile = json(&rvl_with_profile(
+        old,
+        new,
+        profile,
+        &["--non-numeric", "--json"],
+    ));
+
+    for value in [&without_profile, &with_profile] {
+        assert_eq!(value["outcome"], "REAL_CHANGE");
+        assert_eq!(value["non_numeric"]["date_shifts"], serde_json::json!([]));
+        assert_eq!(value["non_numeric"]["text_churn"], serde_json::json!([]));
+        assert_eq!(
+            value["non_numeric"]["categorical_transitions"]
+                .as_array()
+                .map(Vec::len),
+            Some(1)
+        );
+        let serialized = serde_json::to_string(value).unwrap();
+        assert!(!serialized.contains("100.0"));
+        assert!(!serialized.contains("101.0"));
+        assert!(!serialized.contains("watchlist"));
+        assert!(!serialized.contains("delinquent"));
+    }
+
+    assert_eq!(
+        without_profile["non_numeric"]["categorical_transitions"][0]["affected_rows"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+    assert_eq!(
+        with_profile["non_numeric"]["categorical_transitions"][0]["affected_rows"]
+            .as_array()
+            .map(Vec::len),
+        Some(1)
+    );
+}
+
+#[test]
 fn profile_date_override_accepts_excel_serials() {
     let output = rvl_with_profile(
         "id,as_of\nA,45292\n",

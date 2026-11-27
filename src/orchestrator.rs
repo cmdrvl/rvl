@@ -95,6 +95,7 @@ struct ActiveProfile {
     key: Option<Vec<Vec<u8>>>,
     key_labels: Vec<String>,
     column_types: HashMap<Vec<u8>, String>,
+    frozen_artifact: bool,
     header_aliases: Option<HashMap<Vec<u8>, Vec<u8>>>,
     info: ProfileRunInfo,
 }
@@ -501,6 +502,9 @@ fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
     let key = (!profile.key_columns.is_empty()).then(|| profile.key_columns.clone());
     let key_labels = profile.key_labels.clone();
     let column_types = profile.column_types.clone();
+    // `profile freeze` emits both an immutable profile id and its source hash. Its generic
+    // `text` metadata describes observed data, not an explicit rvl classification override.
+    let frozen_artifact = profile.profile_id.is_some() && profile.profile_sha256.is_some();
     let header_aliases = profile
         .column_registry
         .as_ref()
@@ -518,6 +522,7 @@ fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
         key,
         key_labels,
         column_types,
+        frozen_artifact,
         header_aliases,
         info: ProfileRunInfo {
             used: true,
@@ -1245,6 +1250,7 @@ fn run_diff(
                 &alignment,
                 &field_columns,
                 &active_profile.column_types,
+                active_profile.frozen_artifact,
                 args.explicit,
                 context.redaction_key,
             );
@@ -2440,6 +2446,7 @@ fn build_non_numeric_report(
     alignment: &AlignmentContext,
     columns: &[crate::numeric::columns::CommonColumn],
     column_types: &HashMap<Vec<u8>, String>,
+    frozen_artifact: bool,
     explicit: bool,
     redaction_key: Option<&RedactionKey>,
 ) -> NonNumericReport {
@@ -2517,6 +2524,8 @@ fn build_non_numeric_report(
         }
 
         let override_type = column_types.get(&column.name).map(String::as_str);
+        let override_type =
+            override_type.filter(|column_type| !(frozen_artifact && *column_type == "text"));
         let is_date = match override_type {
             Some("date") => true,
             Some("categorical" | "text") => false,
@@ -3012,7 +3021,9 @@ fn non_numeric_columns_with_overrides(
         .iter()
         .filter(|column| {
             !numeric_names.contains(column.name.as_slice())
-                || column_types.contains_key(&column.name)
+                || column_types.get(&column.name).is_some_and(|column_type| {
+                    !matches!(column_type.as_str(), "integer" | "number")
+                })
         })
         .cloned()
         .collect()
