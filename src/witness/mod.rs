@@ -1,10 +1,16 @@
 pub mod hash;
+#[cfg(feature = "cli")]
 pub mod ledger;
+#[cfg(feature = "cli")]
 pub mod query;
+#[cfg(feature = "cli")]
 pub mod reader;
+#[cfg(feature = "cli")]
 pub mod record;
 
+#[cfg(feature = "cli")]
 use crate::cli::args::Args;
+#[cfg(feature = "cli")]
 use crate::orchestrator::PipelineResult;
 
 /// Build and append a witness record for a completed rvl run.
@@ -12,6 +18,7 @@ use crate::orchestrator::PipelineResult;
 /// Re-reads both input files to hash their contents. All errors are
 /// swallowed and logged to stderr — witness recording must never
 /// affect the tool's primary exit code or output.
+#[cfg(feature = "cli")]
 pub fn record_run(args: &Args, result: &PipelineResult) {
     let writer = match ledger::LedgerWriter::open() {
         Ok(w) => w,
@@ -28,6 +35,7 @@ pub fn record_run(args: &Args, result: &PipelineResult) {
 /// Core implementation: build and append a witness record using an
 /// explicit `LedgerWriter`. Separated from `record_run()` so that
 /// tests can provide a `with_path()` writer without env var manipulation.
+#[cfg(feature = "cli")]
 fn record_run_with_writer(
     args: &Args,
     result: &PipelineResult,
@@ -46,7 +54,7 @@ fn record_run_with_writer(
     Ok(())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
     use crate::cli::exit::Outcome;

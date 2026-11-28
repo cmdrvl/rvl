@@ -48,6 +48,18 @@ jobs:
       - name: Run tests
         run: cargo test
 
+  wasm:
+    name: WASM library
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Check fs-free library
+        run: cargo check --lib --target wasm32-unknown-unknown --no-default-features
+
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -75,7 +87,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [fmt, clippy, test, build]
+    needs: [fmt, clippy, test, wasm, build]
     if: always()
     steps:
       - name: Check all jobs succeeded
@@ -90,6 +102,10 @@ jobs:
           fi
           if [[ "${{ needs.test.result }}" != "success" ]]; then
             echo "Test job failed"
+            exit 1
+          fi
+          if [[ "${{ needs.wasm.result }}" != "success" ]]; then
+            echo "WASM job failed"
             exit 1
           fi
           if [[ "${{ needs.build.result }}" != "success" && "${{ needs.build.result }}" != "skipped" ]]; then

@@ -1,12 +1,6 @@
 //! Exit codes & stdout/stderr routing (bd-1b6).
 
-/// Domain outcome produced by the pipeline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Outcome {
-    NoRealChange,
-    RealChange,
-    Refusal,
-}
+pub use crate::api::Outcome;
 
 /// Output mode chosen by the CLI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

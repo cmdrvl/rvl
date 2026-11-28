@@ -2,9 +2,12 @@
 #![recursion_limit = "512"]
 
 pub mod alignment;
+pub mod api;
+#[cfg(feature = "cli")]
 pub mod cli;
 pub mod csv;
 pub mod diff;
+#[cfg(feature = "cli")]
 pub mod doctor;
 pub mod format;
 pub mod lock;
@@ -12,17 +15,23 @@ pub mod normalize;
 pub mod numeric;
 pub mod orchestrator;
 pub mod output;
+#[cfg(feature = "cli")]
 pub(crate) mod paths;
 pub mod profile;
 pub mod redaction;
 pub mod refusal;
 pub mod repro;
+#[cfg(feature = "tabular")]
 pub mod tabular_input;
 pub mod witness;
 
+pub use api::{CompareOptions, CompareResult, KeyMode, Outcome, compare_bytes};
+
+#[cfg(feature = "cli")]
 pub(crate) const OPERATOR_JSON: &str = include_str!("../operator.json");
 
 /// Run the rvl pipeline. Returns exit code (0, 1, or 2).
+#[cfg(feature = "cli")]
 pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     if let Some(display_mode) = detect_display_mode(std::env::args_os()) {
         return handle_display_mode(display_mode);
@@ -83,6 +92,7 @@ pub fn run() -> Result<u8, Box<dyn std::error::Error>> {
     run_comparison(args)
 }
 
+#[cfg(feature = "cli")]
 fn run_command(
     cmd: &cli::args::RvlCommand,
     json_output: bool,
@@ -97,6 +107,7 @@ fn run_command(
     }
 }
 
+#[cfg(feature = "cli")]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DisplayMode {
     Version,
@@ -104,6 +115,7 @@ enum DisplayMode {
     Schema,
 }
 
+#[cfg(feature = "cli")]
 fn detect_display_mode<I, T>(args: I) -> Option<DisplayMode>
 where
     I: IntoIterator<Item = T>,
@@ -125,6 +137,7 @@ where
     }
 }
 
+#[cfg(feature = "cli")]
 fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Error>> {
     match mode {
         DisplayMode::Version => {
@@ -371,6 +384,7 @@ fn handle_display_mode(mode: DisplayMode) -> Result<u8, Box<dyn std::error::Erro
 }
 
 /// Run the CSV comparison pipeline (the default mode).
+#[cfg(feature = "cli")]
 fn run_comparison(args: cli::args::Args) -> Result<u8, Box<dyn std::error::Error>> {
     use std::io::{self, Write};
 
@@ -414,6 +428,7 @@ fn run_comparison(args: cli::args::Args) -> Result<u8, Box<dyn std::error::Error
 /// Run witness subcommand (query/last/count).
 /// Exit codes: 0 = success (including an empty or absent ledger), 2 = error (including an
 /// unreadable ledger).
+#[cfg(feature = "cli")]
 fn run_witness(action: &cli::args::WitnessAction) -> Result<u8, Box<dyn std::error::Error>> {
     use std::io::{self, Write};
 
@@ -487,10 +502,12 @@ fn run_witness(action: &cli::args::WitnessAction) -> Result<u8, Box<dyn std::err
     }
 }
 
+#[cfg(feature = "cli")]
 fn witness_read_error(error: std::io::Error) -> String {
     format!("witness: failed to read ledger {error}")
 }
 
+#[cfg(feature = "cli")]
 fn build_filter(args: &cli::args::WitnessQueryArgs) -> witness::query::QueryFilter {
     witness::query::QueryFilter {
         tool: args.tool.clone(),

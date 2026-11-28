@@ -15,7 +15,7 @@ name = "rvl"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive"], optional = true }
 csv = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -24,7 +24,13 @@ blake3 = "1"
 # which would change how this crate parses floats.
 cmdrvl-core = { git = "https://github.com/cmdrvl/core", rev = "9cdf14a55f33fd8f426cbeb54fca478885239e7c", default-features = false }
 # JSONL / Parquet / XLSX inputs (CSV and TSV keep rvl's own reader). Pinned by commit.
-cmdrvl-tabular = { git = "https://github.com/cmdrvl/tabular", rev = "f461f34" }
+cmdrvl-tabular = { git = "https://github.com/cmdrvl/tabular", rev = "e83afb0ebe848a58c888cf619b105cbad19852e6", optional = true }
+
+[features]
+default = ["cli", "tabular", "zstd"]
+cli = ["dep:clap"]
+tabular = ["dep:cmdrvl-tabular"]
+zstd = ["cmdrvl-tabular?/zstd"]
 
 [dev-dependencies]
 arrow-csv = "57.2.0"

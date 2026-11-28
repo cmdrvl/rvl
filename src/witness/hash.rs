@@ -1,6 +1,12 @@
+#[cfg(feature = "cli")]
 use std::fs::File;
-use std::io::{self, BufReader, Read};
+#[cfg(feature = "cli")]
+use std::io;
+#[cfg(feature = "cli")]
+use std::io::{BufReader, Read};
+#[cfg(feature = "cli")]
 use std::path::Path;
+#[cfg(feature = "cli")]
 use std::sync::OnceLock;
 
 /// BLAKE3 hash of an in-memory byte slice. Returns hex-encoded hash string
@@ -11,6 +17,7 @@ pub fn hash_bytes(data: &[u8]) -> String {
 
 /// Streaming BLAKE3 hash of a file. Uses 16KB buffer reads to avoid loading
 /// the entire file into memory. Returns hex-encoded hash string.
+#[cfg(feature = "cli")]
 pub fn hash_file(path: &Path) -> io::Result<String> {
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
@@ -28,6 +35,7 @@ pub fn hash_file(path: &Path) -> io::Result<String> {
 
 /// BLAKE3 hash of the running binary. Computed once and cached for the
 /// lifetime of the process via `OnceLock`.
+#[cfg(feature = "cli")]
 pub fn hash_self() -> io::Result<String> {
     static SELF_HASH: OnceLock<String> = OnceLock::new();
     if let Some(cached) = SELF_HASH.get() {
@@ -38,7 +46,7 @@ pub fn hash_self() -> io::Result<String> {
     Ok(SELF_HASH.get_or_init(|| h).clone())
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "cli"))]
 mod tests {
     use super::*;
     use std::io::Write;

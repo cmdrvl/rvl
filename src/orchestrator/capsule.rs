@@ -4,7 +4,7 @@ use std::path::Path;
 use cmdrvl_core::hash::{Algorithm, hash_bytes as prefixed_hash};
 use serde::Serialize;
 
-use crate::cli::args::Args;
+use crate::api::{CompareOptions, KeyMode};
 use crate::cli::exit::Outcome;
 use crate::profile::render_profile_yaml_with_registry_override;
 use crate::witness::hash::hash_bytes;
@@ -106,7 +106,7 @@ struct CapsuleArgs {
     old: String,
     new: String,
     key: Option<String>,
-    key_mode: crate::cli::args::KeyMode,
+    key_mode: KeyMode,
     profile: Option<String>,
     profile_id: Option<String>,
     threshold: f64,
@@ -146,18 +146,22 @@ struct CapsuleArtifact {
     bytes: u64,
 }
 
-pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &CapsuleRunSummary) {
+pub(super) fn write_capsule(
+    args: &CompareOptions,
+    result: &PipelineResult,
+    summary: &CapsuleRunSummary,
+) {
     let Some(root) = args.capsule_out.as_ref() else {
         return;
     };
 
-    let old_path = args.old_path().to_string_lossy().to_string();
-    let new_path = args.new_path().to_string_lossy().to_string();
-    let old_bytes = match fs::read(args.old_path()) {
+    let old_path = args.old_name.clone();
+    let new_path = args.new_name.clone();
+    let old_bytes = match fs::read(&args.old_path) {
         Ok(bytes) => bytes,
         Err(_) => return,
     };
-    let new_bytes = match fs::read(args.new_path()) {
+    let new_bytes = match fs::read(&args.new_path) {
         Ok(bytes) => bytes,
         Err(_) => return,
     };
@@ -348,19 +352,19 @@ pub(super) fn write_capsule(args: &Args, result: &PipelineResult, summary: &Caps
     let _ = fs::write(capsule_dir.join(Path::new("manifest.json")), manifest_json);
 }
 
-fn build_replay_command(args: &Args, use_local_profile: bool) -> String {
+fn build_replay_command(args: &CompareOptions, use_local_profile: bool) -> String {
     build_comparison_command(args, "old.csv", "new.csv", use_local_profile)
 }
 
 pub(super) fn build_comparison_command(
-    args: &Args,
+    args: &CompareOptions,
     old: &str,
     new: &str,
     use_local_profile: bool,
 ) -> String {
     let mut parts = vec!["rvl".to_string(), shell_escape(old), shell_escape(new)];
 
-    if args.key_mode == crate::cli::args::KeyMode::Overlap {
+    if args.key_mode == KeyMode::Overlap {
         parts.push("--key-mode overlap".to_string());
     }
 
@@ -446,7 +450,7 @@ mod tests {
 
     #[test]
     fn replay_command_includes_explicit_flags() {
-        let args = Args::new(
+        let args = crate::cli::args::Args::new(
             PathBuf::from("old.csv"),
             PathBuf::from("new.csv"),
             Some("portfolio id".to_string()),
@@ -457,6 +461,7 @@ mod tests {
         );
         let mut args = args;
         args.non_numeric = true;
+        let args = CompareOptions::from_cli(&args);
         let replay = build_replay_command(&args, false);
         assert!(replay.contains("rvl old.csv new.csv"));
         assert!(replay.contains("--key 'portfolio id'"));
@@ -469,7 +474,7 @@ mod tests {
 
     #[test]
     fn replay_command_prefers_local_profile_artifact_when_available() {
-        let mut args = Args::new(
+        let mut args = crate::cli::args::Args::new(
             PathBuf::from("old.csv"),
             PathBuf::from("new.csv"),
             None,
@@ -481,6 +486,7 @@ mod tests {
         args.profile = Some(PathBuf::from("profiles/demo.yaml"));
         args.profile_id = Some("csv.demo.v0".to_string());
 
+        let args = CompareOptions::from_cli(&args);
         let replay = build_replay_command(&args, true);
         assert!(replay.contains("--profile profile.yaml"));
         assert!(!replay.contains("profiles/demo.yaml"));

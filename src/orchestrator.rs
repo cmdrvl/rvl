@@ -1,9 +1,11 @@
 //! Pipeline orchestration: parse → align → diff → output (bd-22s)
 
+#[cfg(feature = "cli")]
 mod capsule;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::error::Error;
+#[cfg(feature = "cli")]
 use std::fs;
 use std::io::Cursor;
 use std::path::Path;
@@ -18,8 +20,9 @@ use crate::alignment::key_join::{
 };
 use crate::alignment::key_parse::parse_key_identifier;
 use crate::alignment::shuffle::detect_shuffle;
-use crate::cli::args::{Args, KeyMode};
-use crate::cli::exit::Outcome;
+use crate::api::{CompareOptions, KeyMode, Outcome};
+#[cfg(feature = "cli")]
+use crate::cli::args::Args;
 use crate::csv::blank::is_blank_record;
 use crate::csv::dialect::{DialectError, auto_detect};
 use crate::csv::input::{
@@ -35,7 +38,9 @@ use crate::diff::tolerance::ToleranceTracker;
 use crate::format::ident_human::render_identifier_human;
 use crate::format::ident_json::encode_identifier_json;
 use crate::format::key::{encode_key_components_json, encode_key_label_json, render_key_human};
-use crate::lock::{LockFailure, LockReceipt, LockSet, LockfileError, merge_receipts};
+use crate::lock::LockReceipt;
+#[cfg(feature = "cli")]
+use crate::lock::{LockFailure, LockSet, LockfileError, merge_receipts};
 use crate::normalize::headers::normalize_headers_with_aliases;
 use crate::numeric::columns::{
     ColumnIntersection, ColumnTypingError, Side as ColumnSide, detect_numeric_columns_with,
@@ -60,16 +65,16 @@ use crate::output::json::{
     JsonOutput, Metrics, NonNumericReport, NullityFlip, OutputMode as JsonOutputMode,
     Refusal as JsonRefusal, RowChurn, TextChurn,
 };
-use crate::profile::{
-    ColumnRegistryRunInfo, ResolveError, ResolvedProfile, load_profile_from_path,
-    resolve_profile_id,
-};
+use crate::profile::{ColumnRegistryRunInfo, ResolvedProfile};
+#[cfg(feature = "cli")]
+use crate::profile::{ResolveError, load_profile_from_path, resolve_profile_id};
 use crate::redaction::{Marker, Namespace, RedactionKey, frame_components};
 use crate::refusal::codes::RefusalCode;
 use crate::refusal::details::{
     DelimiterHint, DialectSuggestion, EncodingIssue, FileSide, HeadersIssue, NamedDelimiter,
     RefusalDetail, RefusalKind, RerunPaths,
 };
+#[cfg(feature = "cli")]
 use capsule::{
     CapsuleColumnChange, CapsuleContributor, CapsuleContributorSummary, CapsuleRunSummary,
 };
@@ -128,7 +133,7 @@ struct RefusalContext<'a> {
 
 #[derive(Clone, Copy)]
 struct RunContext<'a> {
-    args: &'a Args,
+    args: &'a CompareOptions,
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
     rerun_paths: RerunPaths<'a>,
@@ -168,15 +173,58 @@ impl KeyRow for OwnedRecord {
     }
 }
 
+#[cfg(feature = "cli")]
 pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
-    let old_path = args.old_path().to_string_lossy().to_string();
-    let new_path = args.new_path().to_string_lossy().to_string();
+    let options = CompareOptions::from_cli(args);
+    run_with_sources(
+        &options,
+        InputSource::Path(&options.old_path),
+        InputSource::Path(&options.new_path),
+    )
+}
+
+/// Run the comparison engine over two already-loaded byte slices.
+pub fn run_bytes(
+    old: &[u8],
+    new: &[u8],
+    options: &CompareOptions,
+) -> Result<PipelineResult, Box<dyn Error>> {
+    run_with_sources(
+        options,
+        InputSource::Bytes {
+            bytes: old,
+            name: &options.old_name,
+        },
+        InputSource::Bytes {
+            bytes: new,
+            name: &options.new_name,
+        },
+    )
+}
+
+#[derive(Clone, Copy)]
+enum InputSource<'a> {
+    #[cfg(feature = "cli")]
+    Path(&'a Path),
+    Bytes {
+        bytes: &'a [u8],
+        name: &'a str,
+    },
+}
+
+fn run_with_sources(
+    options: &CompareOptions,
+    old_source: InputSource<'_>,
+    new_source: InputSource<'_>,
+) -> Result<PipelineResult, Box<dyn Error>> {
+    let old_path = options.old_name.clone();
+    let new_path = options.new_name.clone();
     let rerun_paths = RerunPaths {
         old: &old_path,
         new: &new_path,
     };
 
-    if args.audit_fields && !args.exhaustive && !args.non_numeric {
+    if options.audit_fields && !options.exhaustive && !options.non_numeric {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::AuditFieldsRequiresExhaustive,
             RefusalKind::AuditFieldsRequiresExhaustive,
@@ -184,7 +232,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         );
         return Ok(render_refusal(
             refusal,
-            args,
+            options,
             None,
             None,
             None,
@@ -195,37 +243,35 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     // A set-but-unusable key is refused before any input is read, even with --explicit, and never
     // falls back to ordinal refs. `--non-numeric` output and, without `--explicit`, numeric
     // contributors (bd-u7n) carry redaction markers.
-    let redaction_key = if args.non_numeric || !args.explicit {
-        match RedactionKey::from_env() {
-            Ok(key) => key,
-            Err(error) => {
-                let refusal = RefusalPayload::with_default_next(
-                    RefusalCode::RedactionKeyInvalid,
-                    RefusalKind::RedactionKeyInvalid {
-                        reason: error.reason(),
-                    },
-                    rerun_paths,
-                );
-                return Ok(render_refusal(
-                    refusal,
-                    args,
-                    None,
-                    None,
-                    None,
-                    &ProfileRunInfo::default(),
-                ));
-            }
+    let redaction_key = if options.non_numeric || !options.explicit {
+        if let Some(reason) = options.redaction_key_error {
+            let refusal = RefusalPayload::with_default_next(
+                RefusalCode::RedactionKeyInvalid,
+                RefusalKind::RedactionKeyInvalid { reason },
+                rerun_paths,
+            );
+            return Ok(render_refusal(
+                refusal,
+                options,
+                None,
+                None,
+                None,
+                &ProfileRunInfo::default(),
+            ));
+        } else {
+            options.redaction_key.clone()
         }
     } else {
         None
     };
 
-    let mut active_profile = match resolve_active_profile(args, rerun_paths) {
+    #[cfg(feature = "cli")]
+    let mut active_profile = match resolve_active_profile(options, rerun_paths) {
         Ok(profile) => profile,
         Err(refusal) => {
             return Ok(render_refusal(
                 *refusal,
-                args,
+                options,
                 None,
                 None,
                 None,
@@ -233,8 +279,10 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
             ));
         }
     };
+    #[cfg(not(feature = "cli"))]
+    let active_profile = ActiveProfile::default();
 
-    if args.audit_fields && !args.non_numeric && !active_profile.info.used {
+    if options.audit_fields && !options.non_numeric && !active_profile.info.used {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::AuditFieldsRequiresProfile,
             RefusalKind::AuditFieldsRequiresProfile,
@@ -242,7 +290,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         );
         return Ok(render_refusal(
             refusal,
-            args,
+            options,
             None,
             None,
             None,
@@ -250,13 +298,14 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         ));
     }
 
-    if !args.lock.is_empty() {
-        match verify_locks(args, rerun_paths) {
+    #[cfg(feature = "cli")]
+    if !options.lock.is_empty() {
+        match verify_locks(options, rerun_paths) {
             Ok(receipts) => active_profile.info.lock = receipts,
             Err(refusal) => {
                 return Ok(render_refusal(
                     *refusal,
-                    args,
+                    options,
                     None,
                     None,
                     None,
@@ -266,7 +315,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         }
     }
 
-    let cli_key = match args.key.as_deref() {
+    let cli_key = match options.key.as_deref() {
         Some(key) => Some(vec![parse_key_identifier(key)?]),
         None => None,
     };
@@ -274,14 +323,14 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::KeyConflict,
             RefusalKind::KeyConflict {
-                key_flag: args.key.clone().unwrap_or_default(),
+                key_flag: options.key.clone().unwrap_or_default(),
                 profile_key: active_profile.key_labels.clone(),
             },
             rerun_paths,
         );
         return Ok(render_refusal(
             refusal,
-            args,
+            options,
             None,
             None,
             None,
@@ -291,10 +340,10 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     let key_columns = cli_key.or_else(|| active_profile.key.clone());
 
     let old = match parse_csv(
-        args.old_path(),
+        old_source,
         FileSide::Old,
-        args.sheet_for(FileSide::Old),
-        args.delimiter,
+        options.sheet_for(FileSide::Old),
+        options.delimiter,
         rerun_paths,
         active_profile.header_aliases.as_ref(),
     ) {
@@ -302,7 +351,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         Err(refusal) => {
             return Ok(render_refusal(
                 *refusal,
-                args,
+                options,
                 key_columns.as_deref(),
                 None,
                 None,
@@ -312,10 +361,10 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     };
 
     let new = match parse_csv(
-        args.new_path(),
+        new_source,
         FileSide::New,
-        args.sheet_for(FileSide::New),
-        args.delimiter,
+        options.sheet_for(FileSide::New),
+        options.delimiter,
         rerun_paths,
         active_profile.header_aliases.as_ref(),
     ) {
@@ -323,7 +372,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         Err(refusal) => {
             return Ok(render_refusal(
                 *refusal,
-                args,
+                options,
                 key_columns.as_deref(),
                 Some(dialect_receipt(&old)),
                 None,
@@ -335,7 +384,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
     let dialect_old = Some(dialect_receipt(&old));
     let dialect_new = Some(dialect_receipt(&new));
     let context = RunContext {
-        args,
+        args: options,
         dialect_old,
         dialect_new,
         rerun_paths,
@@ -345,7 +394,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
 
     if let Some(keys) = key_columns.as_deref() {
         run_key_mode(keys, old, new, context)
-    } else if args.key_mode == KeyMode::Overlap {
+    } else if options.key_mode == KeyMode::Overlap {
         let refusal = RefusalPayload::with_default_next(
             RefusalCode::NeedKey,
             RefusalKind::NeedKey {
@@ -355,7 +404,7 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
         );
         Ok(render_refusal(
             refusal,
-            args,
+            options,
             None,
             dialect_old,
             dialect_new,
@@ -367,8 +416,9 @@ pub fn run(args: &Args) -> Result<PipelineResult, Box<dyn Error>> {
 }
 
 /// Verify both inputs against the `--lock` lockfiles, before any CSV parsing.
+#[cfg(feature = "cli")]
 fn verify_locks(
-    args: &Args,
+    args: &CompareOptions,
     rerun_paths: RerunPaths<'_>,
 ) -> Result<Vec<LockReceipt>, Box<RefusalPayload>> {
     let refuse = |code: RefusalCode, kind: RefusalKind| {
@@ -386,8 +436,8 @@ fn verify_locks(
 
     let mut receipts = Vec::new();
     for (side, path) in [
-        (FileSide::Old, args.old_path()),
-        (FileSide::New, args.new_path()),
+        (FileSide::Old, &args.old_path),
+        (FileSide::New, &args.new_path),
     ] {
         let path_text = path.to_string_lossy().into_owned();
         match set.verify(path) {
@@ -434,8 +484,9 @@ fn verify_locks(
     Ok(receipts)
 }
 
+#[cfg(feature = "cli")]
 fn resolve_active_profile(
-    args: &Args,
+    args: &CompareOptions,
     rerun_paths: RerunPaths<'_>,
 ) -> Result<ActiveProfile, Box<RefusalPayload>> {
     if let (Some(profile_path), Some(profile_id)) =
@@ -472,6 +523,7 @@ fn resolve_active_profile(
     Ok(ActiveProfile::default())
 }
 
+#[cfg(feature = "cli")]
 fn map_profile_resolve_error(
     err: ResolveError,
     fallback_selector: String,
@@ -510,6 +562,7 @@ fn map_profile_resolve_error(
     }
 }
 
+#[cfg(feature = "cli")]
 fn active_profile_from_resolved(profile: ResolvedProfile) -> ActiveProfile {
     let include_scope = Some(profile.include_set());
     let key = (!profile.key_columns.is_empty()).then(|| profile.key_columns.clone());
@@ -1398,12 +1451,17 @@ fn run_diff(
 /// go through the shared tabular reader and arrive here as canonical CSV bytes (see
 /// `tabular_input`), so everything after this point is the unchanged CSV pipeline.
 fn read_input_bytes(
-    path: &Path,
+    source: InputSource<'_>,
     file_side: FileSide,
     sheet: Option<&str>,
     forced_delimiter: Option<u8>,
     rerun_paths: RerunPaths<'_>,
 ) -> Result<Vec<u8>, Box<RefusalPayload>> {
+    #[cfg(not(feature = "tabular"))]
+    let _ = (sheet, forced_delimiter);
+    #[cfg(not(any(feature = "cli", feature = "tabular")))]
+    let _ = (file_side, rerun_paths);
+    #[cfg(any(feature = "cli", feature = "tabular"))]
     let io_refusal = |error: String| {
         Box::new(RefusalPayload::with_default_next(
             RefusalCode::Io,
@@ -1414,37 +1472,85 @@ fn read_input_bytes(
             rerun_paths,
         ))
     };
-    if crate::tabular_input::is_tabular_path(path).is_none() {
-        return fs::read(path).map_err(|err| io_refusal(err.to_string()));
-    }
-    crate::tabular_input::read_as_csv(path, sheet, forced_delimiter.unwrap_or(b',')).map_err(
-        |refusal| {
-            if refusal.is_io {
-                return io_refusal(refusal.detail);
+    match source {
+        InputSource::Bytes { bytes, name } => {
+            #[cfg(not(feature = "tabular"))]
+            let _ = name;
+            #[cfg(feature = "tabular")]
+            if crate::tabular_input::is_tabular_name(name) {
+                return crate::tabular_input::render_bytes_as_csv(
+                    bytes,
+                    name,
+                    sheet,
+                    forced_delimiter.unwrap_or(b','),
+                )
+                .map_err(|refusal| {
+                    if refusal.is_io {
+                        return io_refusal(refusal.detail);
+                    }
+                    Box::new(RefusalPayload::with_default_next(
+                        RefusalCode::InputFormat,
+                        RefusalKind::InputFormat {
+                            file: file_side,
+                            tabular_code: refusal.code,
+                            detail: refusal.detail,
+                            context: refusal.context,
+                        },
+                        rerun_paths,
+                    ))
+                });
             }
-            Box::new(RefusalPayload::with_default_next(
-                RefusalCode::InputFormat,
-                RefusalKind::InputFormat {
-                    file: file_side,
-                    tabular_code: refusal.code,
-                    detail: refusal.detail,
-                    context: refusal.context,
-                },
-                rerun_paths,
-            ))
-        },
-    )
+            Ok(bytes.to_vec())
+        }
+        #[cfg(feature = "cli")]
+        InputSource::Path(path) => {
+            #[cfg(feature = "cli")]
+            {
+                #[cfg(feature = "tabular")]
+                if crate::tabular_input::is_tabular_path(path).is_some() {
+                    return crate::tabular_input::read_as_csv(
+                        path,
+                        sheet,
+                        forced_delimiter.unwrap_or(b','),
+                    )
+                    .map_err(|refusal| {
+                        if refusal.is_io {
+                            return io_refusal(refusal.detail);
+                        }
+                        Box::new(RefusalPayload::with_default_next(
+                            RefusalCode::InputFormat,
+                            RefusalKind::InputFormat {
+                                file: file_side,
+                                tabular_code: refusal.code,
+                                detail: refusal.detail,
+                                context: refusal.context,
+                            },
+                            rerun_paths,
+                        ))
+                    });
+                }
+                fs::read(path).map_err(|err| io_refusal(err.to_string()))
+            }
+            #[cfg(not(feature = "cli"))]
+            {
+                let _ = path;
+                Err(io_refusal(
+                    "filesystem inputs require the `cli` feature".to_owned(),
+                ))
+            }
+        }
+    }
 }
 
 fn parse_csv(
-    path: &Path,
+    source: InputSource<'_>,
     file_side: FileSide,
     sheet: Option<&str>,
     forced_delimiter: Option<u8>,
     rerun_paths: RerunPaths<'_>,
     header_aliases: Option<&HashMap<Vec<u8>, Vec<u8>>>,
 ) -> Result<ParsedCsv, Box<RefusalPayload>> {
-    let bytes = read_input_bytes(path, file_side, sheet, forced_delimiter, rerun_paths)?;
+    let bytes = read_input_bytes(source, file_side, sheet, forced_delimiter, rerun_paths)?;
 
     let guarded = guard_input_bytes(&bytes).map_err(|issue| {
         Box::new(RefusalPayload::with_default_next(
@@ -1808,7 +1914,7 @@ fn map_column_error(err: ColumnTypingError<RowRef>, paths: RerunPaths<'_>) -> Re
 
 fn render_refusal(
     refusal: RefusalPayload,
-    args: &Args,
+    args: &CompareOptions,
     key: Option<&[Vec<u8>]>,
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
@@ -1834,46 +1940,41 @@ fn render_refusal(
 
 fn render_refusal_with_context(
     mut refusal: RefusalPayload,
-    args: &Args,
+    args: &CompareOptions,
     context: RefusalContext<'_>,
 ) -> PipelineResult {
     // Zero retention: without --explicit no refusal prints cell values, key values or data column
     // names. An unusable RVL_REDACTION_KEY becomes its own data-free refusal, never a fallback.
     if !args.explicit && refusal.detail.carries_data() {
-        match RedactionKey::from_env() {
-            Ok(key) => {
-                let mut marker = Marker::new(key.as_ref());
-                refusal.detail = refusal.detail.redact(&mut marker);
-            }
-            Err(error) => {
-                let old_path = args.old_path().to_string_lossy().to_string();
-                let new_path = args.new_path().to_string_lossy().to_string();
+        match (&args.redaction_key_error, &args.redaction_key) {
+            (Some(reason), _) => {
+                let old_path = args.old_name.clone();
+                let new_path = args.new_name.clone();
                 refusal = RefusalPayload::with_default_next(
                     RefusalCode::RedactionKeyInvalid,
-                    RefusalKind::RedactionKeyInvalid {
-                        reason: error.reason(),
-                    },
+                    RefusalKind::RedactionKeyInvalid { reason },
                     RerunPaths {
                         old: &old_path,
                         new: &new_path,
                     },
                 );
             }
+            (None, key) => {
+                let mut marker = Marker::new(key.as_ref());
+                refusal.detail = refusal.detail.redact(&mut marker);
+            }
         }
     }
 
-    let old_display = display_name(args.old_path());
-    let new_display = display_name(args.new_path());
+    let old_display = display_name(Path::new(&args.old_name));
+    let new_display = display_name(Path::new(&args.new_name));
 
+    #[cfg(feature = "cli")]
     let next_command = if refusal.code == RefusalCode::KeyMismatch {
         let mut overlap_args = args.clone();
         overlap_args.key_mode = KeyMode::Overlap;
-        let command = capsule::build_comparison_command(
-            &overlap_args,
-            &args.old_path().to_string_lossy(),
-            &args.new_path().to_string_lossy(),
-            false,
-        );
+        let command =
+            capsule::build_comparison_command(&overlap_args, &args.old_name, &args.new_name, false);
         refusal.detail.next = command.clone();
         Some(command)
     } else if refusal.code == RefusalCode::InputDrift {
@@ -1882,6 +1983,8 @@ fn render_refusal_with_context(
     } else {
         None
     };
+    #[cfg(not(feature = "cli"))]
+    let next_command = None;
 
     let result = if args.json {
         let ctx = json_context(
@@ -1942,6 +2045,7 @@ fn render_refusal_with_context(
         }
     };
 
+    #[cfg(feature = "cli")]
     capsule::write_capsule(
         args,
         &result,
@@ -1951,7 +2055,7 @@ fn render_refusal_with_context(
 }
 
 fn render_no_real_change(
-    args: &Args,
+    args: &CompareOptions,
     ctx: JsonContext,
     alignment_label: Option<&str>,
 ) -> PipelineResult {
@@ -1967,8 +2071,8 @@ fn render_no_real_change(
             column_changes: Vec::new(),
         }
     } else {
-        let old_display = display_name(args.old_path());
-        let new_display = display_name(args.new_path());
+        let old_display = display_name(Path::new(&args.old_name));
+        let new_display = display_name(Path::new(&args.new_name));
         let mut lines = vec![
             "RVL".to_string(),
             String::new(),
@@ -1996,12 +2100,13 @@ fn render_no_real_change(
         }
     };
 
+    #[cfg(feature = "cli")]
     capsule::write_capsule(args, &result, &CapsuleRunSummary::no_real_change());
     result
 }
 
 fn render_real_change(
-    args: &Args,
+    args: &CompareOptions,
     ctx: JsonContext,
     render_context: RealChangeRenderContext<'_>,
 ) -> PipelineResult {
@@ -2019,6 +2124,7 @@ fn render_real_change(
         ctx.mode,
         Some(JsonOutputMode::ExhaustiveNumeric | JsonOutputMode::NonNumeric)
     );
+    #[cfg(feature = "cli")]
     let contributor_summary = build_capsule_contributor_summary(details, total_change, coverage);
 
     let result = if args.json {
@@ -2039,8 +2145,8 @@ fn render_real_change(
             column_changes,
         }
     } else {
-        let old_display = display_name(args.old_path());
-        let new_display = display_name(args.new_path());
+        let old_display = display_name(Path::new(&args.old_name));
+        let new_display = display_name(Path::new(&args.new_name));
         let mut lines = vec![
             "RVL".to_string(),
             String::new(),
@@ -2088,6 +2194,7 @@ fn render_real_change(
         }
     };
 
+    #[cfg(feature = "cli")]
     capsule::write_capsule(
         args,
         &result,
@@ -2100,7 +2207,7 @@ fn render_real_change(
 }
 
 fn render_human_header_lines(
-    args: &Args,
+    args: &CompareOptions,
     ctx: &JsonContext,
     alignment_label: Option<&str>,
     old_name: &str,
@@ -2194,7 +2301,7 @@ fn render_human_header_lines(
 }
 
 fn json_context(
-    args: &Args,
+    args: &CompareOptions,
     alignment: JsonAlignment,
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
@@ -2218,7 +2325,7 @@ fn json_context(
 
 #[allow(clippy::too_many_arguments)]
 fn json_context_with_field_changes(
-    args: &Args,
+    args: &CompareOptions,
     alignment: JsonAlignment,
     dialect_old: Option<DialectReceipt>,
     dialect_new: Option<DialectReceipt>,
@@ -2242,8 +2349,8 @@ fn json_context_with_field_changes(
     };
     JsonContext {
         files: Files {
-            old: args.old_path().to_string_lossy().to_string(),
-            new: args.new_path().to_string_lossy().to_string(),
+            old: args.old_name.clone(),
+            new: args.new_name.clone(),
         },
         alignment,
         dialect: Dialect {
@@ -2422,6 +2529,7 @@ fn build_json_column_changes(
         .collect()
 }
 
+#[cfg(feature = "cli")]
 fn build_capsule_column_changes(
     stats: &BTreeMap<Vec<u8>, ColumnChangeStats>,
     explicit: bool,
@@ -2937,6 +3045,7 @@ fn is_leap_year(year: i64) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
+#[cfg(feature = "cli")]
 fn build_capsule_contributor_summary(
     details: &[ContributionDetail],
     total_change: f64,

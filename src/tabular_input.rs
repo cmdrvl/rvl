@@ -13,7 +13,7 @@
 
 use std::path::Path;
 
-use cmdrvl_tabular::{Format, OpenOptions, SheetSel, open};
+use cmdrvl_tabular::{Format, OpenOptions, SheetSel, open, open_bytes};
 
 /// A tabular refusal reduced to its typed, value-free parts.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +38,26 @@ pub fn is_tabular_path(path: &Path) -> Option<&'static str> {
     }
 }
 
+pub fn is_tabular_name(name: &str) -> bool {
+    let extension = name
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase());
+    matches!(
+        extension.as_deref(),
+        Some("jsonl" | "ndjson" | "parquet" | "xlsx" | "xlsm" | "xls")
+    )
+}
+
+fn format_for_name(name: &str) -> Option<Format> {
+    let extension = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    match extension.as_str() {
+        "jsonl" | "ndjson" => Some(Format::Jsonl),
+        "parquet" => Some(Format::Parquet),
+        "xlsx" | "xlsm" | "xls" => Some(Format::Xlsx),
+        _ => None,
+    }
+}
+
 /// Read `path` through tabular and render it as CSV bytes with `delimiter`.
 pub fn read_as_csv(
     path: &Path,
@@ -48,7 +68,30 @@ pub fn read_as_csv(
         sheet: sheet.map(SheetSel::parse),
         ..OpenOptions::default()
     };
-    let mut table = open(path, &opts).map_err(refusal_parts)?;
+    let table = open(path, &opts).map_err(refusal_parts)?;
+    render_table(table, delimiter)
+}
+
+/// Read a native tabular container from memory and render it as canonical CSV bytes.
+pub fn render_bytes_as_csv(
+    bytes: &[u8],
+    name: &str,
+    sheet: Option<&str>,
+    delimiter: u8,
+) -> Result<Vec<u8>, Box<TabularRefusal>> {
+    let opts = OpenOptions {
+        format: format_for_name(name),
+        sheet: sheet.map(SheetSel::parse),
+        ..OpenOptions::default()
+    };
+    let table = open_bytes(bytes.to_vec(), Some(name), &opts).map_err(refusal_parts)?;
+    render_table(table, delimiter)
+}
+
+fn render_table(
+    mut table: cmdrvl_tabular::Table,
+    delimiter: u8,
+) -> Result<Vec<u8>, Box<TabularRefusal>> {
     debug_assert!(matches!(
         table.format(),
         Format::Jsonl | Format::Parquet | Format::Xlsx

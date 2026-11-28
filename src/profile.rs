@@ -163,6 +163,7 @@ pub fn load_profile_from_path(path: &Path) -> Result<ResolvedProfile, ResolveErr
     })
 }
 
+#[cfg(feature = "cli")]
 pub fn resolve_profile_id(selector: &str) -> Result<ResolvedProfile, ResolveError> {
     let selector_path = Path::new(selector);
     if selector_path.exists() {
@@ -416,11 +417,13 @@ fn encode_profile_identifier(bytes: &[u8]) -> String {
     crate::format::ident_json::encode_identifier_json(bytes)
 }
 
+#[cfg(feature = "cli")]
 fn is_frozen_with_id(profile: &ResolvedProfile, selector: &str) -> bool {
     matches!(profile.profile_id.as_deref(), Some(id) if id == selector)
         && profile.profile_sha256.is_some()
 }
 
+#[cfg(feature = "cli")]
 fn resolve_profile_id_in_directory(
     selector: &str,
     directory: &Path,
