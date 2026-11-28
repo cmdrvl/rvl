@@ -22,7 +22,7 @@ serde_json = "1"
 blake3 = "1"
 # Pinned by exact rev. default-features = false: core's default turns on serde_json/float_roundtrip,
 # which would change how this crate parses floats.
-cmdrvl-core = { git = "https://github.com/cmdrvl/core", rev = "a3dad0b1af2eeb8036625b25f3d9ff94c3a1ef0e", default-features = false }
+cmdrvl-core = { git = "https://github.com/cmdrvl/core", rev = "9cdf14a55f33fd8f426cbeb54fca478885239e7c", default-features = false }
 # JSONL / Parquet / XLSX inputs (CSV and TSV keep rvl's own reader). Pinned by commit.
 cmdrvl-tabular = { git = "https://github.com/cmdrvl/tabular", rev = "f461f34" }
 

@@ -1,14 +1,14 @@
-//! `--lock` input verification against `lock.v0` lockfiles (parity with `shape`'s `src/lock.rs`).
+//! `--lock` input verification against `lock.v0` lockfiles.
 //!
-//! Matching mirrors `shape`/`verify`/`benchmark`: an exact path match wins, otherwise a unique
-//! basename match is used (real `lock` output stores member paths relative to the vacuum root, so
-//! basename matching is the normal case). A matched member whose `bytes_hash`
-//! (`sha256:<hex>` or `blake3:<hex>` of the raw file bytes) differs is drift; no match (or an
-//! ambiguous basename) is "not locked". Unreadable or malformed lockfiles are I/O failures.
+//! Matching uses cmdrvl-core's pure R1 names-and-digests rule: drop leading `./`, prefer an exact
+//! normalized path, otherwise require one normalized basename path, validate every candidate
+//! digest, and require every candidate digest to match. Loading and hashing remain in rvl.
+//! Unreadable or malformed lockfiles are I/O failures.
 
 use std::path::{Path, PathBuf};
 
 use cmdrvl_core::hash::{Algorithm, hash_bytes};
+use cmdrvl_core::lock_matching::{Member, SelectError, Verdict, select};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -70,13 +70,6 @@ struct LoadedLock {
     file: Lockfile,
 }
 
-#[derive(Clone)]
-struct Candidate<'a> {
-    lock: &'a LoadedLock,
-    member_path: &'a str,
-    bytes_hash: &'a str,
-}
-
 /// Lockfiles parsed once, then used to verify each input.
 pub struct LockSet {
     locks: Vec<LoadedLock>,
@@ -114,83 +107,132 @@ impl LockSet {
         let bytes = std::fs::read(input).map_err(|err| LockFailure::InputUnreadable {
             error: err.to_string(),
         })?;
-        let exact_path = input.to_string_lossy().replace('\\', "/");
-        let basename = input.file_name().and_then(|name| name.to_str());
 
-        let mut exact: Vec<Candidate<'_>> = Vec::new();
-        let mut by_basename: Vec<Candidate<'_>> = Vec::new();
-        for lock in &self.locks {
-            for member in &lock.file.members {
-                let candidate = Candidate {
-                    lock,
-                    member_path: &member.path,
-                    bytes_hash: &member.bytes_hash,
-                };
-                if member.path == exact_path {
-                    exact.push(candidate);
-                } else if basename.is_some()
-                    && Path::new(&member.path)
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        == basename
-                    && !by_basename
-                        .iter()
-                        .any(|seen| seen.lock.path == lock.path && seen.member_path == member.path)
-                {
-                    // The same lockfile passed twice must not make its own member ambiguous.
-                    by_basename.push(candidate);
-                }
+        let input_name = typed_name_for_matching(&input.to_string_lossy());
+        let candidates: Vec<(&LoadedLock, usize, &str, &str)> = self
+            .locks
+            .iter()
+            .enumerate()
+            .flat_map(|(lock, loaded)| {
+                loaded.file.members.iter().map(move |member| {
+                    (
+                        loaded,
+                        lock,
+                        member.path.as_str(),
+                        member.bytes_hash.as_str(),
+                    )
+                })
+            })
+            .collect();
+        let members = candidates.iter().map(|(_, lock, path, digest)| Member {
+            lock: *lock,
+            path,
+            digest,
+        });
+        let selection = match select(&input_name, members) {
+            Ok(selection) => selection,
+            Err(SelectError::NotListed | SelectError::SeveralPaths(_)) => {
+                return Err(LockFailure::NotLocked);
             }
-        }
-
-        if !exact.is_empty() {
-            return check_matches(&bytes, &exact);
-        }
-        if by_basename.len() > 1 {
-            // An ambiguous basename cannot be verified safely.
-            return Err(LockFailure::NotLocked);
-        }
-        if !by_basename.is_empty() {
-            return check_matches(&bytes, &by_basename);
-        }
-        Err(LockFailure::NotLocked)
-    }
-}
-
-/// Hash `bytes` with the algorithm named by the prefix of `expected`. `None` if unsupported.
-/// Only the hashing comes from cmdrvl-core; member matching stays here, because
-/// `cmdrvl_core::lockfile` matches differently (for example it strips a leading `./`).
-fn hash_like(bytes: &[u8], expected: &str) -> Option<String> {
-    Algorithm::of(expected).map(|algorithm| hash_bytes(algorithm, bytes))
-}
-
-fn check_matches(bytes: &[u8], matches: &[Candidate<'_>]) -> Result<Vec<LockReceipt>, LockFailure> {
-    for candidate in matches {
-        match hash_like(bytes, candidate.bytes_hash) {
-            Some(actual) if actual == candidate.bytes_hash => {
-                return Ok(vec![LockReceipt {
-                    lockfile: candidate.lock.path.to_string_lossy().into_owned(),
-                    lock_hash: candidate.lock.file.lock_hash.clone(),
-                }]);
-            }
-            Some(_) => {}
-            None => {
+            Err(SelectError::UnusableDigest(member)) => {
+                let lockfile = self
+                    .locks
+                    .get(member.lock)
+                    .map(|lock| lock.path.to_string_lossy().into_owned())
+                    .unwrap_or_default();
                 return Err(LockFailure::Lockfile {
-                    lockfile: candidate.lock.path.to_string_lossy().into_owned(),
+                    lockfile,
                     error: format!(
                         "unsupported bytes_hash algorithm in '{}' (member '{}')",
-                        candidate.bytes_hash, candidate.member_path
+                        member.digest, member.path
                     ),
                 });
             }
+        };
+
+        let observed: Vec<(Algorithm, String)> = selection
+            .algorithms()
+            .into_iter()
+            .map(|algorithm| (algorithm, hash_bytes(algorithm, &bytes)))
+            .collect();
+        let observed_refs: Vec<(Algorithm, &str)> = observed
+            .iter()
+            .map(|(algorithm, digest)| (*algorithm, digest.as_str()))
+            .collect();
+
+        match selection.judge(&observed_refs) {
+            Ok(Verdict::Verified { locks, .. }) => {
+                let lock = locks
+                    .first()
+                    .copied()
+                    .ok_or_else(|| LockFailure::Lockfile {
+                        lockfile: input.to_string_lossy().into_owned(),
+                        error: "R1 selected no matching lock".to_string(),
+                    })?;
+                let loaded = self.locks.get(lock).ok_or_else(|| LockFailure::Lockfile {
+                    lockfile: input.to_string_lossy().into_owned(),
+                    error: "R1 selected an invalid lock position".to_string(),
+                })?;
+                Ok(vec![LockReceipt {
+                    lockfile: loaded.path.to_string_lossy().into_owned(),
+                    lock_hash: loaded.file.lock_hash.clone(),
+                }])
+            }
+            Ok(Verdict::Drift { differing, .. }) => {
+                let first = differing.first().ok_or_else(|| LockFailure::Lockfile {
+                    lockfile: input.to_string_lossy().into_owned(),
+                    error: "R1 reported drift without a differing member".to_string(),
+                })?;
+                let algorithm =
+                    Algorithm::of(first.digest).ok_or_else(|| LockFailure::Lockfile {
+                        lockfile: input.to_string_lossy().into_owned(),
+                        error: "R1 reported an unknown digest algorithm".to_string(),
+                    })?;
+                let actual = observed
+                    .iter()
+                    .find_map(|(kind, digest)| match (*kind, algorithm) {
+                        (Algorithm::Blake3, Algorithm::Blake3)
+                        | (Algorithm::Sha256, Algorithm::Sha256) => Some(digest.as_str()),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                Err(LockFailure::Drift {
+                    lockfile: self
+                        .locks
+                        .get(first.lock)
+                        .map(|lock| lock.path.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    expected_hash: first.digest.to_string(),
+                    actual_hash: actual.to_string(),
+                })
+            }
+            Err(missing) => Err(LockFailure::Lockfile {
+                lockfile: input.to_string_lossy().into_owned(),
+                error: format!(
+                    "R1 did not receive the computed {} digest",
+                    missing.algorithm.prefix()
+                ),
+            }),
         }
     }
-    let first = &matches[0];
-    Err(LockFailure::Drift {
-        lockfile: first.lock.path.to_string_lossy().into_owned(),
-        expected_hash: first.bytes_hash.to_string(),
-        actual_hash: hash_like(bytes, first.bytes_hash).unwrap_or_default(),
-    })
+}
+
+#[cfg(windows)]
+fn typed_name_for_matching(file: &str) -> String {
+    file.replace('\\', "/")
+}
+
+#[cfg(not(windows))]
+fn typed_name_for_matching(file: &str) -> String {
+    file.to_owned()
+}
+
+/// Hash `bytes` with the algorithm named by the prefix of `expected`. `None` if unsupported.
+/// This remains a focused unit-test helper; production matching uses R1's algorithm list and
+/// hashes each required algorithm before judging.
+#[cfg(test)]
+fn hash_like(bytes: &[u8], expected: &str) -> Option<String> {
+    Algorithm::of(expected).map(|algorithm| hash_bytes(algorithm, bytes))
 }
 
 /// Merge receipts, keeping first-seen order and one entry per lockfile.
@@ -266,18 +308,15 @@ mod tests {
     #[test]
     fn drift_reports_expected_and_actual() {
         let input = scratch("a.csv", "id,v\n1,2\n");
-        let err = verify(
-            &input,
-            lock_for(&input.to_string_lossy(), "sha256:deadbeef"),
-        )
-        .unwrap_err();
+        let stale = format!("sha256:{}", "de".repeat(32));
+        let err = verify(&input, lock_for(&input.to_string_lossy(), &stale)).unwrap_err();
         match err {
             LockFailure::Drift {
                 expected_hash,
                 actual_hash,
                 ..
             } => {
-                assert_eq!(expected_hash, "sha256:deadbeef");
+                assert_eq!(expected_hash, stale);
                 assert_eq!(actual_hash, hash_like(b"id,v\n1,2\n", "sha256:").unwrap());
             }
             other => panic!("expected drift, got {other:?}"),
@@ -305,6 +344,8 @@ mod tests {
     fn unsupported_algorithm_and_malformed_lockfiles_fail_as_lockfile_errors() {
         let input = scratch("a.csv", "id,v\n1,2\n");
         let err = verify(&input, lock_for(&input.to_string_lossy(), "md5:abc")).unwrap_err();
+        assert!(matches!(err, LockFailure::Lockfile { .. }), "{err:?}");
+        let err = verify(&input, lock_for(&input.to_string_lossy(), "sha256:00")).unwrap_err();
         assert!(matches!(err, LockFailure::Lockfile { .. }), "{err:?}");
         let err = verify(&input, scratch("bad.lock.json", "not json")).unwrap_err();
         assert!(matches!(err, LockFailure::Lockfile { .. }), "{err:?}");

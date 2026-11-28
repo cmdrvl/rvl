@@ -310,6 +310,57 @@ fn capsule_replay_real_change_preserves_outcome_and_contributors() {
 }
 
 #[test]
+fn capsule_replay_with_lock_preserves_verified_comparison() {
+    use sha2::{Digest, Sha256};
+
+    let dir = temp_dir();
+    let capsule_root = dir.join("capsules");
+    let old = write_file(&dir, "old.csv", "loan_id,balance\nA,100\n");
+    let new = write_file(&dir, "new.csv", "loan_id,balance\nA,110\n");
+    let old_hash = format!("sha256:{:x}", Sha256::digest(std::fs::read(&old).unwrap()));
+    let new_hash = format!("sha256:{:x}", Sha256::digest(std::fs::read(&new).unwrap()));
+    let lock = write_file(
+        &dir,
+        "inputs.lock.json",
+        &format!(
+            "{{\"version\":\"lock.v0\",\"members\":[{{\"path\":\"old.csv\",\"bytes_hash\":\"{old_hash}\"}},{{\"path\":\"new.csv\",\"bytes_hash\":\"{new_hash}\"}}]}}"
+        ),
+    );
+
+    let first = run_rvl_binary(
+        &dir,
+        None,
+        &[
+            "old.csv",
+            "new.csv",
+            "--lock",
+            lock.to_str().unwrap(),
+            "--json",
+            "--no-witness",
+            "--capsule-out",
+            "capsules",
+        ],
+    );
+    assert_eq!(first.status.code(), Some(1));
+    let first_json: Value = serde_json::from_slice(&first.stdout).expect("first output json");
+    assert_eq!(first_json["outcome"], "REAL_CHANGE");
+    assert_eq!(first_json["lock"][0]["lockfile"], lock.to_str().unwrap());
+
+    let capsule_dir = only_capsule_dir(&capsule_root);
+    let manifest: Value = serde_json::from_str(
+        &std::fs::read_to_string(capsule_dir.join("manifest.json")).expect("manifest"),
+    )
+    .expect("manifest json");
+    let replay = run_replay_script(&capsule_dir, None);
+    assert_eq!(replay.status.code(), Some(1));
+    let replay_json: Value = serde_json::from_slice(&replay.stdout).expect("replay output json");
+    assert_eq!(replay_json["outcome"], first_json["outcome"]);
+    assert_eq!(manifest["outcome"], first_json["outcome"]);
+
+    cleanup(&dir);
+}
+
+#[test]
 fn capsule_replay_refusal_preserves_refusal_code() {
     let dir = temp_dir();
     let capsule_root = dir.join("capsules");

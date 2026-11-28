@@ -27,6 +27,14 @@ fn rvl(args: &[&str]) -> Output {
         .expect("run rvl")
 }
 
+fn rvl_in(current_dir: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_rvl"))
+        .current_dir(current_dir)
+        .args(args)
+        .output()
+        .expect("run rvl")
+}
+
 fn json(out: &Output) -> Value {
     serde_json::from_slice(&out.stdout)
         .unwrap_or_else(|e| panic!("not JSON ({e}): {}", String::from_utf8_lossy(&out.stdout)))
@@ -204,6 +212,11 @@ fn sha256_of(path: &Path) -> String {
     format!("sha256:{:x}", Sha256::digest(fs::read(path).unwrap()))
 }
 
+fn sha256_bytes(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
 fn write_lock(dir: &Path, name: &str, members: &[(&str, String)]) -> PathBuf {
     let members: Vec<Value> = members
         .iter()
@@ -242,13 +255,11 @@ fn exact_absolute_path_member_verifies() {
 #[test]
 fn stale_hash_refuses_drift_and_unlocked_input_refuses_not_locked() {
     let (dir, old, new) = dataset("neg");
+    let stale_hash = sha256_bytes(b"stale bytes");
     let stale = write_lock(
         &dir,
         "stale.lock.json",
-        &[
-            (s(&old), sha256_of(&old)),
-            (s(&new), "sha256:deadbeef".to_string()),
-        ],
+        &[(s(&old), sha256_of(&old)), (s(&new), stale_hash.clone())],
     );
     let out = rvl(&[
         s(&old),
@@ -261,7 +272,7 @@ fn stale_hash_refuses_drift_and_unlocked_input_refuses_not_locked() {
     assert_eq!(out.status.code(), Some(2));
     let v = json(&out);
     assert_eq!(v["refusal"]["code"], "E_INPUT_DRIFT");
-    assert_eq!(v["refusal"]["detail"]["expected_hash"], "sha256:deadbeef");
+    assert_eq!(v["refusal"]["detail"]["expected_hash"], stale_hash);
 
     let partial = write_lock(&dir, "partial.lock.json", &[(s(&old), sha256_of(&old))]);
     let out = rvl(&[
@@ -314,6 +325,89 @@ fn repeated_lock_flag_combines_lockfiles() {
     ]));
     assert_eq!(v["outcome"], "REAL_CHANGE", "{v}");
     assert_eq!(v["lock"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn conflicting_digests_across_two_locks_refuse_drift() {
+    let (dir, old, _new) = dataset("conflicting_locks");
+    let matching = sha256_of(&old);
+    let differing = sha256_bytes(b"different bytes");
+    let first = write_lock(&dir, "first.lock.json", &[(s(&old), matching)]);
+    let second = write_lock(&dir, "second.lock.json", &[(s(&old), differing)]);
+
+    let out = rvl(&[
+        s(&old),
+        s(&old),
+        "--lock",
+        s(&first),
+        "--lock",
+        s(&second),
+        "--json",
+        "--no-witness",
+    ]);
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(json(&out)["refusal"]["code"], "E_INPUT_DRIFT");
+}
+
+#[test]
+fn parent_folder_locking_accepts_dot_paths_and_refuses_swapped_periods() {
+    let dir = temp_dir("parent_periods");
+    fs::create_dir_all(dir.join("dec")).unwrap();
+    fs::create_dir_all(dir.join("nov")).unwrap();
+    fs::write(dir.join("dec/loans.csv"), "loan_id,balance\nA,100\n").unwrap();
+    fs::write(dir.join("nov/loans.csv"), "loan_id,balance\nA,110\n").unwrap();
+    let lock = write_lock(
+        &dir,
+        "parent.lock.json",
+        &[
+            ("dec/loans.csv", sha256_of(&dir.join("dec/loans.csv"))),
+            ("nov/loans.csv", sha256_of(&dir.join("nov/loans.csv"))),
+        ],
+    );
+    let args = [
+        "./dec/loans.csv",
+        "./nov/loans.csv",
+        "--lock",
+        s(&lock),
+        "--json",
+        "--no-witness",
+    ];
+
+    let right = rvl_in(&dir, &args);
+    assert_eq!(right.status.code(), Some(1));
+    assert_eq!(json(&right)["outcome"], "REAL_CHANGE");
+
+    fs::write(dir.join("dec/loans.csv"), "loan_id,balance\nA,110\n").unwrap();
+    fs::write(dir.join("nov/loans.csv"), "loan_id,balance\nA,100\n").unwrap();
+    let swapped = rvl_in(&dir, &args);
+    assert_eq!(swapped.status.code(), Some(2));
+    assert_eq!(json(&swapped)["refusal"]["code"], "E_INPUT_DRIFT");
+}
+
+#[cfg(not(windows))]
+#[test]
+fn unix_typed_backslash_is_not_a_path_separator() {
+    let dir = temp_dir("unix_backslash");
+    let input = dir.join(r"e\loans.csv");
+    fs::write(&input, "loan_id,balance\nA,100\n").unwrap();
+    let lock = write_lock(
+        &dir,
+        "slash.lock.json",
+        &[("e/loans.csv", sha256_of(&input))],
+    );
+    let out = rvl_in(
+        &dir,
+        &[
+            r"e\loans.csv",
+            r"e\loans.csv",
+            "--lock",
+            s(&lock),
+            "--json",
+            "--no-witness",
+        ],
+    );
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(json(&out)["refusal"]["code"], "E_INPUT_NOT_LOCKED");
 }
 
 #[test]

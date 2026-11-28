@@ -317,13 +317,33 @@ rvl <old.csv> <new.csv> [OPTIONS]
 | `--profile <path>` | string | *(none)* | Use a profile YAML for key derivation and column scoping. |
 | `--profile-id <id>` | string | *(none)* | Resolve a frozen profile from `~/.cmdrvl/config/profile/profiles/*.yaml`; legacy `~/.epistemic/profiles` is copied on first default use. |
 | `--exit-zero-on-change` | flag | `false` | Exit `0` instead of `1` on REAL CHANGE so `set -e` scripts do not abort on an expected change. Refusals still exit `2`; `doctor` exit codes are never affected. |
-| `--lock <lockfile>` | path (repeatable) | *(none)* | Verify both inputs against pinned `lock.v0` lockfile(s) before comparing: exact path match, else a unique basename match (real `lock` output stores paths relative to the vacuum root). Refuses `E_INPUT_NOT_LOCKED` / `E_INPUT_DRIFT`. Verified lockfile identities appear in the JSON `lock` array and the witness record. |
+| `--lock <lockfile>` | path (repeatable) | *(none)* | Verify both inputs against pinned `lock.v0` lockfile(s) before comparing with R1 matching: leading `./` is ignored, exact normalized path wins, otherwise one normalized basename path is required, and every candidate digest must match. Refuses `E_INPUT_NOT_LOCKED` / `E_INPUT_DRIFT`. Verified lockfile identities appear in the JSON `lock` array and the witness record. |
 | `--capsule-dir <dir>` (alias `--capsule-out`) | string | *(disabled)* | Write deterministic replay capsule artifacts (`manifest.json`, `old.csv`, `new.csv`, `output.txt`, `replay.sh`, and `profile.yaml` when a profile is active) to `<dir>/capsule-<id>/`. |
 | `--json` | flag | `false` | Emit a single JSON object on stdout instead of human-readable output. |
 | `--explicit` | flag | `false` (redacted) | Show raw data values (old/new/delta, key samples, audit field text). **Default is redacted for zero-retention safety**: output carries labels, counts and shares only. |
 | `--no-witness` | flag | `false` | Suppress witness ledger recording. |
 
 Invalid `--threshold` or `--tolerance` values are CLI argument errors (exit 2).
+
+### Lock matching and two-period inputs
+
+`--lock` uses the shared R1 names-and-digests rule. Leading `./` is removed from the typed input
+name and lock member paths; no other trimming or path cleanup is performed, and a backslash is a
+literal character except that Windows converts a typed backslash to `/` before matching. An exact
+normalized path wins. Otherwise, a basename match is allowed only when all candidates have one
+member path, every candidate digest is usable, and every candidate digest matches the input. This
+means that passing two per-period lockfiles that both call their member `loans.csv` but pin
+different bytes now refuses with `E_INPUT_DRIFT`, even when the input is correct for one period.
+
+For two periods, lock the parent folder once and pass the distinct relative member paths from the
+parent directory:
+
+```bash
+rvl dec/loans.csv nov/loans.csv --lock parent.lock.json --json
+```
+
+The parent-folder lock preserves period identity and reports drift if either period's bytes are
+swapped. If a command reads only one period, passing only that period's lock remains an option.
 
 ### Exit Codes
 
